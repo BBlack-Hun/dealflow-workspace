@@ -16,8 +16,8 @@ from ..deps import get_current_user, may_manage_team_contacts, proxy_job, templa
 from ..models import ROOM_SEARCH_TOPIC, STARTUP_MSG_KIND, IrCompany, SendJob, User
 from ..services import (cadence, contact_columns, custom_columns, deal_history, deal_queue,
                         deal_stage, email_domains, group_name, investor_firms, ir_attach,
-                        ir_readonly, llm_brief, mailer, manual_send, memo_intro, ref_panel,
-                        send_window, series_a_share, sheet_import,
+                        ir_readonly, llm_brief, mailer, manual_send, memo_intro, no_reaction,
+                        ref_panel, send_window, series_a_share, sheet_import,
                         sheet_owner, sourcing_link, sourcing_receipts,
                         sourcing_sync, startup_send, taxonomy)
 from ..ui import MENU, base_ctx as _base_ctx
@@ -111,11 +111,9 @@ def deals_page(
     recipient_counts = sheet_owner.recipient_counts(
         db, user, team_wide=may_manage_team_contacts(user))
     # 딜소개를 보냈는데 IR 요청·미팅으로 이어지지 않은 담당자.
-    # 이들에게는 목록을 또 밀어 넣기보다 무엇을 보고 싶은지 되묻는 편이 답이 온다.
-    no_reaction_ids = {
-        row["id"] for row in contact_rows(db, user)
-        if row["last_deal"] and not (row["ir_total"] or row["meet_total"])
-    }
+    # 무엇을 반응으로 보는지는 `services/no_reaction` 한 곳이다(앱 IR 요청 ·
+    # 미팅 · 자료 전달 · `N월 IR 요청` 칸까지 — #200).
+    no_reaction_ids = no_reaction.ids(db, contact_rows(db, user))
     # 딜 소싱 제안의 대상. 투자사 명단과 다른 표이고 **팀 공용**이다 —
     # 우리 딜을 같이 볼 사람이라 담당을 나눌 것이 아니다.
     #
