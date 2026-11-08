@@ -11,9 +11,18 @@ REM   수동 감독 모드(발송 중 지켜보기), 방 제목 정확 일치, �
 setlocal
 cd /d "%~dp0\.."
 
+REM venv 를 만들 파이썬: python 이 진짜 파이썬이면 그것, 아니면 py 런처
+REM (PATH 에 안 넣은 python.org 설치 · Microsoft Store 별칭만 잡히는 PC 대비)
+set "PY="
+python --version 2>&1 | findstr /b /c:"Python 3" >nul && set "PY=python"
+if not defined PY (
+  py -3 --version 2>&1 | findstr /b /c:"Python 3" >nul && set "PY=py -3"
+)
+
 if not exist ".venv-agent" (
+  if not defined PY ( echo [ERROR] Python 3 not found - install it or turn off the Store alias & exit /b 1 )
   echo [setup] creating venv...
-  python -m venv .venv-agent
+  %PY% -m venv .venv-agent
 )
 call .venv-agent\Scripts\activate.bat
 
