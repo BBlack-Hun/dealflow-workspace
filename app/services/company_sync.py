@@ -33,6 +33,10 @@
     대표자명 · 연락처 · 이메일   →  `ceo_name` · `ceo_phone` · `ceo_email`
     계약여부 · 계약서 수신 여부  →  같은 이름 칸(10/28 · 0125 — IR 과 같은 열쇠 · `O`/`X`)
     계약년월                     →  같은 이름 칸(11/01 · 0129 · #122 — `YYYY-MM`)
+    담당자                       →  같은 이름 칸(11/08 · #188 — 우리 팀 담당, 넘긴 이력 글
+                                    그대로). 시트에서도 오는 그 탭 본디의 칸이라 연결을 풀어도
+                                    남긴다(`UNLINK_KEEPS`). 투자컨설턴트 `담당자`(그 줄을 맡은
+                                    컨설턴트 계정)와 스타트업 명단(탭 주인)은 줄의 주인이라 안 잇는다.
     누적투자금액 · 투자유치희망금액 · Pre Value  →  같은 이름 칸(단위 억 글자)
     연도 매출  →  **해마다 짝이 바뀐다**(`_year_slot`). IR 은 올해 매출을 연도 칸이 아니라
                   `revenue_recent` 에 적는다(`revenue_years` 머리말). 그래서 Series A 의
@@ -136,6 +140,8 @@ FIELDS = {
     "raise_target": (None, None, "raise_target"),
     "pre_value": (None, None, "pre_value"),
     "contract_ym": ("contract_ym", None, "contract_ym"),
+    # 11/08 #188 — IR `담당자` ↔ Series A `담당자`(둘 다 `assignee_name` · 넘긴 이력 글).
+    "assignee_name": (None, None, "assignee_name"),
     "revenue_recent": (None, None, YEAR),
     **{f: (None, None, YEAR) for f in revenue_years.FIELDS},
     # 4단계(i126 · 11/02) — 스타트업 명단만
@@ -158,12 +164,15 @@ LABELS = {"contact_name": "대표자명", "contact_phone": "연락처", "contact
           "success_fee": "성공보수율", "funding_total": "누적투자금액",
           "raise_target": "투자유치희망금액", "pre_value": "Pre Value",
           "contract_ym": "계약년월", "sector_major": "대분류", "sector_minor": "소분류",
-          "series": "투자라운드", "business_desc": "기업 한줄 소개"}
+          "series": "투자라운드", "business_desc": "기업 한줄 소개", "assignee_name": "담당자"}
 #: `O` / `X` 만 옮기는 칸.
 OX = ("quote_attached", "kakao_joined", "contract_received")
 #: 투자컨설턴트에서 **메타(관리 스타트업) 탭에만** 서는 칸(계약 탭은 `CONTRACT_TAB`).
 META_ONLY = ("quote_attached", "kakao_joined", "contract_status", "contract_received",
              "success_fee", "contract_ym")
+#: 연결을 풀어도 Series A 줄에 두는 칸(`clear_same`) — 시트(`series_a_import.HEADERS`)에서도
+#: 들어오는 그 탭 본디의 칸이라, IR 과 같아도 IR 에서 온 값이라 볼 수 없다.
+UNLINK_KEEPS = ("assignee_name",)
 #: 시트 올리기가 덮지 않는 투자컨설턴트 칸(이어진 줄에서 — 결정 7). 올리기는 메타 탭에 든다.
 CONSULTING_SLOTS = frozenset(c for c, *_ in FIELDS.values() if c)
 
@@ -636,6 +645,8 @@ def clear_same(session: Session, row: SeriesACompany) -> int:
         return 0
     cleared = 0
     for field, where in _places(row, {}).items():
+        if field in UNLINK_KEEPS:
+            continue
         theirs, mine = _value(company, field, field), _raw(_get(row, where))
         if theirs and mine and same(field, mine, theirs):
             _set(row, where, None)

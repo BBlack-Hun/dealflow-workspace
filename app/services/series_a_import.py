@@ -76,7 +76,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..models import SeriesACompany
-from . import series_stage
+from . import company_sync, series_stage
 from .deal_history import _key as name_key
 
 #: 모델 칸 → 받는 시트 머리글(띄어쓰기를 지우고 소문자로 견준다). **차례가 곧
@@ -453,5 +453,8 @@ def upsert(db: Session, records: Iterable[dict], overwrite: bool = False) -> Res
             result.updated += 1
         else:
             result.unchanged += 1
-    db.flush()
+    # 이어진 IR 기업 쪽은 빈칸만 채운다(`company_sync` 결정 7) — `담당자` 는 시트에도 있어
+    # (#188) 옛 시트를 다시 올리면 IR 에서 고친 담당자를 덮을 수 있다.
+    with company_sync.fill_only(db):
+        db.flush()
     return result

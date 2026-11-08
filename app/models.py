@@ -1038,7 +1038,8 @@ class SeriesACompany(TimestampMixin, Base):
     consulting_meeting_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     #: Type — 딜이 들어온 길(`딜 소싱 네트워크` · `후속 투자 연계`).
     deal_type: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    #: 담당팀원 — 우리 팀에서 이 딜을 맡은 사람.
+    #: 담당팀원 — 우리 팀에서 이 딜을 맡은 사람. IR 기업에 이어진 줄은 IR `담당자` 와
+    #: 따라 고친다(11/08 #188 · `company_sync.FIELDS`).
     assignee_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     #: 공유 심사역 — 딜을 넘겨 준 투자사 쪽 사람(`홍길동 이사` 처럼 직함까지).
     shared_by: Mapped[Optional[str]] = mapped_column(String, nullable=True)
