@@ -3,13 +3,19 @@
 {#
   업무 보고 › `IR 미팅진행 리스트`(#120). 위는 딜 진행 관리 [미팅 잡기]로 잡은 미팅
   한 줄 = 한 건(취소 제외 — `meeting_calendar.listing`), 아래 `지난 기록` 은 명단 월별
-  `미팅` 칸 글을 원문 그대로(`meeting_calendar.memo_rows`). 둘 다 읽기만 한다.
+  `미팅` 칸 글을 원문 그대로(`meeting_calendar.memo_rows`). 달 · 해(`연간` — #184)로 본다.
+
+  위 표에서 고치는 것은 `미팅결과` 하나다(#184) — 딜 진행 관리 › 미팅 후기의 `결과` 칸과
+  **같은 값**(`meetings.outcome`)을 같은 길(`PATCH /api/meetings/{id}`)로 고친다. 새 칸을
+  만들지 않았다. `후속라운드` 는 이어 둔 IR 기업의 `투자라운드` 를 읽기만 한다.
+  아래 `지난 기록` 은 앱 미팅 전 명단 칸 글이라 읽기만 한다(고치는 곳은 투자사 관리 현황).
 #}
 {% block content %}
 <header class="page-head">
   <h1>{{ page_title }}</h1>
   <p class="muted">
     딜 진행 관리 [미팅 잡기]로 잡은 미팅을 한 줄씩 봅니다(취소한 미팅은 뺍니다).
+    끝난 내 미팅은 <b>미팅결과</b> 칸을 눌러 고릅니다 — 딜 진행 관리 › 미팅 후기의 결과와 같은 값입니다.
     아래 <b>지난 기록</b>은 명단 월별 '미팅' 칸에 적힌 글을 그대로 옮겨 보여 줍니다 — 여기서는 고치지 않습니다.
   </p>
 </header>
@@ -17,49 +23,80 @@
 
 <div class="toolbar">
   <div class="quick-chips report-picker">
+    {# 월간 · 연간 — 업무 보고 첫 탭과 같은 고르기(#184). #}
+    <span class="seg-toggle">
+      <a class="chip {% if not yearly_view %}active{% endif %}"
+         href="/report/meetings?month={{ selected }}{{ member_q }}">월간</a>
+      <a class="chip {% if yearly_view %}active{% endif %}"
+         href="/report/meetings?span=year&year={{ year }}{{ member_q }}">연간</a>
+    </span>
+    {% if yearly_view %}
+    <select class="chip-select" aria-label="해 고르기" onchange="location = this.value">
+      {% for y in year_options %}
+      <option value="/report/meetings?span=year&year={{ y }}{{ member_q }}"
+              {% if year == y %}selected{% endif %}>{{ y }}년</option>
+      {% endfor %}
+    </select>
+    {% else %}
     <select class="chip-select" aria-label="달 고르기" onchange="location = this.value">
       {% for y, m, key in month_options %}
       <option value="/report/meetings?month={{ key }}{{ member_q }}"
               {% if selected == key %}selected{% endif %}>{{ y }}년 {{ m }}월</option>
       {% endfor %}
     </select>
+    {% endif %}
   </div>
   {% if can_team %}
   {# 팀원 한 사람 것은 왼쪽 메뉴의 `팀원 화면으로 보기` 로 본다 — 업무 보고처럼 고르개는 한 곳(#444). #}
   <div class="toolbar-right">
     <a class="chip {% if member == user.id %}active{% endif %}"
-       href="/report/meetings?month={{ selected }}&member={{ user.id }}">내 것</a>
+       href="/report/meetings?{{ span_q }}&member={{ user.id }}">내 것</a>
     <a class="chip {% if not member %}active{% endif %}"
-       href="/report/meetings?month={{ selected }}{% if view_as %}&member=0{% endif %}">팀 전체</a>
+       href="/report/meetings?{{ span_q }}{% if view_as %}&member=0{% endif %}">팀 전체</a>
   </div>
   {% endif %}
 </div>
 
 <section class="panel">
   {% set done = meetings|selectattr('done')|list|length %}
-  <h2 class="panel-title">{{ year }}년 {{ month }}월 IR 미팅
+  <h2 class="panel-title">{{ year }}년 {% if not yearly_view %}{{ month }}월 {% endif %}IR 미팅
     <span class="hint"><span class="cal-chip plan">예정 {{ meetings|length - done }}</span>
       <span class="cal-chip done">✓ 완료 {{ done }}</span></span>
   </h2>
   {% if meetings %}
   <div class="table-wrap">
-  <table class="grid-table compact">
-    <thead><tr><th style="width:96px">날짜</th><th style="width:70px">팀원</th>
+  {# `data-inline-url` · 줄의 `data-id` — 칸 편집기(`inline_edit.js`)가 `미팅결과` 를 저장할 곳. #}
+  <table class="grid-table compact" data-inline-url="/api/meetings">
+    <thead><tr><th style="width:96px">미팅날짜</th><th style="width:70px">팀원</th>
       <th style="width:170px">심사역 / 회사</th><th style="width:132px">기업명</th>
-      <th style="width:104px">투자유치희망금액</th><th style="width:62px">차수</th>
-      <th style="width:66px">대면/화상</th><th style="width:66px">예정/완료</th><th>결과</th></tr></thead>
+      <th style="width:104px">투자유치희망금액</th>
+      <th style="width:76px" title="IR 기업 현황의 '투자라운드' 값입니다 — 고치는 곳도 IR 기업 현황입니다">후속라운드</th>
+      <th style="width:62px">차수</th>
+      <th style="width:66px">대면/화상</th><th style="width:66px">예정/완료</th>
+      <th title="딜 진행 관리 › 미팅 후기의 결과와 같은 값 — 끝난 내 미팅은 눌러서 고릅니다">미팅결과</th></tr></thead>
     <tbody>
       {% for m in meetings %}
-      <tr>
+      <tr data-id="{{ m.id }}">
         <td class="muted">{{ m.date }}{% if m.time %} {{ m.time }}{% endif %}</td>
         <td class="muted">{{ m.owner }}</td>
         <td><b>{{ m.who }}</b> <span class="muted">{{ m.firm }}</span></td>
         <td class="ellipsis" title="{{ m.company }}">{{ m.company }}</td>
         <td>{{ m.raise_target }}</td>
+        <td>{{ m.series }}</td>
         <td>{{ m.kind }}</td>
         <td>{{ m.mode }}</td>
         <td><span class="cal-chip {{ 'done' if m.done else 'plan' }}">{{ m.status }}</span></td>
-        <td>{{ m.outcome }}</td>
+        {#
+          끝난 **제 미팅**만 눌러 고른다 — 저장하는 길(`_owned_meeting`)이 주인만 받는다.
+          관리자가 팀 전체로 볼 때 남의 미팅은 글자로 둔다(누르면 404 가 나는 칸을 세우지 않는다).
+          보기는 미팅 후기와 같은 셋, 보기 밖의 말은 서버가 400 으로 돌려보낸다(#176).
+        #}
+        {% if m.done and m.user_id == user.id %}
+        <td class="cell" data-field="outcome" data-type="pick" data-fixed-choices data-choices-only
+            data-choices="{{ outcomes.values()|join(',') }}"
+            data-placeholder="눌러서 고르기"
+            title="눌러서 미팅결과 고르기 — 비우면 결과 미정">{{ m.outcome }}</td>
+        {% else %}<td>{{ m.outcome }}</td>{% endif %}
       </tr>
       {% endfor %}
     </tbody>
@@ -71,12 +108,14 @@
 </section>
 
 <section class="panel">
-  <h2 class="panel-title">지난 기록 <span class="hint">명단 {{ month }}월 '미팅' 칸에 적힌 글 그대로 · {{ memos|length }}칸</span></h2>
+  <h2 class="panel-title">지난 기록 <span class="hint">명단 {% if yearly_view %}{{ year }}년 월별{% else %}{{ month }}월{% endif %} '미팅' 칸에 적힌 글 그대로 · {{ memos|length }}칸</span></h2>
   {% if memos %}
   <div class="table-wrap">
   <table class="grid-table compact">
-    <thead><tr><th style="width:70px">팀원</th><th style="width:150px">명단</th>
-      <th style="width:150px">칸</th><th style="width:170px">투자사</th><th>적힌 글</th></tr></thead>
+    {# `명단` · `칸` 이 무엇인지 묻는 일이 있었다(#184) — 머리글에 뜻을 띄운다. #}
+    <thead><tr><th style="width:70px">팀원</th>
+      <th style="width:150px" title="이 글이 적힌 투자사 관리 현황의 명단 탭 이름">명단</th>
+      <th style="width:150px" title="그 명단 탭의 월별 칸 이름 — 미팅 날짜가 아니라 글을 적은 칸입니다">칸</th><th style="width:170px">투자사</th><th>적힌 글</th></tr></thead>
     <tbody>
       {% for r in memos %}
       <tr>
@@ -91,7 +130,11 @@
   </table>
   </div>
   {% else %}
-  <p class="muted bucket-empty">이 달 명단 '미팅' 칸에 적힌 글이 없습니다.</p>
+  <p class="muted bucket-empty">{{ '이 해' if yearly_view else '이 달' }} 명단 '미팅' 칸에 적힌 글이 없습니다.</p>
   {% endif %}
 </section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ asset('js/inline_edit.js') }}"></script>
 {% endblock %}
