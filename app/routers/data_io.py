@@ -33,7 +33,7 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import (NotAdmin, admin_only, doer, get_current_user, may_export_companies,
-                    may_manage_team_contacts)
+                    may_manage_team_contacts, may_view_consulting)
 from ..models import IrCompany, SendItem, SendJob, User, VcContact
 from ..services import (amount, company_view, custom_columns, import_diff, investor_firms,
                         pipeline,
@@ -519,6 +519,8 @@ COMPANY_HEADERS = [
     # 0129(#122) — 같은 까닭으로 끝에 붙인다.
     "계약년월",
 ]
+# 이 뒤에 **화면 칸 중 여기 없는 것**이 화면 이름 · 화면 차례로 붙는다(#192 — 대표자명 ·
+# 연락처 · 메모 …). 무엇이 이미 있는 칸인지는 `company_view.IN_FULL` 한 곳이 정한다.
 
 
 @router.get("/api/export/companies.xlsx")
@@ -533,9 +535,12 @@ def export_companies(db: Session = Depends(get_db),
     if not may_export_companies(user):
         raise NotAdmin()
     companies = db.execute(select(IrCompany).order_by(IrCompany.name)).scalars().all()
+    # 화면 칸 중 위 머리글에 없는 것(#192) — 표가 먹는 한 벌로 화면 글자 그대로 끝에 붙인다.
+    screen, head, picks = _screen_cells(db, user)
+    tail = [head[i] for i in picks]
     # 관리자가 붙인 추가 칸 — 숨긴 칸은 빠지고 고른 자리에 선다(화면과 같다).
     extra = custom_columns.view(db, "companies", "ir_companies")
-    put = custom_columns.arranger(COMPANY_HEADERS, extra)
+    put = custom_columns.arranger(COMPANY_HEADERS + tail, extra)
     rows = [
         put([c.name, c.sector_major or "", c.sector_minor or "", c.series or "",
              c.one_liner or "", "O" if c.introducible else "",
@@ -551,6 +556,7 @@ def export_companies(db: Session = Depends(get_db),
              c.summary_status or "", c.ir_file_name or "",
              c.region or "", c.quote_attached or "", c.kakao_joined or "",
              c.success_fee or "", c.contract_ym or ""]
+            + [screen[c.id][i] if c.id in screen else "" for i in picks]
             + custom_columns.cells(extra, c.id))
         for c in companies
     ]
@@ -561,7 +567,22 @@ def export_companies(db: Session = Depends(get_db),
     # 매번 따져야 한다(가져오기도 시트 쪽 이름을 그대로 찾는다:
     # `scripts/import_company_sheets.py` 의 `find_sheet`).
     return _xlsx(f"IR 기업현황_{today}.xlsx", "IR 기업현황",
-                 put(COMPANY_HEADERS + custom_columns.names(extra)), rows)
+                 put(COMPANY_HEADERS + tail + custom_columns.names(extra)), rows)
+
+
+def _screen_cells(db: Session, user: User):
+    """화면 칸 한 벌 — `({기업 번호: 화면 차례의 칸들}, 화면 머리글, 전체 파일에 붙일 자리)`.
+
+    컨설팅 두 칸은 화면처럼 투자컨설턴트 화면을 볼 수 있는 계정에게만 싣는다.
+    """
+    from .companies import company_rows, consulting_view
+
+    cols = revenue_years.columns()
+    con = consulting_view(db, user) if may_view_consulting(user) else None
+    rows = company_rows(db)
+    cells = {r["id"]: line for r, line in zip(rows, company_view.to_cells(rows, cols, con))}
+    shown = con is not None
+    return cells, company_view.view_headers(cols, shown), company_view.full_extra(cols, shown)
 
 
 @router.get("/api/export/companies-view.xlsx")
@@ -581,7 +602,7 @@ def export_companies_view(request: Request, q: str = "", sort: str = "",
     """
     if not may_export_companies(user):
         raise NotAdmin()
-    from .companies import company_rows
+    from .companies import company_rows, consulting_view
 
     # 추가 칸도 화면처럼 고른 자리(안 고르면 끝)에 붙이고, 그 칸의 O/X 필터도 같이
     # 건다(숨긴 칸은 빠진다).
@@ -595,10 +616,12 @@ def export_companies_view(request: Request, q: str = "", sort: str = "",
     # 받아 두면 어느 쪽이 거른 것인지 이름으로 보여야 한다.
     # 매출 · 금액 칸은 올해가 정한다(#75) — 머리글과 칸이 같은 한 벌을 받는다.
     cols = revenue_years.columns()
-    head = company_view.view_headers(cols)
+    # 컨설팅 두 칸 — 화면처럼 투자컨설턴트 화면을 볼 수 있는 계정에게만 선다(#192).
+    con = consulting_view(db, user) if may_view_consulting(user) else None
+    head = company_view.view_headers(cols, con is not None)
     put = custom_columns.arranger(head, extra)
     cells = [put(line + custom_columns.cells(extra, r["id"]))
-             for r, line in zip(rows, company_view.to_cells(rows, cols))]
+             for r, line in zip(rows, company_view.to_cells(rows, cols, con))]
     return _xlsx(f"IR 기업현황_화면_{today}.xlsx", "IR 기업현황 (화면)",
                  put(head + custom_columns.names(extra)), cells)
 
