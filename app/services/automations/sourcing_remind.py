@@ -1,9 +1,11 @@
 """A1 · **소싱 리마인드** — 이 달 딜을 아직 안 준 심사역에게 한 달에 한 번.
 
 딜 소싱 명단(좌측 [딜 소싱])의 정한 갈래(기본 `시리즈 A 이상 딜 소싱 참여
-심사역`) 사람 중 **이 달 `딜 받음` 이 아닌** 사람에게, 기본 **3주차 목요일
-11:00** 에 월간 리마인드가 나간다(#70 — 2·3주차 수요일 두 번이던 것을 담당자
-결정으로 한 번으로). 보내는 계정(자동화 판의 그 계정) 카톡에서.
+심사역`) 사람 중 **이 달 `딜 받음` 이 아닌** 사람에게, 기본 **2주차 화요일
+10:00** 에 월간 리마인드(화면 이름 `딜 발송 요청`)가 나간다(#197 — 그 전 기본은
+3주차 목요일 11:00(#70), 더 전에는 2·3주차 수요일 두 번). 보내는 계정(자동화 판의
+그 계정) 카톡에서. 그 계정으로 로그인하면 전날 · 당일 · 끝난 뒤 알림 창이 뜬다
+(`Spec.alert` — #196 과 같은 창).
 
 **손으로 보내는 월간 리마인드(딜 소싱 제안 › [보낼 문구 › 월간 리마인드])를
 그대로 자동으로 돌린 것이다.** 고르는 사람 · 빼는 사람 · 글 · 방이 그 길과
@@ -37,8 +39,8 @@
 ## 주차
 
 `1~7일이 1주차` — 이 저장소가 주차를 세는 규칙 하나(`sheet_import.week_of_month`).
-`3주차 목요일` 은 15~21일 사이의 목요일이다 — 이레 안에 목요일은 하나뿐이라
-곧 **그 달의 세 번째 목요일**과 같은 날이다.
+`2주차 화요일` 은 8~14일 사이의 화요일이다 — 이레 안에 화요일은 하나뿐이라
+곧 **그 달의 두 번째 화요일**과 같은 날이다.
 
 ## 아침에 세운 뒤 `딜 받음` 이 서면
 
@@ -89,9 +91,9 @@ def _check(values: dict) -> None:
 FIELDS = (
     runner.Field("groups", "갈래(한 줄에 하나)", "lines", DEFAULT_GROUPS,
                  hint="딜 소싱 화면의 갈래 탭 이름 그대로"),
-    runner.Field("weeks", "주차", "text", "3", hint="1~7일이 1주차 — 쉼표로 여럿"),
-    runner.Field("weekday", "요일", "text", "목"),
-    runner.Field("time", "보낼 시각", "time", "11:00"),
+    runner.Field("weeks", "주차", "text", "2", hint="1~7일이 1주차 — 쉼표로 여럿"),
+    runner.Field("weekday", "요일", "text", "화"),
+    runner.Field("time", "보낼 시각", "time", "10:00"),
 )
 
 
@@ -221,4 +223,4 @@ def manual(db: Session, _values: dict, target, day: date) -> str:
 runner.register(runner.Spec(
     key=automation.SOURCING_REMIND, kind="sourcing_intro", topic=KIND, plan=plan,
     collect=collect, still_ok=still_ok, fields=FIELDS, check=_check,
-    manual=manual))
+    manual=manual, alert=True))
