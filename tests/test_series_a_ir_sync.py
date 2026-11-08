@@ -204,6 +204,48 @@ def test_비운_칸은_안_따라간다(logged_in, db, ir):
     assert row.ceo_name is None and company.contact_name == "김샘플"
 
 
+def test_담당자도_따라_고치고_따로_쓰는_값은_두고_연결을_풀어도_남는다(logged_in, db, ir):
+    """11/08 #188: "IR 기업 현황, Series A 에서 담당자 수정하면 … 다 수정되게"."""
+    from app.services import company_sync, ir_link
+
+    row = _deal(db, name="샘플가람")
+    r = logged_in.patch(f"/api/companies/{ir.id}", json={"assignee_name": "김담당"})
+    assert r.status_code == 200, r.text
+    assert _fresh(db, row)[0].assignee_name == "김담당"
+    own = _deal(db, name="샘플가람", assignee_name="박담당")    # 딜 소싱에서 따로 적은 담당
+    assert [d["label"] for d in company_sync.differences(db, [own])[own.id]] == ["담당자"]
+
+    r = logged_in.patch(f"/api/series-a-companies/{row.id}",
+                        json={"assignee_name": "김담당 > 11/8 이담당"})
+    assert r.status_code == 200, r.text
+    company, own = _fresh(db, ir, own)
+    assert company.assignee_name == "김담당 > 11/8 이담당"
+    assert own.assignee_name == "박담당", "딜 소싱의 값을 덮었다"
+
+    row = _fresh(db, row)[0]
+    assert ir_link.unlink(db, row) is True
+    db.commit()
+    row = _fresh(db, row)[0]
+    assert (row.ir_company_id, row.assignee_name) == (None, "김담당 > 11/8 이담당"), \
+        "시트에서도 오는 칸인데 연결을 풀며 지웠다"
+
+
+def test_시트를_다시_올려_채운_담당자는_IR을_덮지_않는다(db, ir):
+    """시트 · 엑셀 다시 올리기는 이어진 쪽의 빈칸만 채운다(`company_sync` 결정 7)."""
+    from app.services import series_a_import as svc
+
+    ir.assignee_name = "김담당"
+    db.commit()
+    row = _raw_set(db, _deal(db, name="샘플가람", received_at="2026-07-01"), assignee_name=None)
+    sheet = [["수신 일자", "공유 심사역", "회사", "기업명", "담당팀원"],
+             ["2026-07-01", "홍샘플", "샘플투자", "샘플가람", "옛담당"]]
+    svc.upsert(db, svc.parse(sheet).records)
+    db.commit()
+    row, company = _fresh(db, row, ir)
+    assert row.assignee_name == "옛담당"
+    assert company.assignee_name == "김담당", "옛 시트 값이 IR 담당자를 덮었다"
+
+
 def test_수정_로그에_남는다(logged_in, db, ir):
     from app.models import EditLog
 
