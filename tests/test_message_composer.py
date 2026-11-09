@@ -103,6 +103,16 @@ def test_auto_summary_composes_the_materials_when_nothing_was_written():
     )
 
 
+def test_auto_summary_leaves_out_an_edge_of_five_lines_or_more():
+    """과제 187 — 문구가 빈 기업의 발송 토막도 5줄 이상 특이사항은 안 싣는다."""
+    edge = "\n".join(f"장점 {i}" for i in range(1, 6))
+    c = CompanyView(name="샘플애그", sector_major="애그테크", funding_total="5.6",
+                    competitiveness=edge)
+    assert mc.auto_company_summary(c) == "[애그테크] | 누적투자금액 5.6억"
+    c.competitiveness = "\n".join(f"장점 {i}" for i in range(1, 5))
+    assert mc.auto_company_summary(c).endswith("| 장점 1\n장점 2\n장점 3\n장점 4")
+
+
 def test_a_sub_eok_amount_keeps_its_unit_all_the_way_to_the_investor():
     """1억 미만을 `5천만원` 으로 적으면 **문구까지 그대로** 간다.
 

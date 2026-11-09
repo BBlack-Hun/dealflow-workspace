@@ -11,6 +11,8 @@
 // · Esc 는 되돌린다(저장이 안 나간다).
 // · [전체 해제] 는 고른 것(옛 값도)을 한 번에 풀고, 저장은 창이 닫힐 때다.
 //   고른 게 없으면 흐려 둔다.
+// · 소분류만 고르는 칸(`data-minors-only` — IR 기업 현황 `소분류`, 과제 185)은 대분류를
+//   머리글로만 세우고, 쉼표 · `/` 로 가른 옛 값은 체크된 채 남긴다.
 //
 // 목록 이름은 사용자가 정한 표의 일부다. 사람 · 회사 이름은 없다.
 "use strict";
@@ -30,12 +32,12 @@ const TREE = [
   { name: "딥테크·제조", minors: ["로봇", "반도체"] }
 ];
 
-function build(before) {
+function build(before, attrs) {
   const carrier = D.el("div", { id: "sector-taxonomy", hidden: "",
                                 "data-tree": JSON.stringify(TREE) });
-  const cell = D.el("div", { class: "cell clamp2", "data-field": "sectors",
-                             "data-type": "sectors", "data-filter-key": "sector",
-                             "data-filter-sep": "," });
+  const cell = D.el("div", attrs || { class: "cell clamp2", "data-field": "sectors",
+                                      "data-type": "sectors", "data-filter-key": "sector",
+                                      "data-filter-sep": "," });
   cell.textContent = before;
   const plain = D.el("td", { class: "who" });
   const tr = D.el("tr", { "data-id": "7", "data-f-sector": "" },
@@ -181,6 +183,28 @@ async function main() {
     t.press(dom.cell);
     assert.strictEqual(t.pop().querySelector(".sector-pick-clear").disabled, true,
       "고른 게 없는데 [전체 해제] 가 눌린다");
+  }
+
+  // ── 6. 소분류만 고르는 칸(IR 기업 현황 `소분류` · 과제 185) ──────────────
+  {
+    const dom = build("생성형AI / 사내 메모", {
+      class: "cell clamp2", "data-field": "sector_minor", "data-type": "sectors",
+      "data-minors-only": "", "data-filter-key": "minor" });
+    const t = run(dom);
+    t.press(dom.cell);
+    assert.deepStrictEqual(t.boxes().map((b) => b.value),
+      ["사내 메모", "AI SaaS", "생성형AI", "로봇", "반도체"],
+      "대분류가 체크 칸으로 섰거나 `/` 로 가른 옛 값이 안 보인다");
+    assert.deepStrictEqual(
+      t.pop().querySelectorAll(".sector-pick-title").map((h) => h.textContent),
+      ["AI·SaaS·데이터", "딥테크·제조"], "대분류 머리글이 안 섰다");
+    assert.strictEqual(t.box("생성형AI").checked, true, "적혀 있던 소분류가 꺼진 채로 섰다");
+    assert.strictEqual(t.box("사내 메모").checked, true, "목록 밖 옛 값이 꺼진 채로 섰다");
+    t.toggle("로봇");
+    dom.plain.fire("pointerdown");
+    await flush();
+    assert.strictEqual(t.sent[0].body.sector_minor, "생성형AI, 사내 메모, 로봇",
+      "고른 소분류가 쉼표로 안 이어졌다");
   }
 
   console.log("sector_picker_test: ok");

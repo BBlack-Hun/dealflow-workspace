@@ -1,0 +1,22 @@
+{#
+  자동 발송 알림. **밑틀이 부른다**(`base.html`) — 띄울지 · 무엇을 적을지는 서버가
+  정한다(`services/automation_runner.alert_for`). 여기는 받은 값을 그리기만 한다.
+
+  로그인한 사람이 자동화의 **보내는 계정**(또는 그 계정이 맡긴 발송기의 주인)일 때만
+  뜬다 — 그 PC 의 카톡 · 발송기를 켜 두게 하려는 창이다. [확인] 으로 닫으면 그 단계는
+  다시 안 뜬다(`agent_badge.js` 가 쿠키에 `data-key` 를 적는다). 스크립트가 어긋나도
+  닫히기는 한다(`method="dialog"`) — 다른 화면에서 또 뜰 뿐이다.
+#}
+<dialog open class="auto-alert" aria-labelledby="auto-alert-title" data-testid="auto-alert"
+        data-key="{{ auto_alert.key }}">
+  <div class="guard-modal">
+    <p class="guard-emoji" aria-hidden="true">{% if auto_alert.level == 'urgent' %}⚠️{% else %}⏰{% endif %}</p>
+    <h2 class="guard-title" id="auto-alert-title">{{ auto_alert.title }}</h2>
+    {% if auto_alert.body %}<p class="guard-body">{{ auto_alert.body }}</p>{% endif %}
+    <a class="primary-btn guard-go" href="{{ auto_alert.href }}">자세히 보기</a>
+    <form method="dialog" class="agent-update-later">
+      <span class="hint">확인하면 이 알림은 다시 뜨지 않습니다.</span>
+      <button type="submit" class="linkbtn">확인</button>
+    </form>
+  </div>
+</dialog>

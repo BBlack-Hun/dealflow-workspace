@@ -8,6 +8,8 @@
 3. 범위 — 팀원은 제 것만(`member` 를 붙여 와도), 관리자는 팀 전체가 기본, 팀원 화면으로
    보는 중이면 그 팀원. 오른쪽 팀원 고르개는 없다. 투자컨설턴트는 못 연다.
 4. 탭 차례 `업무 보고 | IR 미팅진행 리스트 | 매출예상리스트` · 빈 상태 안내.
+5. #184 — `연간`(그 해 전부, 지난 기록은 달 차례) · `후속라운드` = 이어 둔 IR 기업의
+   `투자라운드` · `미팅결과` 는 끝난 제 미팅만 눌러 고른다(미팅 후기와 같은 값 · 같은 길).
 
 이름 · 회사는 전부 지어낸 것이다(공개 저장소).
 """
@@ -30,7 +32,7 @@ def data(db, users):
     from app.models import ContactColumn, IrCompany, Meeting, SheetOwner, VcContact
     from app.services import contact_columns as cc
 
-    company = IrCompany(name="샘플애그", raise_target="5-10억 사이")
+    company = IrCompany(name="샘플애그", raise_target="5-10억 사이", series="Pre-A")
     mine = VcContact(user_id=users["u1"].id, name="홍길동", title="심사역", firm="가나다벤처스",
                      source_sheet=SHEET)
     theirs = VcContact(user_id=users["u2"].id, name="김철수", firm="라마바파트너스",
@@ -174,3 +176,36 @@ def test_tab_order_and_empty_state(client, data):
     assert "앱에 잡힌 미팅이 없습니다." in html
     res = c.get("/report/meetings?month=2026-13")                  # 손으로 고친 주소도 500 이 아니다
     assert res.status_code == 200
+
+
+# --- 5. 연간 · 후속라운드 · 미팅결과 (#184) ------------------------------------
+
+def test_year_view_lists_the_whole_year(client, db, users, data):
+    from app.services import meeting_calendar
+
+    rows = meeting_calendar.listing(db, users["u1"].id, 2026, None)
+    assert [r["company"] for r in rows] == [
+        "예정앞기업", "예정뒤기업", "십일월기업", "완료늦은기업", "샘플애그"]
+    assert rows[-1]["series"] == "Pre-A" and rows[0]["series"] == ""   # 안 이은 미팅은 빈칸
+    memos = meeting_calendar.memo_rows(db, users["u1"].id, 2026, None, TODAY)
+    assert [r["column"] for r in memos] == ["9월 미팅", "10월 미팅"]       # 달 차례
+    assert meeting_calendar.memo_rows(db, users["u1"].id, 2025, None, TODAY) == []
+
+    html = _login(client).get("/report/meetings?span=year&year=2026").text
+    assert "2026년 IR 미팅" in html and "십일월기업" in html and "9/3 샘플나 미팅" in html
+    assert "취소된기업" not in html and "남의기업" not in html
+    assert '<option value="/report/meetings?span=year&year=2026"' in html
+    assert re.search(r'class="chip active"\s+href="/report/meetings\?span=year&year=2026">연간', html)
+
+
+def test_columns_renamed_and_outcome_pickable_on_own_done_rows(client, db, users, data):
+    users["u1"].role = "admin"
+    db.commit()
+    html = _login(client).get("/report/meetings?month=2026-10").text   # 팀 전체
+    assert ">미팅날짜</th>" in html and ">미팅결과</th>" in html and ">후속라운드</th>" in html
+    assert "Pre-A" in html
+    assert 'data-inline-url="/api/meetings"' in html
+    # 끝난 제 미팅 둘만 고르는 칸 — 예정 · 남의 미팅은 글자로 둔다.
+    assert html.count('data-field="outcome"') == 2
+    assert 'data-choices="투자 의사 없음,투자 보류,투자 검토 진행"' in html
+    assert "js/inline_edit.js" in html

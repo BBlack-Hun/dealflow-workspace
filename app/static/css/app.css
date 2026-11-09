@@ -2877,10 +2877,12 @@ a.guard-go:hover { background: #1e4fd0; text-decoration: none; }
 /* 옛 발송기 알림(`_agent_update.html`). `<dialog open>` 자체가 뒷막이다 — 닫히면
    (`open` 이 빠지면) 뒷막도 함께 사라지고 좌측 메뉴도 다시 밝아진다. 안 상자는
    위 `.guard-modal` 그대로, 위아래 순서도 같다(뒷막 39 · 창 40). */
-.agent-update { position: fixed; inset: 0; z-index: 39; width: auto; height: auto;
+/* 자동 발송 알림(`_auto_alert.html`)도 같은 모양이다. */
+.agent-update, .auto-alert { position: fixed; inset: 0; z-index: 39; width: auto; height: auto;
   max-width: none; max-height: none; margin: 0; padding: 0; border: 0;
   background: rgba(16,21,29,.28); }
-.layout:has(.agent-update[open]) .sidebar { filter: brightness(.45); }
+.layout:has(.agent-update[open]) .sidebar,
+.layout:has(.auto-alert[open]) .sidebar { filter: brightness(.45); }
 .agent-update-list { text-align: left; font-size: 13px; margin: 10px 0 0; padding-left: 20px; }
 /* [오늘 하루 보지 않기] 는 왼쪽, [나중에] 는 오른쪽 — 한 줄이다. */
 .agent-update-later { margin: 12px 0 0; display: flex; align-items: center;
@@ -3260,6 +3262,8 @@ a.primary-btn[aria-disabled="true"] { background: #b8c4d8; cursor: not-allowed; 
 .sector-pick-head { width: 100%; font-size: 11px; color: var(--amber); }
 .sector-pick-item { font-size: 12px; white-space: nowrap; cursor: pointer; }
 .sector-pick-item.major { width: 100%; font-weight: 700; }
+/* 소분류만 고르는 칸(IR 기업 현황 `소분류` · 과제 185)의 대분류 — 고를 수 없는 머리글이다. */
+.sector-pick-title { width: 100%; font-size: 12px; font-weight: 700; }
 .cell-pop-choices.sector-pop { display: block; max-height: 260px; }
 .sector-pick-toggle { margin-top: 4px; }
 .sector-pick-clear { align-self: flex-start; padding: 0; }

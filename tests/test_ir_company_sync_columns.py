@@ -86,11 +86,14 @@ def test_화면에_칸과_필터가_선다(logged_in, db, company):
 def test_엑셀_두_벌에_다_실린다(logged_in, db, company, u1_admin):
     company.quote_attached, company.kakao_joined, company.region = "O", "X", "부산"
     db.commit()
+    from app.routers.data_io import COMPANY_HEADERS
+
     head, rows = _sheet(logged_in.get("/api/export/companies.xlsx"))
     # 옛 IR 엑셀은 끝에 붙인다(결정 9) — 받아 쓰던 수식의 칸이 안 밀린다. 뒤에 성공보수율(0119) ·
-    # 계약년월(0129)이 차례로 붙었다.
-    assert head[-5:-2] == ["지역", "견적서 첨부 여부", "카톡 연결 여부"], head
-    assert rows[0][-5:-2] == ["부산", "O", "X"]
+    # 계약년월(0129)이 차례로 붙었다. 그 뒤는 옛 머리글에 없는 화면 칸이다(#192).
+    n = len(COMPANY_HEADERS)
+    assert head[n - 5:n - 2] == ["지역", "견적서 첨부 여부", "카톡 연결 여부"], head
+    assert rows[0][n - 5:n - 2] == ["부산", "O", "X"]
     head, rows = _sheet(logged_in.get("/api/export/companies-view.xlsx"))
     assert rows[0][head.index("견적서 첨부 여부")] == "O"
     assert rows[0][head.index("카톡 연결 여부")] == "X"
@@ -142,7 +145,10 @@ def test_성공보수율은_0118_다음_빈칸_칸이고_수정창_표_엑셀에
     assert logged_in.get(f"/api/companies/{company.id}").json()["success_fee"] == "3%"
     html = logged_in.get("/companies").text
     assert 'id="f-success_fee"' in html and 'data-field="success_fee"' in html
+    from app.routers.data_io import COMPANY_HEADERS
+
     head, rows = _sheet(logged_in.get("/api/export/companies.xlsx"))
-    assert head[-2] == "성공보수율" and rows[0][-2] == "3%"       # 옛 엑셀은 끝에(결정 9) — 그 뒤 계약년월(0129)
+    n = len(COMPANY_HEADERS)       # 옛 엑셀은 끝에(결정 9) — 그 뒤 계약년월(0129) · 화면 칸(#192)
+    assert head[n - 2] == "성공보수율" and rows[0][n - 2] == "3%"
     head, rows = _sheet(logged_in.get("/api/export/companies-view.xlsx"))
     assert rows[0][head.index("성공보수율")] == "3%"

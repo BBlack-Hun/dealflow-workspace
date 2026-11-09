@@ -352,7 +352,7 @@ def test_a1_groups_reach_every_spelling(db, users, spread):
                 for i in db.execute(select(SendItem)).scalars().all()}
 
     series_a = {spread[k].id for k in ("hong", "kim", "park", "lee", "choi")}
-    assert run(datetime(2026, 10, 15, 9, 0)) == series_a          # 기본 갈래 · 3주차 목요일
+    assert run(datetime(2026, 10, 13, 9, 0)) == series_a          # 기본 갈래 · 2주차 화요일
     runner.save_params(db, automation.SOURCING_REMIND,
                        {"groups": "M&A   찾는 투자사", "weeks": "4",
                         "weekday": "목", "time": "11:00"})

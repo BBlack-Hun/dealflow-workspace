@@ -280,6 +280,34 @@ def manual_sourcing_remind(db: Session, sourcing_contact_id: Optional[int],
     return ""
 
 
+def manual_sourcing_invite(db: Session, sourcing_contact_id: Optional[int]) -> str:
+    """사람이 이 분께 **참여 안내(처음)** 를 보냈거나 보내는 중이면 그 사유 — **기간 없이.**
+
+    참여 제안 자동화(#196)는 한 분께 한 번이다. 손으로 먼저 보냈으면(`참여` 칸이
+    `물어보는 중` 으로 바뀌기 전 — 큐에 서 있거나 보내는 중 — 포함) 자동으로 또
+    보내지 않는다. 처음 안내는 잡 종류 `sourcing_intro` 에 문구(`topic`)가 빈 회차다
+    (`sourcing_sync.INVITE_JOB_KIND` — 리마인드 · Series A 딜 공유는 문구가 찬다).
+    만들어 두고 안 누른 목록(`draft`)의 대기 건은 안 센다 — 아무것도 안 나갔다.
+    """
+    from . import sourcing_sync
+
+    if not sourcing_contact_id:
+        return ""
+    sent = db.execute(
+        select(func.max(func.coalesce(SendItem.sent_at, SendItem.created_at)))
+        .join(SendJob, SendJob.id == SendItem.job_id)
+        .where(SendItem.sourcing_contact_id == sourcing_contact_id,
+               SendJob.kind == sourcing_sync.INVITE_JOB_KIND,
+               or_(SendJob.topic.is_(None), SendJob.topic == ""),
+               or_(SendItem.status.in_(GONE_ITEMS),
+                   and_(SendItem.status == "pending", SendJob.status.in_(RELEASED_JOBS))),
+               SendItem.id.notin_(auto_items()))
+    ).scalar()
+    if sent:
+        return f"{PREFIX} — {_md(sent)} 에 손으로 보낸 참여 안내가 있습니다(보내는 중 포함)"
+    return ""
+
+
 def count_in(lines: Iterable[str]) -> int:
     """사유 목록에서 중복 막기로 뺀 것의 수."""
     return sum(1 for line in lines if PREFIX in (line or ""))
