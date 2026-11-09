@@ -8,11 +8,20 @@ echo   dealflow agent - SETUP
 echo ============================================
 echo.
 
-where python >nul 2>nul
-if errorlevel 1 (
+REM Pick the Python to use. "where python" is not enough: the Microsoft Store
+REM alias (WindowsApps\python.exe) is found but is not a real Python, and a
+REM python.org install without "Add python.exe to PATH" has only the py launcher.
+set "PY="
+python --version 2>&1 | findstr /b /c:"Python 3" >nul && set "PY=python"
+if not defined PY (
+  py -3 --version 2>&1 | findstr /b /c:"Python 3" >nul && set "PY=py -3"
+)
+if not defined PY (
   echo [ERROR] Python not found.
   echo         Install from https://www.python.org/downloads/
   echo         IMPORTANT: check "Add python.exe to PATH" during install.
+  echo         Already installed? Turn off the Store alias: Settings ^> Apps ^>
+  echo         Advanced app settings ^> App execution aliases ^> python.exe, python3.exe
   echo.
   pause
   exit /b 1
@@ -20,12 +29,12 @@ if errorlevel 1 (
 
 REM Show which Python is installed. Install failures are usually a version
 REM mismatch, so a screenshot of this window should reveal the version.
-for /f "delims=" %%v in ('python --version 2^>^&1') do echo       using %%v
+for /f "delims=" %%v in ('%PY% --version 2^>^&1') do echo       using %%v  [%PY%]
 echo.
 
 echo [1/2] creating virtual environment...
 if not exist ".venv-agent" (
-  python -m venv .venv-agent
+  %PY% -m venv .venv-agent
   if errorlevel 1 ( echo [ERROR] venv failed & pause & exit /b 1 )
 ) else (
   echo       already exists - skipped

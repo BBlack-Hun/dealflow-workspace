@@ -41,7 +41,23 @@ def test_윈도우_발송기에_필요한_것이_다_있다():
         assert need in names, f"{need} 가 빠졌습니다"
 
 
+def _setup_bat() -> str:
+    return (ROOT / "packaging" / "windows" / "setup.bat").read_text(encoding="utf-8")
+
+
 def test_설치_창이_파이썬_판을_보여_준다():
     """설치가 실패하면 대개 판 탓이다. 찍어 보낸 화면에서 판을 읽을 수 있어야 한다."""
-    bat = (ROOT / "packaging" / "windows" / "setup.bat").read_text(encoding="utf-8")
-    assert "python --version" in bat
+    assert "%PY% --version" in _setup_bat()
+
+
+def test_설치는_py_런처로도_파이썬을_찾는다():
+    """`where python` 만 보면 두 PC 에서 막힌다(실기) — PATH 에 안 넣은 python.org
+    설치는 py 런처만 있고, Microsoft Store 별칭은 `where` 를 통과하지만 진짜 파이썬이
+    아니다. 판 번호를 내는지로 고르고, 고른 것으로 venv 를 만든다."""
+    bat = _setup_bat()
+    commands = [ln.strip().lower() for ln in bat.splitlines()
+                if not ln.strip().lower().startswith("rem")]
+    assert not any(c.startswith("where python") for c in commands)
+    assert 'set "PY=py -3"' in bat
+    assert "%PY% -m venv" in bat
+    assert "App execution aliases" in bat
