@@ -1396,6 +1396,51 @@ def add_company(db: Session, user: User, body: CompanyIn) -> ConsultingCompany:
     return company
 
 
+def add_for_assignee(db: Session, company: IrCompany,
+                     before: Optional[str]) -> Optional[ConsultingCompany]:
+    """IR `담당자` 가 **투자컨설턴트 계정 이름으로 바뀌면** 그 사람 표에 이어진 줄을 세운다(#201).
+
+    투자컨설턴트는 IR 기업 현황을 못 연다(`deps.CONSULTANT_PATHS`) — 맡은 기업을 볼 자리가
+    이 표뿐인데, IR 에서 담당을 넘겨도 이 표에는 아무것도 안 생겼다. 지금 맡은 사람
+    (`pipeline.current_assignee` — 넘긴 이력의 마지막 이름)이 **켜져 있는 투자컨설턴트 계정
+    하나의 표시 이름과 같을 때만** 세운다. 팀원 계정 이름은 안 본다 — 그 사람들은 IR 화면에서
+    같은 기업을 이미 본다.
+
+    · 지금 맡은 사람이 **바뀐 저장**에서만 — 다른 칸을 고친 저장마다 세우면 오래전에 넘긴
+      기업이 하나씩 되살아난다(컨설턴트가 지운 줄일 수 있다).
+    · 그 기업에 이어진 줄이 어느 탭에든 있거나, 안 이은 줄 중 기업명이 같은 줄이 있으면
+      안 세운다 — 한 기업이 두 줄이 된다(그 줄은 `/ir-link` 에서 사람이 잇는다).
+    · 세우는 길은 [기업 추가] 그대로(`add_company` — 첫 탭 맨 아래)이고 주인만 그 컨설턴트다.
+      번호로 이으므로(`ir_link_auto=0`, `save_consulting` 과 같다) 대표자명 · 연락처 같은
+      잇는 칸의 빈칸은 커밋할 때 IR 값으로 채워진다(`company_sync`).
+
+    커밋은 부르는 쪽. 세운 줄을 돌려준다(안 세웠으면 None).
+    """
+    from ..services import edit_log
+    from ..services.ir_link import compare_key, row_name
+    from ..services.pipeline import current_assignee
+
+    who = current_assignee(company.assignee_name)
+    if not who or who == current_assignee(before):
+        return None
+    found = db.execute(select(User).where(
+        User.role == "consultant", User.is_active == 1, User.name == who)).scalars().all()
+    if len(found) != 1:
+        return None
+    if company.id is None:
+        db.flush()
+    key = compare_key(company.name)
+    for row in db.execute(select(ConsultingCompany)).scalars():
+        if row.ir_company_id == company.id or (
+                not row.ir_company_id and key and compare_key(row_name(row)) == key):
+            return None
+    row = add_company(db, found[0], CompanyIn(company_name=company.name))
+    row.ir_company_id = company.id
+    row.ir_link_auto = 0
+    edit_log.always(row)
+    return row
+
+
 @router.patch("/api/consulting/{company_id}")
 def update_company(company_id: int, body: CompanyIn,
                    db: Session = Depends(get_db),
