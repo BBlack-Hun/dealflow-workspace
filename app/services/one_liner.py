@@ -329,6 +329,7 @@ def compose_one_liner(company, revenue=None) -> str:
 # 기본이라 안 덮고, 사람이 안 쓴 칸(빈칸 · 조합값 그대로)만 따라온다.
 #
 #   · 재료를 고쳐 저장, 칸이 비었다            → 새 조합값이 들어간다
+#   · IR 기업 — 어느 칸을 저장하든, 칸이 비었다 → 조합값이 들어간다(`_FILL_EMPTY`)
 #   · 재료를 고쳐 저장, 칸 = 고치기 전 조합값   → 새 조합값으로 바뀐다
 #   · 재료를 고쳐 저장, 칸 = 사람이 쓴 글       → **그대로 둔다**
 #   · 같은 저장에서 칸을 비웠다                → 빈 채로 둔다(비우는 것도 사람의 결정)
@@ -413,6 +414,10 @@ _PITCH = {IrCompany: "one_liner", SeriesACompany: "deal_pitch"}
 #: Series A 딜 공유는 분야 · 투자라운드를 따로 싣는다(`series_a_share.block`) — 그 표는 매출 ·
 #: 금액만으로 만든다(그 표에 기업 한줄 소개 칸이 없다).
 _HEAD = {IrCompany: "business_desc"}
+#: 문구가 비어 있으면 **어느 저장에서든** 채우는 표 — 재료를 고친 저장만 기다리면, 재료가
+#: 다 들어온 뒤로 담당자 · 지역 같은 다른 칸만 고친 줄은 끝내 빈 채로 남는다(11/09 운영
+#: 빈 칸 13곳이 그랬다). Series A 는 예전 그대로 재료를 고친 저장에서만 따라온다.
+_FILL_EMPTY = {IrCompany}
 #: 조합 재료 — 매출 칸은 표에 판 해 전부(`_sources`).
 _PLAIN = ("business_desc", "funding_total", "raise_target", "pre_value", "competitiveness",
           "revenue_recent")
@@ -439,7 +444,8 @@ def _before(obj, new: bool):
 
 
 def follow(session) -> None:
-    """flush 직전 — 재료가 바뀐 줄의 문구를 따라 고친다. 규칙은 위 `따라 고치기` 칸.
+    """flush 직전 — 재료가 바뀐 줄의 문구를 따라 고치고, 빈 IR 문구는 채운다. 규칙은 위
+    `따라 고치기` 칸.
 
     `company_sync.before_flush` **뒤에** 걸린다(`app/models.py`) — 이어진 줄에서 따라 고친
     매출 · 금액도 여기서 읽힌다. 수정 로그(`edit_log`)보다는 앞이라 고친 문구가 함께 남는다.
@@ -452,18 +458,36 @@ def follow(session) -> None:
         if head and not _clean(getattr(obj, head)):
             continue          # 기업 한줄 소개 없이 숫자만 든 IR 문구는 안 만든다(`_HEAD`)
         layouts = _layouts(obj)
-        before = _before(obj, obj in session.new)
         now = compose_one_liner(obj, layouts[0])
-        if not now or now == compose_one_liner(before, layouts[0]):
-            continue          # 만들 것이 없거나(빈 줄로 안 지운다) 재료가 안 바뀌었다
+        if not now:
+            continue          # 만들 것이 없다(빈 줄로 안 지운다)
+        new = obj in session.new
         text = _text(getattr(obj, field))
-        if not text:
-            history = get_history(obj, field)
-            if history.deleted and _text(history.deleted[0]):
-                continue      # 같은 저장에서 사람이 비웠다
-        elif text not in _auto_texts(before, layouts):
+        if not text and not new and _cleared(obj, field):
+            continue          # 같은 저장에서 사람이 비웠다
+        if not text and type(obj) in _FILL_EMPTY:
+            setattr(obj, field, now)   # 빈 IR 문구는 재료가 안 바뀐 저장에서도 채운다
+            continue
+        before = _before(obj, new)
+        if now == compose_one_liner(before, layouts[0]):
+            continue          # 재료가 안 바뀌었다
+        if text and text not in _auto_texts(before, layouts):
             continue          # 사람이 쓴 글 — 안 덮는다
         setattr(obj, field, now)
+
+
+def _cleared(obj, field: str) -> bool:
+    """이 저장에서 문구 칸에 빈 값을 넣었나 — 글이 있던 칸이거나, 전 값을 모르는 칸이면.
+    **이미 있던 줄만** 묻는다(새 줄은 전 값이 없어 늘 '모름' 으로 나온다).
+
+    전 값을 모르는 것은 만료된 줄에 바로 빈 값을 넣은 경우다. 비운 것인지 알 수 없어
+    **비운 쪽으로** 본다(채우는 것은 다음 저장으로 미뤄도 되지만, 사람이 비운 칸을 다시
+    채우면 되돌릴 수 없다). 원래 빈 칸에 빈 값을 다시 넣은 것은 바뀐 것이 아니다.
+    """
+    history = get_history(obj, field)
+    if not history.added:
+        return False
+    return not history.deleted or bool(_text(history.deleted[0]))
 
 
 def apply_one_liner(company) -> str:

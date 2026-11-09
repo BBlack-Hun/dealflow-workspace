@@ -250,3 +250,84 @@ def test_IR_의_27년_예상매출이_이어진_Series_A_줄로_따라간다(log
     assert row.revenue_2027 == "8억"
     assert row.deal_pitch == "매출 27년(예상) 8억"
     assert _get(db, IrCompany, company.id).one_liner == "사람이 쓴 IR 소개"
+
+
+# ── 빈 문구는 어느 저장에서든 채운다(11/09) ───────────────────────────────────
+#
+# 재료가 다 들어온 뒤로 담당자 · 지역 같은 다른 칸만 고친 줄은 '재료를 고친 저장' 을 끝내
+# 못 만나 빈 채로 남았다(운영 13곳). 이제 IR 문구가 비어 있으면 어느 칸을 저장하든 채운다.
+
+def test_빈_문구는_재료가_아닌_칸만_고쳐도_채워진다(logged_in, db, company):
+    from app.models import IrCompany
+
+    r = logged_in.patch(f"/api/companies/{company.id}", json={"note": "다음 주 통화"})
+    assert r.status_code == 200, r.text
+    assert r.json()["one_liner"] == "물류 최적화 SaaS | 매출 2억"
+    assert r.json()["one_liner_applied"] is True
+    assert _get(db, IrCompany, company.id).one_liner == "물류 최적화 SaaS | 매출 2억"
+
+
+def test_스크립트가_ORM_으로_다른_칸만_고쳐도_채워진다(db, company):
+    """화면 밖 길(가져오기 · 일괄 스크립트)도 같은 flush 를 지난다."""
+    from app.models import IrCompany
+
+    row = _get(db, IrCompany, company.id)
+    row.region = "서울"
+    db.commit()
+    assert _get(db, IrCompany, company.id).one_liner == "물류 최적화 SaaS | 매출 2억"
+
+
+def test_손으로_쓴_문구는_다른_칸을_고쳐도_그대로다(logged_in, db, company):
+    from app.models import IrCompany
+
+    company.one_liner = "사람이 다듬어 쓴 소개"
+    _commit(company)
+    logged_in.patch(f"/api/companies/{company.id}", json={"note": "다음 주 통화"})
+    assert _get(db, IrCompany, company.id).one_liner == "사람이 다듬어 쓴 소개"
+
+
+def test_같은_저장에서_비우면_다른_칸만_고쳐도_빈_채로_둔다(logged_in, db, company):
+    from app.models import IrCompany
+
+    company.one_liner = "사람이 다듬어 쓴 소개"
+    _commit(company)
+    logged_in.patch(f"/api/companies/{company.id}", json={"one_liner": "", "note": "메모"})
+    assert not (_get(db, IrCompany, company.id).one_liner or "")
+
+
+def test_전_값을_모르는_채로_비우면_비운_것으로_본다(db, company):
+    """만료된 줄에 바로 빈 값을 넣으면 전 값을 모른다 — 사람이 비운 칸일 수 있어 안 채운다."""
+    from app.models import IrCompany
+
+    company.one_liner = "사람이 다듬어 쓴 소개"
+    _commit(company)
+    row = _get(db, IrCompany, company.id)
+    db.expire(row)
+    row.one_liner = None
+    row.note = "메모"
+    db.commit()
+    assert not (_get(db, IrCompany, company.id).one_liner or "")
+
+
+def test_기업_한줄_소개가_없으면_다른_칸을_고쳐도_안_만든다(logged_in, db):
+    from app.models import IrCompany
+
+    row = IrCompany(name="샘플아자바이오", sector_major="바이오", raise_target="30")
+    db.add(row)
+    db.commit()
+    logged_in.patch(f"/api/companies/{row.id}", json={"note": "메모"})
+    assert not (_get(db, IrCompany, row.id).one_liner or "")
+
+
+def test_Series_A_빈_문구는_다른_칸만_고치면_예전처럼_비어_있다(logged_in, db):
+    """이 변경은 IR 만이다 — Series A 는 재료를 고친 저장에서만 따라온다."""
+    from app.models import SeriesACompany
+
+    row = SeriesACompany(name="샘플차카에너지", raise_target="30")
+    db.add(row)
+    db.commit()
+    row.deal_pitch = None
+    db.commit()
+    row.memo = "메모"
+    db.commit()
+    assert not (_get(db, SeriesACompany, row.id).deal_pitch or "")
