@@ -425,13 +425,22 @@ def test_hand_written_line_survives_a_startup_db_edit(logged_in, db, company):
     assert "누적투자금액 40억" in body["one_liner_suggestion"]
 
 
-def test_unrelated_edit_does_not_touch_the_line(logged_in, db, company):
-    """계약여부처럼 상관없는 칸을 고쳤는데 소개가 바뀌면 이유를 알 수 없다."""
+def test_unrelated_edit_fills_an_empty_line_but_keeps_a_written_one(logged_in, db, company):
+    """계약여부처럼 상관없는 칸만 고쳐도 **빈** 문구는 채운다(11/09 — 운영의 빈 칸 13곳이
+    그 저장을 못 만나 남았다). 사람이 쓴 문구는 상관없는 칸을 고쳐도 그대로다."""
+    company.revenue_2024 = "8.9억"
+    db.commit()
     company.one_liner = None
     db.commit()
     logged_in.patch(f"/api/companies/{company.id}", json={"contract_status": "paid"})
     db.refresh(company)
-    assert company.one_liner is None
+    assert company.one_liner == "산업용 센서 제조 | 매출 8.9억"
+
+    company.one_liner = "사람이 쓴 문구"
+    db.commit()
+    logged_in.patch(f"/api/companies/{company.id}", json={"contract_status": "none"})
+    db.refresh(company)
+    assert company.one_liner == "사람이 쓴 문구"
 
 
 def test_creating_a_company_fills_an_empty_line(logged_in, db):

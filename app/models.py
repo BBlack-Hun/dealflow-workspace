@@ -526,7 +526,8 @@ event.listen(OrmSession, "before_flush", _sync_company_links)
 
 
 def _follow_pitch(session, flush_context, instances) -> None:
-    """재료 칸이 바뀐 줄의 딜 소개 문구를 따라 고친다(과제 168 · 170 — `services/one_liner.follow`).
+    """재료 칸이 바뀐 줄의 딜 소개 문구를 따라 고치고, 빈 IR 문구는 채운다(과제 168 · 170 ·
+    11/09 — `services/one_liner.follow`).
 
     바로 위 `_sync_company_links` **뒤에** 건다 — 이어진 줄에서 따라 고친 매출 · 금액까지
     여기서 읽혀야 한다. 수정 로그보다 먼저라 고친 문구도 그 로그에 남는다.

@@ -65,7 +65,7 @@ def replica(db):
         rows[name] = row
     db.commit()
     # 새 줄은 문구가 비면 저절로 채워진다(`follow`) — 운영의 빈 칸(재료는 있고 문구만
-    # 빈 줄)을 만들려고 **재료를 안 건드리고** 다시 비운다. 재료가 안 바뀐 저장은 안 채운다.
+    # 빈 줄)을 만들려고 **재료를 안 건드리고** 다시 비운다. 같은 저장에서 비운 칸은 안 채운다.
     for i, row in enumerate(rows.values()):
         if i >= MANUAL + AUTO_LIKE:
             row.one_liner = None if i % 2 else ""
@@ -149,14 +149,20 @@ def test_빈_칸은_재료를_고치면_채워진다(logged_in, db, replica):
         assert row.one_liner and row.one_liner == compose_one_liner(row)
 
 
-def test_재료가_안_바뀐_저장은_빈_칸을_안_채운다(logged_in, db, replica):
-    """메모만 고친 저장까지 채우면 '비워 둔' 칸이 엉뚱한 때 채워진다."""
+def test_재료가_안_바뀐_저장도_빈_칸은_채운다(logged_in, db, replica):
+    """11/09 — 재료를 고친 저장만 기다리면 다른 칸만 고친 줄은 끝내 빈 채로 남았다(운영 13곳).
+    이제 IR 문구가 비어 있으면 메모만 고친 저장에서도 채운다. 사람이 쓴 문구는 그대로다."""
     from app.models import IrCompany
+    from app.services.one_liner import compose_one_liner
 
     cid = next(cid for cid, line in replica.items() if not (line or "").strip())
-    logged_in.patch(f"/api/companies/{cid}", json={"note": "메모만"})
+    manual = next(cid for cid, line in replica.items() if line and "사람이 다듬어" in line)
+    for target in (cid, manual):
+        logged_in.patch(f"/api/companies/{target}", json={"note": "메모만"})
     db.expire_all()
-    assert not (db.get(IrCompany, cid).one_liner or "")
+    row = db.get(IrCompany, cid)
+    assert row.one_liner == compose_one_liner(row) and row.one_liner
+    assert db.get(IrCompany, manual).one_liner == replica[manual]
 
 
 def test_고르면_들어간다(logged_in, db, replica):
