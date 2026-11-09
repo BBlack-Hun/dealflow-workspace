@@ -1271,6 +1271,10 @@ def create_company(body: CompanyIn, db: Session = Depends(get_db),
     # **적어 보낸 문구가 그대로 들어간다.** 문구를 비워 보내고 재료 칸을 채웠으면
     # 조합값이 들어간다(과제 168 · 170 — `one_liner.follow`, flush 에서).
     db.add(company)
+    # 담당자가 투자컨설턴트면 그 사람 표에 이어진 줄이 선다(#201 — `consulting.add_for_assignee`).
+    from .consulting import add_for_assignee  # 서로 부르는 두 라우터라 여기서 읽는다
+
+    add_for_assignee(db, company, None)
     db.commit()
     return {"id": company.id, **_one_liner_result(company, body.one_liner)}
 
@@ -1288,7 +1292,12 @@ def update_company(company_id: int, body: CompanyIn,
     # (`one_liner.follow`) — 시트 올리기 · 따라 고치기(`company_sync`)도 같은 규칙을 지나야
     # 해서다. 창이 모든 칸을 한 번에 보내도 문구 글자가 그대로면 '고친 것' 으로 안 읽힌다.
     sent = body.one_liner if "one_liner" in body.model_fields_set else company.one_liner
+    assignee_before = company.assignee_name
     _assign(company, body)
+    # 담당자를 투자컨설턴트로 넘기면 그 사람 표에 이어진 줄이 선다(#201 — `consulting.add_for_assignee`).
+    from .consulting import add_for_assignee  # 서로 부르는 두 라우터라 여기서 읽는다
+
+    add_for_assignee(db, company, assignee_before)
 
     db.commit()
     # **고친 시각을 응답에 싣는다.** 표의 `수정한 날짜` 칸이 이것으로 그 자리에서
