@@ -23,7 +23,8 @@
 `사업분야` 를 `|` 로 쪼개 표기를 세어 보면 아래가 가장 많다 — 사람이 쌓아 온
 표기가 정답이라, 새로 만드는 줄도 같은 모양이어야 섞어 놓고 봤을 때 티가 안 난다.
 
-    · 매출          `매출 13억`      (연도가 둘 이상이면 `매출 23년 A, 24년 B, 25년 C`)
+    · 매출          `매출 13억`      (연도가 둘 이상이면 `매출 23년 A, 24년 B, 25년 C` —
+                                      한줄 소개의 `매출 13억` 토막 자리에 선다, 과제 214)
     · 누적투자금액   `누적투자금액 11억`   (`누적투자 …` 보다 흔하다)
     · 투자유치       `30억 투자유치중`     (`투자유치 30억` 보다 두 배 넘게 흔하다)
     · Pre Value     `Pre Value 200억`   (대소문자는 이 모양이 가장 많다)
@@ -113,6 +114,13 @@ _SEPARATOR = re.compile(r"\s*\|\s*|\s+[Il]\s+|\s*ㅣ\s*")
 _PLACEHOLDER = re.compile(r"^[-–—·.\s]*$")
 # 금액에 단위가 적혀 있나(`8.2억` · `5천만원`) — `company_sync.UNIT` 과 같은 규칙.
 _UNIT = re.compile(r"[억만천원]")
+# 기업 한줄 소개 안의 **매출만 적힌 토막** — `매출 13억` · `매출액: 3.2억` · `25년 매출 13억` ·
+# `매출 3억(25년 기준)`. 금액 · 연도 · 단위 말고 다른 말이 섞이면(`매출 3억 흑자 전환`) 아니다
+# (과제 214 — `_swap_revenue`). 운영 사본에서 매출이 든 토막 74개 중 58개가 이 모양이다.
+_REVENUE_ONLY = re.compile(
+    r"^(?:(?:20)?\d{2}\s*년\s*)?(?:예상\s*)?매출(?:액)?(?:[\s\d.,~+\-()년월억만천백원약:]|기준|예상)*$")
+# 예상 칸 값에 사람이 적어 둔 `(예상)` · `예상` — 연도 글자(`27년(예상)`)가 이미 말한다(과제 214).
+_FORECAST_NOTE = re.compile(r"\s*\(\s*예상\s*\)|\s*예상\s*")
 
 
 def _clean(value: Optional[str]) -> str:
@@ -194,9 +202,10 @@ def _unit(value: str) -> str:
     return value if _UNIT.search(value) else (amount.phrase(value) or value)
 
 
-def _revenue_segment(company, revenue=None) -> str:
-    """`매출 …` 토막. 지난 해 칸은 **적힌 그대로**다 — 단위를 붙이거나 고치지 않는다.
-    (단위가 억으로 정해진 올해 · 내년 칸만 맨 숫자에 `억` 을 붙인다 — `ir_revenue`.)
+def _revenue_segment(written: List[Tuple[str, str]]) -> str:
+    """`매출 …` 토막 — `_revenue_written` 이 고른 해들로. 지난 해 칸은 **적힌 그대로**다 —
+    단위를 붙이거나 고치지 않는다. (단위가 억으로 정해진 올해 · 내년 칸만 맨 숫자에 `억` 을
+    붙인다 — `ir_revenue`.)
 
     - 한 해뿐   `매출 13억`
     - 여러 해   `매출 23년 2억, 24년 4억, 25년 11억, 26년 15억, 27년(예상) 30억`
@@ -232,19 +241,55 @@ def _revenue_segment(company, revenue=None) -> str:
     (되돌리고 싶어지면 이 함수만 고치면 된다. 다만 **형식을 바꾸면 예전에 자동
     으로 만들어 둔 줄이 '사람이 쓴 값' 으로 보여 더는 따라오지 않는다** — 그래서
     바꾸기 전 모양을 `ir_revenue(legacy=True)` 로 남겨 두고 함께 알아본다(`_auto_texts`).
-    과제 168 이 올해 · 내년 칸을 더할 때 테스트 사본에서 15곳이 그랬다.)
+    과제 168 이 올해 · 내년 칸을 더할 때 테스트 사본에서 15곳이 그랬다. 과제 214 가 조합
+    규칙을 바꿀 때도 같은 이유로 그 전 규칙을 `before_214` 로 남겼다.)
     """
-    written = []
-    for attr, year, unit in (ir_revenue() if revenue is None else revenue):
-        value = _text(getattr(company, attr, None))
-        if value and _is_amount(value):
-            written.append((year, _unit(value) if unit else value))
     if not written:
         return ""
     # 한 해뿐이어도 **예상**이면 연도를 붙인다 — 안 붙이면 실제 매출로 읽힌다.
     if len(written) == 1 and "예상" not in written[0][0]:
         return f"매출 {written[0][1]}"
     return "매출 " + ", ".join(f"{year} {value}" for year, value in written)
+
+
+def _revenue_written(company, revenue=None, before_214: bool = False) -> List[Tuple[str, str]]:
+    """싣는 매출 `[(연도 글자, 금액 글자)]` — 오래된 해부터, 금액이 아닌 메모는 뺀다.
+
+    예상 칸(`27년(예상)`)의 값에 사람이 `30억(예상)` 처럼 `예상` 을 또 적었으면 그 말을 뺀다 —
+    안 빼면 `27년(예상) 30억(예상)` 으로 두 번 찍힌다(과제 214 — 운영의 27년 예상 값 32개가 이 모양). 금액은 그대로다.
+    `before_214` 는 그 전 모양이다 — 그때 만든 줄을 알아보는 데만 쓴다(`_auto_texts`).
+    """
+    written = []
+    for attr, year, unit in (ir_revenue() if revenue is None else revenue):
+        value = _text(getattr(company, attr, None))
+        if not (value and _is_amount(value)):
+            continue
+        if not before_214 and "예상" in year and "예상" in value:
+            value = _FORECAST_NOTE.sub("", value, count=1).strip() or value
+        written.append((year, _unit(value) if unit else value))
+    return written
+
+
+def _swap_revenue(head: str, revenue: str) -> str:
+    """기업 한줄 소개의 **매출만 적힌 토막** 자리에 칸의 여러 해 토막을 넣는다(과제 214).
+
+    시트에서 온 한줄 소개에는 `설명 | 매출 13억 | …` 처럼 한 해짜리 매출이 따로 적혀 온 줄이
+    많다. 예전에는 '앞에서 이미 매출을 말했다' 고 보고 칸의 여러 해를 통째로 건너뛰어, 딜 소개
+    문구에 **한 해만** 실렸다 — "년매출액 딜소개문구에 모두 빠지지 않게"(과제 214). 운영에서
+    연도별 매출이 두 해 이상인 자동 문구 중 32곳이 이것 때문에 한 해뿐이었다.
+
+    · 바꾸는 것은 **매출만 적힌 토막**뿐이다(`_REVENUE_ONLY`). `작년 매출 30억을 달성한 …` 처럼
+      문장에 섞인 매출은 떼어 내면 사람이 쓴 말이 잘린다 — 예전처럼 그대로 두고 칸도 안 붙인다.
+    · 매출 토막이 둘이면 첫 자리에 하나만 선다(같은 말이 두 번 서지 않게).
+    · 부르는 쪽이 **칸에 두 해 이상**일 때만 부른다. 연도 없는 `매출 13억` 을 다른 해 한 칸
+      (`매출 9억`)으로 바꾸면 어느 해 매출인지 흐려진다.
+    """
+    parts = head.split(" | ")
+    hits = [i for i, p in enumerate(parts) if "매출" in p]
+    if not hits or not all(_REVENUE_ONLY.match(parts[i]) for i in hits):
+        return head
+    parts[hits[0]] = revenue
+    return " | ".join(p for i, p in enumerate(parts) if i not in hits[1:])
 
 
 def _eok_segment(value, template: str) -> str:
@@ -261,8 +306,11 @@ def _eok_segment(value, template: str) -> str:
     return "" if quantity is None else template.format(quantity)
 
 
-def compose_one_liner(company, revenue=None) -> str:
+def compose_one_liner(company, revenue=None, before_214: bool = False) -> str:
     """스타트업DB 칸들을 이어 붙인 `기업 한줄 소개` 한 줄.
+
+    `before_214` 는 과제 214 전 규칙(한줄 소개에 매출이 있으면 칸의 여러 해를 건너뛰고, 예상
+    칸의 `(예상)` 을 그대로 두던 모양)이다 — 그때 만든 줄을 알아보는 데만 쓴다(`_auto_texts`).
 
     **빈 칸은 토막째 빠진다.** 실데이터는 대부분 일부만 차 있어서(누적투자금액은
     344곳 중 42곳뿐이다) 자리를 비워 두면 `… | | …` 가 줄줄이 남는다.
@@ -288,12 +336,15 @@ def compose_one_liner(company, revenue=None) -> str:
     가 아니다. 여기서 계속 덧붙이는 한 이 검사는 남는다.
     """
     head = _clean(getattr(company, "business_desc", None))
+    written = _revenue_written(company, revenue, before_214)
+    revenue = _revenue_segment(written)
+    if not before_214 and len(written) >= 2 and "매출" in head:
+        head = _swap_revenue(head, revenue)   # 한줄 소개의 한 해짜리 매출 → 칸의 여러 해
     segments: List[str] = [head] if head else []
 
     # 이미 말한 내용. 사업분야에 통째로 적혀 온 줄과 겹치지 않게 한다.
     said = head
 
-    revenue = _revenue_segment(company, revenue)
     if revenue and "매출" not in said:
         segments.append(revenue)
 
@@ -382,7 +433,14 @@ def _layouts(obj) -> list:
 
 
 def _auto_texts(snapshot, layouts) -> set:
-    return {t for t in (compose_one_liner(snapshot, r) for r in layouts) if t}
+    """자동 조합 그대로로 읽는 글자들 — 칸 모양마다 지금 규칙 · 과제 214 전 규칙 둘 다.
+
+    214 전 규칙을 함께 보는 것은 그때 만든 줄이 '사람이 쓴 값' 으로 굳지 않게 하려는 것이다
+    (운영에서 한 해만 실린 자동 문구 32곳 · `(예상)` 이 두 번 찍힌 자동 문구가 그 모양이다).
+    배포 뒤 한 번 그 줄들을 새 규칙으로 다시 조합한다(`scripts/one_liner_214_recompose.py`).
+    """
+    return {t for r in layouts for old in (False, True)
+            for t in (compose_one_liner(snapshot, r, before_214=old),) if t}
 
 
 def auto_texts(company) -> set:
