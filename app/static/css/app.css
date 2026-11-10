@@ -2164,6 +2164,10 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
 .panel-title .title-actions { display: flex; flex-wrap: wrap; gap: 10px;
   justify-content: flex-end; align-items: center; }
 .panel-title .title-actions .linkbtn { white-space: nowrap; }
+/* 켜 둔 거르기 단추([반응 없는 담당자만] — #211). 켜진 채인지 단추에서 보여야
+   왜 목록이 짧은지 안다. */
+.panel-title .title-actions .linkbtn.active { background: var(--brand); color: #fff;
+  border-radius: 10px; padding: 1px 8px; }
 /* 제목도 같은 이유로 붙잡는다 — 단추 묶음이 옆에 서면서 `② 대상 담 / 당자` 로
    끊겼다. 방식을 바꾸면 이 글자가 `② 딜 소싱 대상` 으로 바뀐다(deals.js). */
 .panel-title #contact-head { white-space: nowrap; }

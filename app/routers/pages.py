@@ -113,7 +113,7 @@ def deals_page(
     # 딜소개를 보냈는데 IR 요청·미팅으로 이어지지 않은 담당자.
     # 무엇을 반응으로 보는지는 `services/no_reaction` 한 곳이다(앱 IR 요청 ·
     # 미팅 · 자료 전달 · `N월 IR 요청` 칸까지 — #200).
-    no_reaction_ids = no_reaction.ids(db, contact_rows(db, user))
+    no_reaction_ids = no_reaction.listed(db, user, contacts)
     # 딜 소싱 제안의 대상. 투자사 명단과 다른 표이고 **팀 공용**이다 —
     # 우리 딜을 같이 볼 사람이라 담당을 나눌 것이 아니다.
     #
@@ -151,6 +151,15 @@ def deals_page(
         per_bucket[name] = per_bucket.get(name, 0) + 1
     sourcing_buckets = [{"name": b["key"], "count": per_bucket[b["key"]]}
                         for b in bucket_tabs if per_bucket.get(b["key"])]
+    # 시리즈 A 갈래는 칩 둘 — `검토가능 심사역` · `참여 심사역`(#210, 딜 소싱 화면의 그 탭 칩과
+    # 같은 수). 검토가능 = 참여 안내(처음)만 받는 카드(`sourcing_invite_only` — `can_get_invite`),
+    # 참여 = 나머지(`takes_part`). 화면이 같은 셈으로 다시 센다(`deals.js` 의 `splitCount`).
+    share_key = next((b["key"] for b in bucket_tabs if series_a_share.is_share_bucket(b["key"])),
+                     series_a_share.BUCKET)
+    share_cards = [c for c in sourcing_contacts
+                   if sourcing_bucket_of.get(c.bucket, c.bucket) == share_key]
+    share_invite = sum(c.id in sourcing_invite_only for c in share_cards)
+    sourcing_split = {"invite": share_invite, "joined": len(share_cards) - share_invite}
     # 담당(우리 쪽 심사역)도 거를 수 있어야 한다 — 39명을 통째로 훑는 것과
     # 내 담당 14명만 보는 것은 다른 일이다. 많은 순으로 둔다.
     #
@@ -245,9 +254,8 @@ def deals_page(
         # 이 글을 받는 하나뿐인 갈래(`series_a_share.BUCKET` — 다른 갈래 카드는
         # 이 글에서 고를 수 없다).
         "series_a_rows": series_a_pick_rows(db),
-        "share_bucket": next((b["key"] for b in bucket_tabs
-                              if series_a_share.is_share_bucket(b["key"])),
-                             series_a_share.BUCKET),
+        "share_bucket": share_key,
+        "sourcing_split": sourcing_split,
         "share_topic": series_a_share.KIND,
         "share_label": series_a_share.LABEL,
         # 사람당 보낼 기업 수(기본 · 한도)와 그 옆 안내 — 화면이 칸을 바꾸면 같은
@@ -256,6 +264,9 @@ def deals_page(
         "share_per_person_max": series_a_share.PER_PERSON_MAX,
         "share_per_person_hint": series_a_share.per_person_hint(),
         "no_reaction_ids": no_reaction_ids,
+        # [반응 없는 담당자만] 단추에 처음부터 적는 수(#211) — 대시보드의 `반응 없는 분
+        # N명`(#213)과 같은 한 벌이다. 걸러 보면 `deals.js` 가 조건 안의 수로 고쳐 적는다.
+        "no_reaction_count": len(no_reaction_ids),
         # 메일 채널은 설정이 있어야 고를 수 있다.
         # 고를 수 있는데 나가지 않는 것이 제일 나쁘다.
         "mail": mailer.status(),

@@ -450,6 +450,11 @@
            폭 76 → 96px — 76 이면 값을 고른 뒤 `수정한` / `팀원` / `(1) ▾` 세 줄로 접혔다.
            96 이면 `수정한` / `팀원 (1) ▾` 두 줄이다(옆 매출 칸들과 같은 높이). #}
         <th style="width:96px" data-filters="editor:수정한 팀원" title="이 줄을 마지막으로 고친 팀원 — 수정 로그 기준 · 사람 손 없이 앱이 바꾼 것이 마지막이면 '자동'">수정한 팀원<div class="th-filters"></div></th>
+        {# **`수정한 팀원` 바로 오른쪽**(#209 · 11/10 팀원 요청 「수정한 팀원 오른쪽으로 담당자 컬럼
+           이동」) — 누가 마지막에 고쳤나와 누가 맡았나를 나란히 읽는다. 예전 자리는 `정책자금` 뒤였다.
+           칸 · 필터 열쇠(`assignee`) · 폭은 그대로이고 자리만 옮겼다. 엑셀(화면 그대로 · 전체 끝 칸)도
+           같은 차례다(`company_view.VIEW_HEADERS`). 시트 가져오기는 머리글 이름으로 찾아서 차례와 상관없다. #}
+        <th style="width:100px" data-filters="assignee:담당자">담당자<div class="th-filters"></div></th>
         {# ── 대표자명 · 연락처 · 이메일 · 기업 한줄 소개 (#84, 10/28 사용자 '추천대로') ──
            옛 스타트업DB 탭의 그 넷을 같은 차례 · 같은 칸 · 같은 폭(70 · 104 · 170 · 300px)으로
            세운다. 자유 글이라 필터는 안 단다. #}
@@ -534,9 +539,8 @@
         <th style="width:80px">지역</th>
         {# 예전 이름 `기보, 신보, 중진공`. 값(`기보 3억, 신보 2억`)이 이름보다 길어 폭은 값에 맞춘다. #}
         <th style="width:130px">정책자금</th>
-        <th style="width:100px" data-filters="assignee:담당자">담당자<div class="th-filters"></div></th>
-        {# 이 기업을 **몇 번** 딜 소개에 넣었나. `담당자` 바로 뒤다 — 누가 맡은
-           기업인지를 읽은 그 눈으로 "그래서 몇 번 나갔나" 를 이어 읽는다.
+        {# 이 기업을 **몇 번** 딜 소개에 넣었나. `정책자금` 바로 뒤다 — 예전에는 `담당자` 바로
+           뒤였는데, 담당자가 `수정한 팀원` 옆으로 옮겨 가며(#209) 이 칸은 제자리에 남았다.
 
            **수가 둘이다**(`6회` / `180명` — 아래 `<td>` 에서 두 줄로 선다).
            보낸 날 수만 적으면 180명짜리와
@@ -797,6 +801,8 @@
         <td class="updated-at{% if r.updated_never %} muted{% endif %}"
             title="{% if r.updated_never %}만든 뒤로 아직 고친 적이 없습니다 — 만든 시각입니다{% else %}마지막으로 고친 시각{% endif %}">{{ r.updated_at }}</td>
         <td class="updated-by{% if r.updated_never %} muted{% endif %}">{{ r.updated_by }}</td>
+        <td class="cell" data-field="assignee_name" data-type="pick"
+            data-filter-key="assignee">{{ r.assignee }}</td>
         <td class="cell" data-field="contact_name">{{ r.contact_name }}</td>
         <td class="cell" data-field="contact_phone">{{ r.contact_phone }}</td>
         <td class="cell ellipsis{% if ',' in r.contact_email %} mail-primary{% endif %}" data-field="contact_email" data-type="email"
@@ -863,8 +869,6 @@
         <td title="{{ r.guarantee }}">
           <div class="cell clamp2" data-field="guarantee" data-type="long">{{ r.guarantee }}</div>
         </td>
-        <td class="cell" data-field="assignee_name" data-type="pick"
-            data-filter-key="assignee">{{ r.assignee }}</td>
         {# **눌러 고치는 칸이 아니다**(`cell` 이 없다) — 이력에서 세어 낸 값이라
            손으로 적을 것이 없다. 짚으면 마지막 날짜와 사람 수가 뜬다.
 

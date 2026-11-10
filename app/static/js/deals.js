@@ -540,6 +540,8 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     var q = (box.value || "").trim().toLowerCase();
     var pickedOnly = onlyPicked && onlyPicked.checked;
     var shown = 0, total = 0, outside = 0;
+    // 지금 조건(검색 · 그룹) 안의 반응 없는 분 — [반응 없는 담당자만] 단추에 적는 수(#211).
+    var noreactInView = 0;
     // 지금 조건(검색 · 갈래 · 담당) 안에서 이 달 딜 받음인 사람 — 리마인드의
     // `이번 달 딜 받음 N명 제외` 가 이 수다.
     var receivedInView = 0;
@@ -587,7 +589,14 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       // 그래서 `보이는 것 = 조건에 맞는 것` 이라고 읽으면, 그룹으로 추려 놓고
       // [전체선택]을 눌렀을 때 **아까 고른 다른 그룹 사람까지 함께 켜진다** —
       // 실제 투자사에게 문구가 나가는 자리라 그 차이를 여기서 갈라 적어 둔다.
-      var matched = hit && inBucket && inAssignee && inGroup && !excluded && !covered;
+      // [반응 없는 담당자만] 을 켜 두면 반응 없는 분만 조건에 맞는다(#211). 판정은 서버가
+      // 실어 준 `data-noreact` 그대로다(`services/no_reaction`) — 여기서 다시 가리지 않는다.
+      var noreact = !!cb && cb.getAttribute("data-noreact") === "1";
+      var inNoReact = !noreactOnly || mode === "sourcing" || noreact;
+      if (noreact && hit && inBucket && inAssignee && inGroup && !excluded && !covered) {
+        noreactInView += 1;
+      }
+      var matched = hit && inBucket && inAssignee && inGroup && inNoReact && !excluded && !covered;
       var visible = (picked && !excluded) || (matched && !pickedOnly);
       card.setAttribute("data-match", matched ? "1" : "0");
       card.hidden = !visible;
@@ -596,13 +605,16 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     });
     syncReceivedNote(receivedInView);
     syncSharedNote(coveredInView, ownInView, gotInView);
+    syncNoReactBtn(noreactInView);
 
+    var noreactOn = noreactOnly && mode !== "sourcing";
     if (note) {
-      if (q || pickedOnly || bucketFilter || assigneeFilter || groupFilter) {
+      if (q || pickedOnly || bucketFilter || assigneeFilter || groupFilter || noreactOn) {
         note.hidden = false;
         note.textContent = shown + " / " + total + "명 표시 중" +
           (q ? " (검색: " + box.value.trim() + ")" : "") +
           (groupFilter ? " (그룹: " + groupFilter + ")" : "") +
+          (noreactOn ? " (반응 없음만)" : "") +
           (bucketFilter ? " (갈래: " + bucketLabel(bucketFilter) + ")" : "") +
           (assigneeFilter ? " (담당: " + assigneeFilter + ")" : "") +
           // 조건 밖인데 이미 고른 사람은 그대로 발송에 들어간다 — 숫자만
@@ -637,6 +649,26 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   // 뺀다. 그 칩을 골라 누르면 켜진다(따로 보내는 길). 이름은 서버가 실어 준다.
   var SEPARATE = (groupBar && groupBar.getAttribute("data-separate")) || "";
   var separateNote = document.getElementById("separate-note");
+
+  // ── [반응 없는 담당자만] 거르기(#211) ─────────────────────────────────────
+  // 예전에는 체크만 켜고 목록은 그대로라, 116명 사이에 흩어진 체크로는 누가 반응
+  // 없는 분인지도 몇 명인지도 알 수 없었다. 이제 누르면 **그분들만 남기고 고른다**
+  // (그룹 칩과 같은 거르기 — 고른 사람은 조건 밖이어도 계속 보인다는 규칙도 같다).
+  // 다시 누르면 거르기와 고른 것이 함께 풀린다(예전 두 번째 누름과 같다).
+  var noreactOnly = false;
+
+  // 단추 글자에 **지금 조건 안의** 반응 없는 분 수를 적는다 — 그룹으로 추리면 그 안의
+  // 수다. 누르면 골라질 사람 수와 같아야 단추를 믿고 누를 수 있다.
+  function syncNoReactBtn(count) {
+    var b = document.getElementById("select-noreact");
+    if (!b) return;
+    var on = noreactOnly && mode !== "sourcing";
+    b.textContent = "반응 없는 담당자만 · " + count + "명";
+    b.classList.toggle("active", on);
+    b.setAttribute("aria-pressed", on ? "true" : "false");
+    b.title = on ? "다시 누르면 거르기와 고른 것이 함께 풀립니다"
+                 : "반응 없는 분만 남기고 그분들을 고릅니다";
+  }
 
   function matchesGroup(card) {
     if (!groupFilter) return true;
@@ -694,9 +726,12 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     });
     // [갈래] 칩 수도 같은 셈이다(i128 — 참여 안내인데 시리즈 A 가 106 이었다). 0 이어도
     // 숨기지 않는다 — 갈래 칩은 문구도 고르므로(`schedulePreview`) 저절로 풀리면 안 된다.
+    // 시리즈 A 의 두 칩(`data-split` — #210)은 고른 글과 상관없이 그 묶음 인원이다(`splitCount`).
     if (bucketBar) bucketBar.querySelectorAll(".chip").forEach(function (c) {
       var b = c.querySelector("b"), name = c.getAttribute("data-value") || "";
-      if (b) b.textContent = name ? (perBucket[name] || 0) : all;
+      var split = c.getAttribute("data-split");
+      if (b) b.textContent = split ? splitCount(name, split)
+                                   : (name ? (perBucket[name] || 0) : all);
     });
     var chips = Array.prototype.slice.call(assigneeBar.querySelectorAll(".chip"));
     chips.slice(1).forEach(function (c) {
@@ -712,6 +747,33 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   }
   bindFilter("group-filter", function (v) { groupFilter = v; });
 
+  // ── 시리즈 A 갈래의 두 칩 — `검토가능 심사역` · `참여 심사역` (#210) ─────────────
+  //
+  // 딜 소싱 화면의 그 탭 칩(`검토가능` · `참여` — `sourcing.split_chips`)과 같은 두 묶음이다.
+  // 검토가능 = 참여 안내(처음)만 받는 카드(`data-invite-only="1"` — 서버의 `can_get_invite`),
+  // 참여 = 그 밖의 카드(`takes_part`). 화면을 연 뒤 받지 않게 된 카드(`data-out`)는 안 센다.
+  // 고른 글 · 이 달 딜 받음과 상관없이 센다 — 딜 소싱 화면의 수와 같아야 한다.
+  function splitCount(bucket, split) {
+    var n = 0;
+    var box = document.getElementById("sourcing-list");
+    (box ? box.querySelectorAll(".pick-card") : []).forEach(function (card) {
+      if ((card.getAttribute("data-bucket") || "") !== bucket) return;
+      if (card.getAttribute("data-out") === "1") return;
+      if ((card.getAttribute("data-invite-only") === "1") === (split === "invite")) n += 1;
+    });
+    return n;
+  }
+  // 그 갈래로 걸러 둔 채 [보낼 문구]를 손으로 바꾸면 켜진 칩도 그 글의 묶음으로 옮긴다 —
+  // `참여 심사역` 이 켜진 채 참여 안내 카드가 떠 있으면 무엇을 고른 것인지 모른다.
+  function syncSplitActive() {
+    if (!bucketBar) return;
+    var want = sourcingTopic === INTRO ? "invite" : "joined";
+    bucketBar.querySelectorAll(".chip[data-split]").forEach(function (c) {
+      if ((c.getAttribute("data-value") || "") !== bucketFilter) return;
+      c.classList.toggle("active", c.getAttribute("data-split") === want);
+    });
+  }
+
   // [보낼 문구] — 누르면 글이 바뀐다. 문구 고르개(종류가 다르다) · 회차명 ·
   // 미리보기가 따라오고, 리마인드면 이 달 딜 받음인 분이 빠진다.
   var topicBar = document.getElementById("sourcing-topic");
@@ -722,6 +784,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     // `참여 중 N명 … 뺐습니다` 는 참여 안내에서만 맞는 말이다.
     var held = document.getElementById("sourcing-held");
     if (held) held.hidden = sourcingTopic !== INTRO;
+    syncSplitActive();
   }
   // ── [Series A 딜 공유]로 잠깐 갔다 오면 다른 갈래 체크가 돌아온다 ──────────
   //
@@ -765,6 +828,25 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   if (topicBar) topicBar.addEventListener("click", function (e) {
     var chip = e.target.closest(".chip");
     if (chip) pickTopic(chip.getAttribute("data-value"));
+  });
+
+  // 시리즈 A 의 두 칩을 누르면 — 거르기는 위 `bindFilter` 가 이미 했다(그 갈래) — 문구를 그
+  // 묶음 것으로 바꾸고(검토가능 → 참여 안내 (처음), 참여 → 딜 발송 요청) **뜬 카드를 다 고른다**.
+  // 다른 체크는 먼저 푼다 — 누른 묶음만 고른 것이어야 요약 줄의 수가 칩을 누른 뜻과 같다.
+  // 고르는 범위는 [전체선택]과 같다(`filteredBoxes` — 검색 · 담당 칩 · 이 달 딜 받음 제외를
+  // 그대로 따른다). **보내지는 않는다** — [미리보기] · [보내기]는 사람이 누른다.
+  if (bucketBar) bucketBar.addEventListener("click", function (e) {
+    var chip = e.target.closest(".chip[data-topic]");
+    if (!chip || mode !== "sourcing") return;
+    var topic = chip.getAttribute("data-topic");
+    // 같은 글이면 다시 고르지 않는다 — `pickTopic` 은 손으로 고친 문구를 버린다.
+    if (topic !== sourcingTopic) pickTopic(topic);
+    contactCbs().forEach(function (c) { c.checked = false; });
+    parkedChecks = [];
+    applyContactFilter();
+    filteredBoxes().forEach(function (c) { c.checked = true; });
+    updateCounts();
+    applyContactFilter();   // 켠 사람은 조건과 무관하게 계속 보인다
   });
 
   var includeBox = document.getElementById("include-received");
@@ -1437,6 +1519,9 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     var noReactBtn = document.getElementById("select-noreact");
     // 소싱 명단에는 '반응' 이라는 개념이 없다 — 아직 보낸 적이 없다.
     if (noReactBtn) noReactBtn.hidden = sourcingMode;
+    // 숨는 단추의 거르기는 함께 푼다 — 켜져 있는데 안 보이는 필터가 제일 나쁘다
+    // (아래 그룹 필터와 같은 까닭).
+    if (sourcingMode) noreactOnly = false;
     if (filterBox) {
       filterBox.hidden = !sourcingMode;
       // 필터를 켜 둔 채 다른 탭으로 갔다 오면, 왜 사람이 적은지 모른다.
@@ -1977,20 +2062,35 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   });
   syncOpeningToggle();
 
-  var noreactBtn = document.getElementById("select-noreact");
-  if (noreactBtn) noreactBtn.addEventListener("click", function () {
+  // [반응 없는 담당자만] 켜기 — 반응 없는 분만 남기고 고른다. 고를 사람이 없으면 false.
+  // 단추와 대시보드에서 넘어온 주소(`?noreact=1` · #213)가 이 한 길을 지난다.
+  function noReactOn() {
     // [전체선택]과 같은 규칙이다 — 그룹으로 추려 놓았으면 그 안에서만 고른다.
     // 여기만 전체 목록을 훑으면, 추려 놓은 줄 알고 눌렀는데 다른 그룹으로
     // 문구가 나간다.
     var targets = filteredBoxes().filter(function (c) {
       return c.getAttribute("data-noreact") === "1";
     });
-    if (!targets.length) { alert("반응이 없는 담당자가 없습니다."); return; }
-    var allOn = targets.every(function (c) { return c.checked; });
+    if (!targets.length) return false;
+    noreactOnly = true;
     contactCbs().forEach(function (c) { c.checked = false; });
-    if (!allOn) targets.forEach(function (c) { c.checked = true; });
+    targets.forEach(function (c) { c.checked = true; });
     updateCounts();
-    applyContactFilter();   // 켠 사람은 조건과 무관하게 계속 보인다
+    applyContactFilter();   // 거르기를 다시 걸고 단추 글자 · 안내 줄을 맞춘다
+    return true;
+  }
+
+  var noreactBtn = document.getElementById("select-noreact");
+  if (noreactBtn) noreactBtn.addEventListener("click", function () {
+    if (noreactOnly) {
+      // 다시 누름 — 거르기와 이 단추로 고른 것을 함께 푼다.
+      noreactOnly = false;
+      contactCbs().forEach(function (c) { c.checked = false; });
+      updateCounts();
+      applyContactFilter();
+    } else if (!noReactOn()) {
+      alert("반응이 없는 담당자가 없습니다.");
+    }
   });
 
   // 후속 관리·IR 관리에서 넘어오면 방식·대상·기업을 그대로 받는다.
@@ -2106,6 +2206,11 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     if (asked && picked < asked) {
       warns.push("요청받은 기업 " + (asked - picked) + "개를 목록에서 찾지 못했습니다 — " +
         "IR 기업 현황에서 등록 상태를 확인하세요.");
+    }
+    // 대시보드의 `반응 없는 분 N명` 에서 넘어오면(#213) [반응 없는 담당자만] 을 누른 것과
+    // 같은 상태로 연다. 그 사이 반응이 와서 아무도 안 남았으면 그렇다고 말한다.
+    if (params.get("noreact") === "1" && mode !== "sourcing" && !noreactOnly && !noReactOn()) {
+      warns.push("반응 없는 담당자가 지금 대상 목록에 없습니다.");
     }
     incomingWarns = warns;
     showWarnings([]);

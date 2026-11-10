@@ -87,3 +87,37 @@ def test_remind_is_shown_as_deal_request(tab, client):
     bar = bar[:bar.index("</div>")]
     assert 'data-value="sourcing_remind">딜 발송 요청</button>' in bar
     assert "월간 리마인드" not in bar
+
+
+def _deals_split(body):
+    """딜 제안 관리 › [갈래] 줄의 시리즈 A 두 칩 → {묶음: (글자, data-topic, data-value)}."""
+    out = {}
+    for attrs, text in re.findall(r'<button ([^>]*data-split="[^"]+"[^>]*)>(.*?)</button>', body, re.S):
+        kind = re.search(r'data-split="([^"]+)"', attrs).group(1)
+        out[kind] = (re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", text)).strip(),
+                     re.search(r'data-topic="([^"]+)"', attrs).group(1),
+                     html.unescape(re.search(r'data-value="([^"]+)"', attrs).group(1)))
+    return out
+
+
+def test_deals_page_splits_series_a_into_the_same_two_counts(tab, client, db):
+    """#210 — 딜 제안 관리 › [딜 소싱 제안]의 시리즈 A 갈래가 `검토가능 심사역` · `참여 심사역`
+    칩 둘로 서고, 수가 딜 소싱 화면의 그 탭 칩(`검토가능` · `참여`)과 같다. 사람이 적은 문구 ·
+    불참여는 어느 쪽에도 안 든다. 검토가능은 참여 안내 (처음), 참여는 딜 발송 요청을 고른다."""
+    from app.models import SourcingContact
+
+    db.add(SourcingContact(bucket=SERIES_A, position=99, name="사심사", participation="11월 재연락",
+                           assignee_name="가담당"))
+    db.commit()
+    split = [text for text, _href in _links(client.get("/sourcing?tab=" + quote(SERIES_A)).text)[:2]]
+    assert split == ["검토가능 3", "참여 2"]
+    body = client.get("/deals").text
+    assert _deals_split(body) == {
+        "invite": ("검토가능 심사역 3", "sourcing_intro", SERIES_A),
+        "joined": ("참여 심사역 2", "sourcing_remind", SERIES_A),
+    }
+    bar = body[body.index('id="bucket-filter"'):]
+    bar = bar[:bar.index("</div>")]
+    # 시리즈 A 의 옛 한 칩은 두 칩으로 갈렸고, 다른 갈래 칩은 그대로다.
+    assert bar.count(f'data-value="{html.escape(SERIES_A)}"') == 2
+    assert f'data-value="{html.escape(MNA)}"' in bar

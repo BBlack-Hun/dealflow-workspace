@@ -309,10 +309,20 @@ function buildDom(people) {
     if (bucketNames.indexOf(s[2]) < 0) bucketNames.push(s[2]);
   });
   // 칩 안의 `<b>` 는 수 — 고른 글에 따라 다시 센다(`deals.js` 의 `syncAssigneeCounts`).
-  const bucketChips = [el("button", { class: "chip active", "data-value": "" }, [el("b", {})])]
-    .concat(bucketNames.map(function (b) {
-      return el("button", { class: "chip", "data-value": b }, [el("b", {})]);
-    }));
+  // 시리즈 A 갈래(`SHARE_BUCKET`)는 칩 둘이다(#210 — `deals.html`): `검토가능 심사역`
+  // (`data-split="invite"` · 참여 안내) · `참여 심사역`(`data-split="joined"` · 딜 발송 요청).
+  // 둘 다 같은 갈래 값이라 `pickBucket(SHARE_BUCKET)` 은 앞의 것(검토가능)을 누른다.
+  const bucketChips = [el("button", { class: "chip active", "data-value": "" }, [el("b", {})])];
+  bucketNames.forEach(function (b) {
+    if (b !== SHARE_BUCKET) {
+      bucketChips.push(el("button", { class: "chip", "data-value": b }, [el("b", {})]));
+      return;
+    }
+    bucketChips.push(el("button", { class: "chip", "data-value": b, "data-split": "invite",
+                                    "data-topic": "sourcing_intro" }, [el("b", {})]));
+    bucketChips.push(el("button", { class: "chip", "data-value": b, "data-split": "joined",
+                                    "data-topic": "sourcing_remind" }, [el("b", {})]));
+  });
   const bucketBar = el("div", { id: "bucket-filter" }, bucketChips);
   // 담당 칩 — 서버가 지금 담당마다 하나씩 세우고(`sourcing.assignee_chips`),
   // 탭을 열 때 다시 읽어 다시 세운다. `data-count` 는 바뀌었는지 견주는 값이다.

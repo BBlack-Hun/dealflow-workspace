@@ -90,10 +90,10 @@ PHONEISH = re.compile(r"^[0-9][0-9\s().+-]*$")
 #: 끼운다(#75 · `revenue_years.columns`). 화면과 같은지는 tests/test_ir_tab_merge.py 가 본다
 #: (`컨설팅 상태`·`컨설팅 미팅일` 은 볼 수 있는 계정에만 서서 `view_headers` 가 끼운다).
 VIEW_HEADERS = [
-    "NO", "기업명", "수신일", "수정한 날짜", "수정한 팀원", "대표자명", "연락처", "이메일",
+    "NO", "기업명", "수신일", "수정한 날짜", "수정한 팀원", "담당자", "대표자명", "연락처", "이메일",
     "기업 한줄 소개", "딜 소개 문구", "대분류", "소분류", "투자라운드",
     "특이사항 (장점)", "설립년도", "지역", "정책자금",
-    "담당자", "총 소개 횟수", "소개 발송(명)", "담당별 소개", "견적서 첨부 여부",
+    "총 소개 횟수", "소개 발송(명)", "담당별 소개", "견적서 첨부 여부",
     "미팅제공일자", "계약년월", "계약여부", "계약서 수신 여부", "성공보수율", "카톡 연결 여부", "홍보메일삭제",
     "핵심/TOP Deal", "메모", "IR 자료",
 ]
@@ -289,6 +289,8 @@ def to_cells(rows: List[dict], cols, consulting=None) -> List[list]:
         cv = None if consulting is None else consulting.get(r["id"], {})
         out.append([
             no, r["name"], r["received_at"], r["updated_at"], r["updated_by"],
+            # 담당자는 `수정한 팀원` 바로 뒤(#209) — 화면과 같은 자리.
+            r["assignee"],
             r["contact_name"], r["contact_phone"], r["contact_email"], r["business_desc"],
             r["one_liner"], r["sector_major"], r["sector_minor"],
             # 매출 · 금액 — 화면처럼 **적힌 그대로** 글자다(`amount_cell` 의 `eok`).
@@ -296,7 +298,6 @@ def to_cells(rows: List[dict], cols, consulting=None) -> List[list]:
             # 화면은 투자라운드를 **앞부분만** 보인다(`series_short` — 괄호 안 설명
             # 생략). 파일에서는 전체 값을 싣는다 — 짚어야 보이던 것이 칸에 바로 선다.
             r["series"], r["competitiveness"], r["founded_year"], r["region"], r["guarantee"],
-            r["assignee"],
             # 한 번도 안 나간 기업은 화면이 `–` 로 보인다 — 파일에서는 수 0 이다.
             r["intro_total"], r["sent_total"], owner_times_text(r["intro_by_owner"]),
             r["quote_attached"],
