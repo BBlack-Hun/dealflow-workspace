@@ -113,7 +113,7 @@ def deals_page(
     # 딜소개를 보냈는데 IR 요청·미팅으로 이어지지 않은 담당자.
     # 무엇을 반응으로 보는지는 `services/no_reaction` 한 곳이다(앱 IR 요청 ·
     # 미팅 · 자료 전달 · `N월 IR 요청` 칸까지 — #200).
-    no_reaction_ids = no_reaction.ids(db, contact_rows(db, user))
+    no_reaction_ids = no_reaction.listed(db, user, contacts)
     # 딜 소싱 제안의 대상. 투자사 명단과 다른 표이고 **팀 공용**이다 —
     # 우리 딜을 같이 볼 사람이라 담당을 나눌 것이 아니다.
     #
@@ -256,9 +256,9 @@ def deals_page(
         "share_per_person_max": series_a_share.PER_PERSON_MAX,
         "share_per_person_hint": series_a_share.per_person_hint(),
         "no_reaction_ids": no_reaction_ids,
-        # [반응 없는 담당자만] 단추에 처음부터 적는 수 — 목록에 선 사람 중 반응 없는 분(#211).
-        # 걸러 보면 `deals.js` 가 조건 안의 수로 고쳐 적는다.
-        "no_reaction_count": sum(1 for c in contacts if c.id in no_reaction_ids),
+        # [반응 없는 담당자만] 단추에 처음부터 적는 수(#211) — 대시보드의 `반응 없는 분
+        # N명`(#213)과 같은 한 벌이다. 걸러 보면 `deals.js` 가 조건 안의 수로 고쳐 적는다.
+        "no_reaction_count": len(no_reaction_ids),
         # 메일 채널은 설정이 있어야 고를 수 있다.
         # 고를 수 있는데 나가지 않는 것이 제일 나쁘다.
         "mail": mailer.status(),

@@ -132,3 +132,19 @@ def before_flush(session) -> None:
                 select(VcContact).where(VcContact.id.in_(ids),
                                         VcContact.status == STATUS_NO_RESPONSE)).scalars():
             contact.status = STATUS_ACTIVE
+
+
+def listed(db: Session, user, contacts=None) -> Set[int]:
+    """딜 제안 관리 대상 목록(`sheet_owner.recipients`)에 선 사람 중 **반응 없는 분**.
+
+    딜 제안 관리의 `반응 없음` 딱지 · [반응 없는 담당자만] 단추 수와, 대시보드의
+    `반응 없는 분 N명`(#213)이 **이 한 벌**을 읽는다. 대시보드가 `내 투자사 선호`
+    (IR 요청한 분 순위)의 바깥을 따로 세면 딜소개를 아직 안 받은 분과 미팅 · 답 옴이
+    있는 분이 섞여, 눌러 넘어간 화면과 수가 갈린다(2026-11-10 운영: 계정마다 5~41명).
+    `contacts` 는 이미 구한 대상 목록을 받는 자리다(딜 제안 관리가 넘긴다).
+    """
+    from ..routers.contacts import contact_rows   # 순환 import 를 피해 늦게 부른다
+    from .sheet_owner import recipients
+
+    shown = contacts if contacts is not None else recipients(db, user)
+    return ids(db, contact_rows(db, user)) & {c.id for c in shown}

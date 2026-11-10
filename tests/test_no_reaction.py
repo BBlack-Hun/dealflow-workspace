@@ -190,3 +190,42 @@ def test_반응_없는_담당자만_단추에_수가_적힌다(logged_in, db, us
     assert button, "[반응 없는 담당자만] 단추가 화면에 없다"
     assert button.group(1).strip() == "반응 없는 담당자만 · 2명", button.group(1)
     assert html.count('data-noreact="1"') == 2
+
+
+def test_대시보드_반응_없는_분_수는_딜제안관리와_같고_눌러_넘어간다(logged_in, db, users):
+    """대시보드 `내 투자사 선호` 는 IR 요청한 분의 순위라, 거기 한 번도 안 걸린 분이 곧
+    반응 없는 분은 아니다 — 딜소개를 아직 안 받은 분과 미팅 · 답 옴처럼 IR 요청 말고 다른
+    반응이 있는 분이 섞인다(2026-11-10 운영: 계정마다 5~41명). 그래서 대시보드는 제 집합을
+    세지 않고 딜 제안 관리와 **같은 한 벌**(`no_reaction.listed`)의 수를 적고, 누르면
+    [반응 없는 담당자만] 이 켜진 채 열린다(#213 — `?noreact=1`, `deals.js`)."""
+    from app.models import ContactActivity, Meeting, SheetOwner, VcContact
+
+    u1 = users["u1"]
+    db.add(SheetOwner(label="가 명단", user_id=u1.id))
+    today = date.today().isoformat()
+
+    def person(name, intro=True):
+        c = VcContact(user_id=u1.id, name=name, firm="가나벤처스", source_sheet="가 명단",
+                      connect_stage="connected", kakao_room_name=f"{name} 방", channel_kakao=1)
+        db.add(c)
+        db.flush()
+        if intro:
+            db.add(ContactActivity(contact_id=c.id, kind="deal_intro", content="딜소개",
+                                   happened_at=today, month=today[:7]))
+        return c
+
+    person("무반응1")
+    person("무반응2")
+    person("딜소개전", intro=False)                 # IR 요청 0건이지만 반응 없음이 아니다
+    met = person("미팅만")                          # IR 요청 0건이지만 미팅이 있다
+    db.add(Meeting(user_id=u1.id, contact_id=met.id, scheduled_at=today))
+    db.commit()
+
+    dash = logged_in.get("/dashboard").text
+    link = re.search(r'<a[^>]*href="/deals\?noreact=1"[^>]*>.*?<b>(\d+)</b>', dash, re.S)
+    assert link, "대시보드에 딜 제안 관리 [반응 없는 담당자만] 으로 넘어가는 연결이 없다"
+    deals = logged_in.get("/deals").text
+    button = re.search(r'id="select-noreact"[^>]*>반응 없는 담당자만 · (\d+)명<', deals)
+    assert link.group(1) == button.group(1) == "2", (link.group(1), button.group(1))
+    assert re.search(r'href="/deals\?noreact=1"', logged_in.get("/").text), (
+        "첫 화면(`/`)도 같은 대시보드다 — 한쪽에만 연결이 서면 안 된다")

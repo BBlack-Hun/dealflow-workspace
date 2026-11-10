@@ -2012,26 +2012,35 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   });
   syncOpeningToggle();
 
+  // [반응 없는 담당자만] 켜기 — 반응 없는 분만 남기고 고른다. 고를 사람이 없으면 false.
+  // 단추와 대시보드에서 넘어온 주소(`?noreact=1` · #213)가 이 한 길을 지난다.
+  function noReactOn() {
+    // [전체선택]과 같은 규칙이다 — 그룹으로 추려 놓았으면 그 안에서만 고른다.
+    // 여기만 전체 목록을 훑으면, 추려 놓은 줄 알고 눌렀는데 다른 그룹으로
+    // 문구가 나간다.
+    var targets = filteredBoxes().filter(function (c) {
+      return c.getAttribute("data-noreact") === "1";
+    });
+    if (!targets.length) return false;
+    noreactOnly = true;
+    contactCbs().forEach(function (c) { c.checked = false; });
+    targets.forEach(function (c) { c.checked = true; });
+    updateCounts();
+    applyContactFilter();   // 거르기를 다시 걸고 단추 글자 · 안내 줄을 맞춘다
+    return true;
+  }
+
   var noreactBtn = document.getElementById("select-noreact");
   if (noreactBtn) noreactBtn.addEventListener("click", function () {
     if (noreactOnly) {
       // 다시 누름 — 거르기와 이 단추로 고른 것을 함께 푼다.
       noreactOnly = false;
       contactCbs().forEach(function (c) { c.checked = false; });
-    } else {
-      // [전체선택]과 같은 규칙이다 — 그룹으로 추려 놓았으면 그 안에서만 고른다.
-      // 여기만 전체 목록을 훑으면, 추려 놓은 줄 알고 눌렀는데 다른 그룹으로
-      // 문구가 나간다.
-      var targets = filteredBoxes().filter(function (c) {
-        return c.getAttribute("data-noreact") === "1";
-      });
-      if (!targets.length) { alert("반응이 없는 담당자가 없습니다."); return; }
-      noreactOnly = true;
-      contactCbs().forEach(function (c) { c.checked = false; });
-      targets.forEach(function (c) { c.checked = true; });
+      updateCounts();
+      applyContactFilter();
+    } else if (!noReactOn()) {
+      alert("반응이 없는 담당자가 없습니다.");
     }
-    updateCounts();
-    applyContactFilter();   // 거르기를 다시 걸고 단추 글자 · 안내 줄을 맞춘다
   });
 
   // 후속 관리·IR 관리에서 넘어오면 방식·대상·기업을 그대로 받는다.
@@ -2147,6 +2156,11 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     if (asked && picked < asked) {
       warns.push("요청받은 기업 " + (asked - picked) + "개를 목록에서 찾지 못했습니다 — " +
         "IR 기업 현황에서 등록 상태를 확인하세요.");
+    }
+    // 대시보드의 `반응 없는 분 N명` 에서 넘어오면(#213) [반응 없는 담당자만] 을 누른 것과
+    // 같은 상태로 연다. 그 사이 반응이 와서 아무도 안 남았으면 그렇다고 말한다.
+    if (params.get("noreact") === "1" && mode !== "sourcing" && !noreactOnly && !noReactOn()) {
+      warns.push("반응 없는 담당자가 지금 대상 목록에 없습니다.");
     }
     incomingWarns = warns;
     showWarnings([]);
