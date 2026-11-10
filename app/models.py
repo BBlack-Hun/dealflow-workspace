@@ -590,6 +590,20 @@ def _forget_series_a_sharers(session, flush_context, instances) -> None:
 event.listen(OrmSession, "before_flush", _forget_series_a_sharers)
 
 
+def _clear_no_response(session, flush_context, instances) -> None:
+    """반응(IR 요청 · 미팅 · 자료 전달 · 답 옴)이 새로 적히는 분의 `상태` 가 `반응없음` 이면
+    `활발` 로 푼다 — 무엇을 하는지는 `services/no_reaction.before_flush`. 위 걸이들과 같은
+    까닭으로 여기서 건다(어느 길로 적어도 빠뜨릴 수 없다 · 수정 로그보다 먼저라 남의 줄을
+    푼 것도 그 로그에 남는다).
+    """
+    from .services import no_reaction
+
+    no_reaction.before_flush(session)
+
+
+event.listen(OrmSession, "before_flush", _clear_no_response)
+
+
 class IrCompany(TimestampMixin, Base):
     __tablename__ = "ir_companies"
 
