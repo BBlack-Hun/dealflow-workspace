@@ -757,26 +757,6 @@ def company_rows(db: Session, sent=None) -> List[dict]:
 CONSULTING_STATUS_CHOICES = ",".join((consulting_status.MANAGED, consulting_status.DROPPED,
                                       consulting_status.BACKUP))
 
-_DOTTED_DAY = re.compile(r"^(\d{4})\s*[.\-/]\s*(\d{1,2})\s*[.\-/]\s*(\d{1,2})\.?$")
-
-
-def meeting_day(text: str) -> str:
-    """`컨설팅 미팅일` 을 날짜 입력이 담을 꼴로 — 날짜뿐인 값만 `YYYY-MM-DD` 로 바꾼다(#166).
-
-    그 칸은 자유 글이라(`9/16 PM2 (화상)`) 시트에서 온 `2025.09.16` 이 가장 많다. 날짜 입력은
-    `YYYY-MM-DD` 만 담으므로 그대로 넘기면 글자 칸으로 열린다(`inline_edit.js` 의 `isDay`).
-    **저장된 글자는 안 바꾼다** — 편집창이 처음 짚을 값(`data-value`)만 이 꼴이다. 시각·말이
-    붙은 값은 그대로 돌려주어 글자 칸으로 열린다(날짜 입력에 넣으면 그 글자가 지워진다).
-    """
-    value = (text or "").strip()
-    m = _DOTTED_DAY.match(value)
-    if not m:
-        return value
-    try:
-        return datetime(int(m[1]), int(m[2]), int(m[3])).strftime("%Y-%m-%d")
-    except ValueError:
-        return value
-
 
 def progress_rows(db: Session, company_id: Optional[int] = None) -> List[ConsultingCompany]:
     """IR 기업에 이어진 투자컨설턴트 줄 중 **진행 기록을 보여 줄 줄** — 계약 탭은 뺀다.
@@ -835,8 +815,7 @@ def consulting_view(db: Session, user: User) -> dict:
         only = v["rows"][0] if len(v["rows"]) == 1 else None
         edit = None
         if only is not None and may_edit_row(db, user, only.user_id, grants=grants):
-            edit = {"id": only.id, "management": (only.management or "").strip(),
-                    "meeting": meeting_day(only.meeting_at)}
+            edit = {"id": only.id, "management": (only.management or "").strip()}
         out[k] = {"status": " · ".join(v["status"]), "meeting": " · ".join(v["meeting"]),
                   "links": len(v["rows"]), "edit": edit}
     return out

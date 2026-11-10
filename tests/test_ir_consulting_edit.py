@@ -10,6 +10,8 @@
   · 이어진 줄이 **없으면**(11/07 — "데이터가 들어가야지만 수정이 가능") 빈 칸도 열리고, 처음
     적는 순간 그 기업에 이어진 줄이 첫 탭에 선다 — 주인은 누른 사람, 수정 로그에 남는다
     (`routers/companies.save_consulting`). 값은 여전히 컨설턴트 줄 한 곳이다.
+  · `컨설팅 미팅일` 은 **글자 칸**이다(#216 · 11/10 — "직접 수기로 기입") — 투자컨설턴트 화면의
+    같은 칸처럼 `11/12 PM2 (화상)` 을 그대로 적는다. 날짜 입력은 시각 · 말을 못 담았다.
 
 값은 전부 지어낸 것이다 — 저장소가 공개다.
 """
@@ -58,17 +60,22 @@ def _cells(html: str, ir_id: int) -> list:
     return tds[at - 2:at]
 
 
-def test_meeting_day_는_날짜뿐인_값만_날짜_입력의_꼴로():
-    from app.routers.companies import meeting_day
+def test_미팅일은_글자_칸이라_시각과_말을_그대로_적는다(logged_in, db, users, setup):
+    """#216 — 운영의 미팅일은 대부분 `9/16 PM2 (화상)` 꼴이다. 날짜 입력으로는 못 적는다."""
+    from app.models import ConsultingCompany
 
-    assert meeting_day("2025.09.16") == "2025-09-16"
-    assert meeting_day("2025. 9. 6.") == "2025-09-06"
-    assert meeting_day("2025-09-16") == "2025-09-16"
-    # 시각 · 말이 붙은 값은 그대로 — 날짜 입력에 넣으면 그 글자가 지워진다.
-    assert meeting_day("9/16 PM2 (화상)") == "9/16 PM2 (화상)"
-    assert meeting_day("2025. 09. 16 PM2") == "2025. 09. 16 PM2"
-    assert meeting_day("2025.02.30") == "2025.02.30"        # 없는 날
-    assert meeting_day(None) == ""
+    row = _link(db, setup, users["u1"].id, meeting_at="")
+    _, meeting = _cells(logged_in.get("/companies").text, setup["ir"].id)
+    assert 'data-field="meeting_at"' in meeting and 'class="cell"' in meeting
+    assert 'data-type="date"' not in meeting, "미팅일이 날짜 입력으로 열린다 — 시각 · 말을 못 적는다"
+    assert "눌러서 적습니다" in meeting
+
+    r = logged_in.patch(f"/api/consulting/{row.id}", json={"meeting_at": "11/12 PM2 (화상)"})
+    assert r.status_code == 200, r.text
+    db.expire_all()
+    assert db.get(ConsultingCompany, row.id).meeting_at == "11/12 PM2 (화상)"
+    _, meeting = _cells(logged_in.get("/companies").text, setup["ir"].id)
+    assert ">11/12 PM2 (화상)</td>" in meeting and 'data-type="date"' not in meeting
 
 
 def test_자기_줄이_이어진_기업은_칸이_그_줄의_저장_주소를_들고_선다(logged_in, db, users, setup):
@@ -84,7 +91,7 @@ def test_자기_줄이_이어진_기업은_칸이_그_줄의_저장_주소를_�
     # 칸에는 갈래, 편집창은 적힌 글 그대로에서 시작한다.
     assert 'data-value="관리 중 : 미팅 완"' in status and ">관리 중</td>" in status
     assert f'data-save-url="/api/consulting/{row.id}"' in meeting
-    assert 'data-type="date"' in meeting and 'data-value="2025-09-16"' in meeting
+    assert 'data-type="date"' not in meeting, "미팅일은 글자 칸이다(#216)"
     assert ">2025.09.16</td>" in meeting, "저장된 글자는 그대로 보인다"
 
 
@@ -155,7 +162,8 @@ def test_관리자는_누구_줄이든_고친다(logged_in, db, users, setup, u1
     row = _link(db, setup, users["u2"].id, management="", meeting_at="")
     status, meeting = _cells(logged_in.get("/companies").text, setup["ir"].id)
     assert f'data-save-url="/api/consulting/{row.id}"' in status
-    assert 'title="눌러서 고릅니다"' in status and 'data-value=""' in meeting
+    assert 'title="눌러서 고릅니다"' in status
+    assert f'data-save-url="/api/consulting/{row.id}"' in meeting
 
 
 def test_이어진_줄이_둘이면_읽기만_한다(logged_in, db, users, setup):
@@ -197,7 +205,7 @@ def test_이어진_줄이_없는_기업은_빈_칸이_IR_쪽_주소를_들고_�
     url = f'data-save-url="/api/companies/{setup["ir"].id}/consulting"'
     assert url in status and url in meeting
     assert 'class="cell"' in status and 'data-type="pick"' in status and 'data-value=""' in status
-    assert 'class="cell"' in meeting and 'data-type="date"' in meeting and 'data-value=""' in meeting
+    assert 'class="cell"' in meeting and 'data-type="date"' not in meeting
     # 짚으면 어디에 줄이 생기는지 말한다 — 첫 탭(시트의 `메타`) 이름 그대로.
     first = setup["sheets"][setup["cs"].STARTUP].label
     assert f"「{first}」 탭에 이 기업 줄이 생기고" in status

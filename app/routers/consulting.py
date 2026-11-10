@@ -25,6 +25,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from pydantic import BaseModel
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .. import clock
@@ -1684,6 +1685,27 @@ def rename_sheet(kind: str = Form(""), label: str = Form(""),
     db.commit()
     return RedirectResponse(
         f"/consulting?sheet={quote(sheet.label)}", status_code=303)
+
+
+@router.post("/consulting/sheets/add", include_in_schema=False)
+def add_sheet(label: str = Form(""), db: Session = Depends(get_db),
+              user: User = Depends(get_current_user)):
+    """[+ 탭 추가](#215) — 딜 소싱의 [+ 탭 추가] 와 같은 자리 · 같은 권한(이 화면을 보는 누구나).
+
+    만드는 것은 `services/consulting_sheets.create` 한 곳이다. 만든 탭으로 연다 — 거기서
+    [기업 추가] 로 줄을 넣는다. 지우는 길은 없다(이름은 [이름 저장] 으로 고친다).
+    """
+    require_access(user)
+    try:
+        sheet = cs.create(db, label)
+        db.commit()
+    except (ValueError, IntegrityError) as exc:
+        db.rollback()
+        # IntegrityError — 같은 열쇠를 두 사람이 거의 동시에 만들었다(유일 조건).
+        why = str(exc) if isinstance(exc, ValueError) else "잠시 뒤 다시 만들어 주세요"
+        return RedirectResponse(f"/consulting?msg={quote(why)}", status_code=303)
+    return RedirectResponse(f"/consulting?sheet={quote(sheet.label)}"
+                            f"&msg={quote(sheet.label)}+탭을+만들었습니다", status_code=303)
 
 
 @router.post("/consulting/columns", include_in_schema=False)
