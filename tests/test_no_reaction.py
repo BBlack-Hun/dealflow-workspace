@@ -105,3 +105,54 @@ def test_리마인드_답옴과_달_없는_IR요청_칸도_반응이다(db, user
     assert got == {stopped.id, waiting.id, called.id}, (
         "리마인드 [답 옴] · 앱이 반응으로 멈춘 리마인드 · 달 없는 `IR 요청` 칸은 반응이고, "
         "손으로 멈춘 리마인드 · 미팅 안내전화 칸은 반응이 아니다")
+
+
+def test_반응이_적히면_상태의_반응없음이_풀린다(db, users):
+    """`상태` 칸의 `반응없음` 은 사람이 상세에서 고른 값이라 반응이 와도 그대로 남았다.
+    IR 관리의 담당자 고르기가 그 값을 `[반응없음]` 꼬리표로 붙여, IR 요청을 여러 번 한
+    분이 반응없음으로 보였다(2026-11-10 운영: 상태 반응없음 100명 중 23명).
+
+    반응이 적히면 — 어느 길로 적든 — `반응없음` 이 `활발` 로 풀린다. 딜소개만 나간
+    분은 그대로이고, `검토중단` 은 반응과 상관없는 사람의 결정이라 안 건드린다.
+    """
+    from app.models import ContactActivity, IrRequest, Meeting, SendSequence, VcContact
+    from app.services import cadence, sheet_owner
+
+    u1 = users["u1"]
+    today = date.today().isoformat()
+    quiet, held = sheet_owner.STATUS_NO_RESPONSE, sheet_owner.STATUS_PAUSED
+
+    def person(name, status=quiet):
+        c = VcContact(user_id=u1.id, name=name, firm="가나벤처스", status=status)
+        db.add(c)
+        db.flush()
+        return c
+
+    asked, met, sheet, sent, replied, intro = (
+        person(n) for n in ("앱요청", "앱미팅", "시트요청", "자료전달", "답옴", "딜소개만"))
+    paused = person("검토중단", status=held)
+    seq = SendSequence(user_id=u1.id, contact_id=replied.id, stage=2, status="active")
+    db.add(seq)
+    db.commit()
+
+    db.add(IrRequest(user_id=u1.id, contact_id=asked.id, company_name="샘플가",
+                     requested_at=today))
+    db.add(Meeting(user_id=u1.id, contact_id=met.id, scheduled_at=today))
+    # 관계로만 이어 둔 줄(번호가 flush 뒤에 정해진다)도 놓치지 않는다.
+    db.add(ContactActivity(contact=sheet, kind="ir_request", content="IR 요청",
+                           happened_at=today))
+    db.add(ContactActivity(contact_id=sent.id, kind="ir_delivery", content="전달",
+                           happened_at=today))
+    db.add(ContactActivity(contact_id=intro.id, kind="deal_intro", content="딜소개",
+                           happened_at=today))
+    db.add(IrRequest(user_id=u1.id, contact_id=paused.id, company_name="샘플가",
+                     requested_at=today))
+    cadence.stop(db, seq, cadence.REPLIED_REASON, status="responded")
+    db.commit()
+    db.expire_all()
+
+    got = {c.name: c.status for c in db.query(VcContact).all()}
+    active = sheet_owner.STATUS_ACTIVE
+    assert got == {"앱요청": active, "앱미팅": active, "시트요청": active, "자료전달": active,
+                   "답옴": active, "딜소개만": quiet, "검토중단": held}, got
+

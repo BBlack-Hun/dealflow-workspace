@@ -30,24 +30,47 @@
 **그룹 칸은 건드리지 않는다.** 그룹은 그분이 받을 딜을 고르는 선호 갈래라
 (`group_name`), 반응으로 덮어쓰면 다음 리스트업에서 그분의 딜이 엇나간다. 반응이
 생긴 분은 이 판정에서 빠지는 것으로 [반응 없는 담당자만] 에서 저절로 빠진다.
+
+## `상태` 칸의 `반응없음` 은 반응이 적히면 풀린다 (11/10)
+
+`상태`(`VcContact.status = no_response`)는 사람이 상세에서 고르는 값이라 이 판정과
+따로 논다 — 반응이 와도 그대로 남았다. IR 관리의 담당자 고르기가 그 값을
+`[반응없음]` 꼬리표로 붙여서(`sheet_owner.pick_note`), IR 요청을 여러 번 한 분을
+적을 때마다 반응없음으로 보였다(2026-11-10 운영: 상태 반응없음 100명 중 23명이 IR
+요청 기록이 있다 — 모두 시트 시절 기록이고, 딜 제안 관리의 이 판정은 그분들을 이미
+반응 있음으로 본다).
+
+반응이 생긴 뒤에도 남은 `반응없음` 은 낡은 값이라 **반응이 적히는 순간 `활발` 로
+푼다**(`before_flush`). 어느 길로 적든(IR 관리 · 리마인드 [답 옴] · 자료 전달 기록 ·
+시트 가져오기) 빠지지 않게 세션의 flush 한 곳에서 건다(`models._clear_no_response`).
+푸는 것은 `반응없음` 하나다 — `검토중단` 은 딜 소개를 멈춰 둔 사람의 결정이라
+(`sheet_owner.is_paused`) 반응과 상관없다. 이미 낡아 있는 값은 새 반응이 와야
+풀리므로, 그 몫은 운영 데이터를 한 번 고쳐야 한다(코드가 하지 않는다).
 """
 from __future__ import annotations
 
 from typing import List, Set
 
-from sqlalchemy import select
+from sqlalchemy import inspect, select
 from sqlalchemy.orm import Session
 
-from ..models import ContactActivity, ContactColumn, SendSequence
+from ..models import (ContactActivity, ContactColumn, IrRequest, Meeting, SendSequence,
+                      VcContact)
 from . import contact_columns, dashboard, memo_delivered
+from . import meeting_kind as mk
 from .automations.meeting_request import REPLY_KIND
 from .manual_send import IR_DELIVERY
+from .sheet_owner import STATUS_ACTIVE, STATUS_NO_RESPONSE
 
 #: 우리 쪽이 적은 기록이지만 **반응이 있었다는 뜻**인 활동 — 자료를 보냈다 · 답이 왔다.
 FOLLOWED = (IR_DELIVERY, REPLY_KIND)
 
 #: 리마인드가 답을 받아 멈춘 상태(`cadence.STATUS_LABELS` 의 `답 옴`).
 RESPONDED = "responded"
+
+#: 반응인 활동 갈래 — `reacted_ids` 가 읽는 것과 같다(대시보드가 세는 시트 IR 요청 ·
+#: 미팅 네 갈래 + `FOLLOWED`).
+REACTION_KINDS = ("ir_request",) + mk.ALL + FOLLOWED
 
 
 def reacted_ids(db: Session, contact_ids: List[int]) -> Set[int]:
@@ -80,3 +103,32 @@ def ids(db: Session, rows: List[dict]) -> Set[int]:
             if memo_delivered.is_ir_request_column(c)]
     return {r["id"] for r in sent if r["id"] not in reacted
             and not any(r["notes"].get(k, "").strip() for k in keys)}
+
+
+def _reacted_in(session) -> Set[int]:
+    """이번 flush 에 **새로 적히는 반응**의 담당자 번호 — `reacted_ids` 가 읽는 원본 그대로."""
+    out: Set[int] = set()
+    for obj in session.new:
+        if isinstance(obj, (IrRequest, Meeting)):
+            out.add(obj.contact_id)
+        elif isinstance(obj, ContactActivity) and obj.kind in REACTION_KINDS:
+            # 관계로만 이어 둔 줄은 번호가 flush 뒤에 정해진다.
+            out.add(obj.contact_id or getattr(obj.contact, "id", None))
+    for obj in list(session.new) + list(session.dirty):
+        if (isinstance(obj, SendSequence) and obj.status == RESPONDED
+                and (obj in session.new or inspect(obj).attrs.status.history.has_changes())):
+            out.add(obj.contact_id)
+    out.discard(None)
+    return out
+
+
+def before_flush(session) -> None:
+    """반응이 새로 적히는 분의 `상태` 가 `반응없음` 이면 `활발` 로 푼다(위 머리말)."""
+    ids = _reacted_in(session)
+    if not ids:
+        return
+    with session.no_autoflush:
+        for contact in session.execute(
+                select(VcContact).where(VcContact.id.in_(ids),
+                                        VcContact.status == STATUS_NO_RESPONSE)).scalars():
+            contact.status = STATUS_ACTIVE
