@@ -94,15 +94,20 @@ def parse(text: str) -> List[Tuple[Optional[Tuple[int, int]], List[str]]]:
     return out
 
 
+def is_ir_request_column(c) -> bool:
+    """이름에 `IR요청` 이 든 칸(숨긴 칸 · `IR 요청기업 미팅 안내전화` 제외) — **달은 안 본다.**
+
+    `반응 없음` 판정(`no_reaction`)은 이 칸을 그대로 읽는다 — 시트 시절의 달 없는
+    `IR 요청` 칸에 적힌 것도 IR 요청 기록이다."""
+    label = (c.label or "").replace(" ", "")
+    return not c.is_hidden and "IR요청" in label and "IR요청기업" not in label
+
+
 def target_columns(columns) -> list:
-    """읽을 칸 — 이름에 `N월` 과 `IR요청` 이 든 칸(숨긴 칸 · `IR 요청기업 미팅 안내전화` 제외)."""
-    out = []
-    for c in columns:
-        label = (c.label or "").replace(" ", "")
-        if (not c.is_hidden and monthly_columns.month_of(c.label) is not None
-                and "IR요청" in label and "IR요청기업" not in label):
-            out.append(c)
-    return out
+    """읽을 칸 — `is_ir_request_column` 중 이름에 `N월` 이 든 칸. 달이 있어야 글 앞
+    날짜(`9/3`)의 해를 정한다(`_column_month`)."""
+    return [c for c in columns
+            if is_ir_request_column(c) and monthly_columns.month_of(c.label) is not None]
 
 
 def _column_month(col: ContactColumn, today: date) -> Tuple[int, int]:

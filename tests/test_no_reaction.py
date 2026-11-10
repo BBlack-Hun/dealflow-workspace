@@ -51,3 +51,57 @@ def test_앱_반응과_IR요청_칸은_반응이고_선호칸은_아니다(db, u
     assert got == {quiet.id, prefs.id, undone.id}, (
         "앱 IR 요청 · 미팅 · 자료 전달 · IR 요청 칸 글이 있으면 반응이고, "
         "선호 · 메모 칸 값만으로는 반응이 아니다")
+
+
+def test_리마인드_답옴과_달_없는_IR요청_칸도_반응이다(db, users):
+    """`IR 요청 투자사` 표에 `답 옴` 으로 서 있는데 딜 제안 관리는 `반응 없음` 이라고
+    했다(2026-11 운영: 반응 없음 361명 중 24명) — 리마인드 표의 [답 옴](카톡에서 답을
+    받았습니다)과, IR 요청 · 미팅을 적어 앱이 멈춘 리마인드가 반응 원본에 없었다.
+
+    시트 시절 칸 중 달이 안 붙은 `IR 요청` 칸도 IR 요청 기록이다(1명). 달은 업무 보고가
+    전달 날짜를 읽을 때 필요할 뿐, 반응인지는 달과 상관없다. `IR 요청기업 미팅 안내전화`
+    칸은 우리가 건 전화라 여전히 반응이 아니고, 사람이 손으로 멈춘 리마인드도 아니다.
+    """
+    from app.models import (ContactActivity, ContactColumn, SendSequence,
+                            SheetOwner, VcContact)
+    from app.routers.contacts import contact_rows
+    from app.services import cadence, no_reaction
+
+    u1 = users["u1"]
+    db.add(SheetOwner(label="가 명단", user_id=u1.id))
+    plain = ContactColumn(sheet="가 명단", label="IR 요청", position=1)
+    call = ContactColumn(sheet="가 명단", label="미팅 요청 / IR 요청기업 미팅 안내전화 TEL",
+                         position=2)
+    db.add_all([plain, call])
+    db.flush()
+    today = date.today().isoformat()
+
+    def person(name, **kw):
+        c = VcContact(user_id=u1.id, name=name, firm="가나벤처스",
+                      source_sheet="가 명단", **kw)
+        db.add(c)
+        db.flush()
+        db.add(ContactActivity(contact_id=c.id, kind="deal_intro", content="딜소개",
+                               happened_at=today, month=today[:7]))
+        return c
+
+    def sequence(c, status, reason):
+        db.add(SendSequence(user_id=u1.id, contact_id=c.id, stage=2, status=status,
+                            stopped_reason=reason))
+
+    replied = person("답옴")
+    sequence(replied, "responded", cadence.REPLIED_REASON)
+    asked = person("요청멈춤")          # IR 요청을 적어 앱이 멈췄고, 그 요청 줄은 나중에 지워졌다
+    sequence(asked, "responded", "IR 자료를 요청했습니다")
+    stopped = person("손으로멈춤")
+    sequence(stopped, "stopped", "사람이 중단")
+    waiting = person("예약중")
+    sequence(waiting, "active", None)
+    old_col = person("달없는칸", notes=f'{{"c{plain.id}": "샘플가, 샘플나"}}')
+    called = person("안내전화칸", notes=f'{{"c{call.id}": "통화함"}}')
+    db.commit()
+
+    got = no_reaction.ids(db, contact_rows(db, u1))
+    assert got == {stopped.id, waiting.id, called.id}, (
+        "리마인드 [답 옴] · 앱이 반응으로 멈춘 리마인드 · 달 없는 `IR 요청` 칸은 반응이고, "
+        "손으로 멈춘 리마인드 · 미팅 안내전화 칸은 반응이 아니다")
