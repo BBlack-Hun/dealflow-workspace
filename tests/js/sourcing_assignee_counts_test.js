@@ -103,23 +103,28 @@ assert.strictEqual(chip(dom, "가담당").getAttribute("data-count"), "2");
 
 // --- ④ [갈래] 칩 수도 고른 글을 따른다(i128) ---------------------------------
 // 시리즈 A 갈래 = 가소싱(제안 대기중) · 다소싱(참여, 이 달 딜 받음), M&A = 나소싱(참여).
+// 시리즈 A 는 칩 둘(#210 — `검토가능 심사역` · `참여 심사역`)이고, 그 둘은 고른 글 · 이 달
+// 딜 받음과 상관없이 **묶음 인원**이다(딜 소싱 화면의 그 탭 칩과 같은 수 — `splitCount`).
 function bucketCounts(dom) {
   const out = {};
   dom.document.querySelectorAll("#bucket-filter .chip").forEach(function (c) {
-    out[c.getAttribute("data-value") || "전체"] = Number(c.querySelector("b").textContent);
+    const key = (c.getAttribute("data-value") || "전체") +
+      (c.getAttribute("data-split") ? ":" + c.getAttribute("data-split") : "");
+    out[key] = Number(c.querySelector("b").textContent);
   });
   return out;
 }
 const SA = "시리즈 A 이상 딜소싱 참여 심사역";
+const SPLIT = { [SA + ":invite"]: 1, [SA + ":joined"]: 1 };
 pickTopic(dom, "sourcing_intro");
-assert.deepStrictEqual(bucketCounts(dom), { "전체": 1, [SA]: 1, "M&A 찾는 투자사": 0 },
+assert.deepStrictEqual(bucketCounts(dom), Object.assign({ "전체": 1, "M&A 찾는 투자사": 0 }, SPLIT),
                        "참여 안내인데 갈래 칩이 참여 카드까지 셌다");
 pickTopic(dom, "sourcing_remind");
-assert.deepStrictEqual(bucketCounts(dom), { "전체": 1, [SA]: 0, "M&A 찾는 투자사": 1 },
+assert.deepStrictEqual(bucketCounts(dom), Object.assign({ "전체": 1, "M&A 찾는 투자사": 1 }, SPLIT),
                        "딜 발송 요청 갈래 칩 수가 뜬 카드와 다르다");
 include.checked = true;
 include.fire("change");
-assert.deepStrictEqual(bucketCounts(dom), { "전체": 2, [SA]: 1, "M&A 찾는 투자사": 1 });
+assert.deepStrictEqual(bucketCounts(dom), Object.assign({ "전체": 2, "M&A 찾는 투자사": 1 }, SPLIT));
 // 0 인 갈래 칩은 숨기지 않는다 — 갈래 칩은 문구도 고른다.
 assert.ok(dom.document.querySelectorAll("#bucket-filter .chip").every(function (c) { return !c.hidden; }));
 
