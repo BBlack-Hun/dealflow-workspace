@@ -556,11 +556,15 @@ def _stamp_contract_done(session, flush_context, instances) -> None:
 
     무엇을 하는지는 `services/automations/contract_day7.before_flush`. 바로 위
     `_sync_company_links` **뒤에** 건다 — 투자컨설턴트 · 스타트업 줄에서 IR 로 따라
-    고친 계약여부까지 여기서 읽혀야 한다.
+    고친 계약여부까지 여기서 읽혀야 한다. 그래서 여기서 저절로 적은 계약년월은 따라 고치기를
+    못 지났다 — 이어진 줄에 마저 적는다(#206 · `company_sync.follow_late`).
     """
+    from .services import company_sync
     from .services.automations import contract_day7
 
-    contract_day7.before_flush(session)
+    stamped = contract_day7.before_flush(session)
+    if stamped:
+        company_sync.follow_late(session, stamped, "contract_ym")
 
 
 event.listen(OrmSession, "before_flush", _stamp_contract_done)
