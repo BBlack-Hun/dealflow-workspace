@@ -34,7 +34,7 @@ from ..services import mail_sender, mailer, matcher
 from ..services import message_composer as mc
 from ..services import (deal_history, deal_numbers, deal_queue, group_name, ir_attach,
                         ir_kakao, ir_monthly, manual_send, pipeline, scheduled_send,
-                        series_a_share,
+                        sender_rooms, series_a_share,
                         sheet_owner, sourcing_link, sourcing_msg,
                         sourcing_receipts, sourcing_sync,
                         startup_outreach, startup_send, template_pick,
@@ -553,8 +553,15 @@ def _mail_subject(req, contact, companies: List[IrCompany],
 # 그대로: 문구만 나가고 사람이 PC 카톡에서 파일을 붙인다.
 
 
-def _room_of(contact, linked: dict) -> str:
-    """이 사람에게 실제로 보낼 방. 자기 것이 먼저, 없으면 이어진 것."""
+def _room_of(contact, linked: dict, mine: Optional[dict] = None) -> str:
+    """이 사람에게 실제로 보낼 방. 자기 것이 먼저, 없으면 이어진 것.
+
+    `mine` 은 딜 소싱 분께 보낼 때만 — **보내는 계정 카톡에서 확인된 제목**
+    (`sender_rooms.sourcing_rooms_for`)이 있으면 그것이 명단의 방 이름보다 먼저다.
+    """
+    picked = (mine or {}).get(getattr(contact, "id", 0))
+    if picked:
+        return picked
     own = (getattr(contact, "kakao_room_name", "") or "").strip()
     return own or (linked.get(getattr(contact, "id", 0)) or {}).get("room", "")
 
@@ -1022,6 +1029,8 @@ def preview(
     # 투자사 관리 현황에서 연결해 둔 방이 있으면 미리보기에도 그 방이 떠야 한다 —
     # 화면에는 '방 미등록' 인데 실제로는 나가면, 어디로 갈지 모른 채 누르게 된다.
     linked = sourcing_link.linked_rooms(db, recipients) if sourcing else {}
+    mine = (sender_rooms.sourcing_rooms_for(db, user.id, recipients)
+            if sourcing else {})
     # 다른 팀원 몫의 같은 분께 이번 주 같은 기업이 이미 나갔으면 **발송 목록에서
     # 빠진다**(`services/twin_send`). 빠질 분을 미리보기에서 먼저 알린다.
     twin_block = (twin_send.blocked(db, recipients, [c.id for c in companies])
@@ -1063,7 +1072,7 @@ def preview(
                                       series_a_empty=(series_a_share.NOTHING_SLOT
                                                       if share and not sample else ""),
                                       later=later)
-        room = _room_of(contact, linked)
+        room = _room_of(contact, linked, mine)
         room_ok = bool(room) and contact.room_verified in ("verified", "unverified")
         if sample:
             room_ok = True          # 가상의 사람에게 방을 물을 것이 없다
@@ -1296,6 +1305,8 @@ def create_send_list(
     # 소싱 대상이 투자사 관리 현황에도 있고 거기서 방을 연결해 뒀다면 그 방을
     # 쓴다 — 같은 사람의 같은 방이라, 다시 적게 하면 오타로 발송이 빠진다.
     linked = sourcing_link.linked_rooms(db, contacts) if sourcing else {}
+    # 보내는 계정 카톡에서 확인된 딜 소싱 방 제목(`services/sender_rooms.py`).
+    mine = sender_rooms.sourcing_rooms_for(db, user.id, contacts) if sourcing else {}
     missing = set(req.contact_ids) - {c.id for c in contacts}
     if missing:
         raise HTTPException(status_code=404,
@@ -1325,7 +1336,7 @@ def create_send_list(
                 # Series A 딜 공유는 시리즈 A 갈래 심사역께만 — 다른 갈래의 분은
                 # 이 글을 받을 자리가 아니다(화면도 그 카드를 고를 수 없게 한다).
                 why = series_a_share.NOT_BUCKET_NOTE
-            elif not by_email and not _room_of(contact, linked):
+            elif not by_email and not _room_of(contact, linked, mine):
                 why = NO_ROOM_NOTE
             else:
                 continue
@@ -1458,7 +1469,7 @@ def create_send_list(
                 raise HTTPException(
                     status_code=400,
                     detail=f"'{contact.name}' {problem} — 발송 대상에서 제외하세요")
-        elif not _room_of(contact, linked):
+        elif not _room_of(contact, linked, mine):
             raise HTTPException(
                 status_code=400,
                 detail=f"'{contact.name}' 카톡방 이름 미등록 — 발송 대상에서 제외하세요",
@@ -1627,7 +1638,7 @@ def create_send_list(
                                     count=(len(shared_now) if share else None))
         else:
             # 담당자의 방 그대로. 시험방은 이 길을 지나지 않는다(위 머리말).
-            target = _room_of(contact, linked)
+            target = _room_of(contact, linked, mine)
             message = text
             subject = None
 

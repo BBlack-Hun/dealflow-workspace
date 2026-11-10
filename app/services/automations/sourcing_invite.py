@@ -44,7 +44,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ...models import Automation, AutomationSend, SourcingContact, User
-from .. import automation, sourcing_buckets, sourcing_link, sourcing_msg, sourcing_sync
+from .. import (automation, sender_rooms, sourcing_buckets, sourcing_link, sourcing_msg,
+                sourcing_sync)
 from .. import automation_runner as runner
 from .. import message_composer as mc
 # 칸 모양(갈래 · 주차 · 요일 · 시각)이 소싱 리마인드와 같다 — 읽고 가리는 손도 같은 것.
@@ -92,6 +93,9 @@ def collect(db: Session, row: Automation, sender: User,
         .order_by(SourcingContact.position, SourcingContact.id)
     ).scalars().all()
     linked = sourcing_link.linked_rooms(db, people)
+    # 보내는 계정 카톡에서 확인된 제목이 먼저 — 명단의 방 이름은 그 방을 찾은 팀원
+    # 카톡의 제목이다(`services/sender_rooms.py`).
+    mine = sender_rooms.sourcing_rooms_for(db, sender.id, people)
     batch = runner.Batch(note="참여 제안을 보낼 분이 없습니다"
                               "(제안 대기중인 분이 없거나 모두 방이 없음)")
     for person in people:
@@ -103,7 +107,7 @@ def collect(db: Session, row: Automation, sender: User,
                 batch.skipped.append(f"{person.name}({person.firm or '-'}) — {value}"
                                      "(이미 제안함 — 다시 보내려면 손으로)")
             continue
-        room = sourcing_link.room_for(person, linked)
+        room = mine.get(person.id) or sourcing_link.room_for(person, linked)
         if not room:
             batch.skipped.append(f"{person.name}({person.firm or '-'}) — 방 이름 없음")
             continue

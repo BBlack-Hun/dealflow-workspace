@@ -64,8 +64,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, object_session
 
 from .. import clock
-from ..models import (SOURCING_ROOM_TOPIC, SendItem, SendJob, SourcingContact, User,
-                      VcContact)
+from ..models import (SOURCING_ROOM_TOPIC, SendItem, SendJob, SenderRoom,
+                      SourcingContact, User, VcContact)
 from . import room_match, sourcing_buckets, sourcing_link, sourcing_sync
 # 줄의 상태 문구 · 확정 못 하는 까닭은 스타트업 [방 매칭] 과 **한 벌**이다 —
 # 두 벌이면 한쪽만 고친 날 두 [방 후보 찾기] 화면이 다른 말을 한다(PR #284 리뷰).
@@ -147,6 +147,10 @@ def forget(db: Session, row_id: int) -> int:
     jobs = {i.job_id for i in items}
     for item in items:
         db.delete(item)
+    # 보내는 계정 카톡 기준 제목(`sender_rooms`)도 — 가리킬 줄이 없어지는 기록이다.
+    for row in db.execute(select(SenderRoom).where(
+            SenderRoom.sourcing_contact_id == row_id)).scalars().all():
+        db.delete(row)
     db.flush()
     for job_id in jobs:
         job = db.get(SendJob, job_id)

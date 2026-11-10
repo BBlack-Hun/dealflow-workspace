@@ -145,7 +145,11 @@ def message(db: Session, sender: User, contact: SourcingContact,
         topic=KIND, closing_override=body).text
 
 
-def _room(db: Session, sender: User, contact: SourcingContact, linked: dict) -> str:
+def _room(db: Session, sender: User, contact: SourcingContact, linked: dict,
+          mine: Optional[dict] = None) -> str:
+    # 보내는 계정 카톡에서 확인된 제목이 먼저(`sender_rooms.sourcing_rooms_for`).
+    if (mine or {}).get(contact.id):
+        return mine[contact.id]
     own = (contact.kakao_room_name or "").strip()
     if own:
         return own
@@ -171,6 +175,7 @@ def collect(db: Session, row: Automation, sender: User,
     ).scalars().all()
     got = sourcing_receipts.received_ids(db, month)
     linked = sourcing_link.linked_rooms(db, people)
+    mine = sender_rooms.sourcing_rooms_for(db, sender.id, people)
     batch = runner.Batch(note="리마인드 보낼 심사역이 없습니다"
                               "(모두 딜 받음 · 참여 전 · 불참여이거나 방이 없음)")
     for person in people:
@@ -182,7 +187,7 @@ def collect(db: Session, row: Automation, sender: User,
         if person.id in got:
             batch.skipped.append(f"{who} — 이번 달 딜 받음")
             continue
-        room = _room(db, sender, person, linked)
+        room = _room(db, sender, person, linked, mine)
         if not room:
             batch.skipped.append(f"{who} — 방 이름 없음")
             continue

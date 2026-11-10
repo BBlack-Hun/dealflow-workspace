@@ -189,3 +189,18 @@ def test_alert_shows_on_pages_for_the_sender_only(client, db, users, people):
     client.post("/login", data={"phone": "01000000002", "password": DEMO_PASSWORD})
     client.cookies.set(runner.ALERT_COOKIE, key)
     assert 'data-testid="auto-alert"' not in client.get("/todo").text
+
+
+def test_uses_the_sender_kakao_title_when_confirmed(db, users, people):
+    """보내는 계정 카톡에서 확인된 딜 소싱 방 제목이 있으면 그 제목으로(`sender_rooms`) —
+    명단의 방 이름은 그 방을 찾은 팀원 카톡의 제목이라 다를 수 있다."""
+    from app.models import SenderRoom, SourcingContact
+
+    db.add(SenderRoom(sender_user_id=users["u2"].id, sourcing_contact_id=people["a"].id,
+                      room_name="보내는 계정 카톡의 홍길동 방", verified=1))
+    db.commit()
+    _turn_on(db)
+    assert _run(db, TUE3)["status"] == "ready"
+    [item] = _items(db)
+    assert item.room_name == "보내는 계정 카톡의 홍길동 방"
+    assert db.get(SourcingContact, people["a"].id).kakao_room_name == "홍길동 방"

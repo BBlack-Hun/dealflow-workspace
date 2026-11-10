@@ -26,7 +26,8 @@ from ..db import get_db
 from ..deps import (_wants_json, get_current_user, no_send_as_member, require_admin,
                     sends_deals, templates)
 from ..models import SendItem, SendJob, SourcingContact, User
-from ..services import (series_a_share, sheet_owner, sourcing_buckets, sourcing_link,
+from ..services import (sender_rooms, series_a_share, sheet_owner, sourcing_buckets,
+                        sourcing_link,
                         sourcing_mail, sourcing_receipts, sourcing_rooms,
                         sourcing_sync, spreadsheet)
 from ..services import custom_columns, sourcing_remind_log, taxonomy
@@ -1069,16 +1070,33 @@ def search_rooms(request: Request, tab: str = Form(""), ids: str = Form(""),
     이미 있거나 불참여인 줄 · 다른 갈래 줄은 빠진다.
 
     이 화면을 볼 수 있는 누구나 누른다 — 자기 PC 에 거는 일이다.
+
+    ## 보내는 계정(자동화)이 누르면 — 찾은 제목은 **그 계정 것으로만**
+
+    자동화를 보내는 계정(`sender_rooms.senders` — 팀 현황 자동화 판의 자동 발송
+    계정 · 자동화마다 고른 계정)의 카톡 제목은 손으로 보내는 팀원 카톡의 제목과
+    다를 수 있다. 그 계정이 누르면 같은 방 확인 잡을 **보내는 계정 기준 방 제목**
+    으로 세운다(`sender_rooms.queue_sourcing`) — 찾은 제목은 그 표에만 담기고, 이
+    명단의 후보 · 방 이름 · 확인 표시는 그대로다. 고르는 곳은 팀 현황 › 보내는
+    계정 기준 방 제목이다.
     """
     picked = _ids(ids)
     if not picked:
         return _answer(request, tab, "찾을 분을 먼저 고르세요 — 표 왼쪽 체크박스로 고릅니다", 400)
     bucket = "" if tab in ("", "all") else tab
     rows = sourcing_rooms.targets(db, bucket, picked)
-    job = sourcing_rooms.queue_search(db, user, rows)
+    sender = sender_rooms.is_sender(db, user)
+    job = (sender_rooms.queue_sourcing if sender else sourcing_rooms.queue_search)(
+        db, user, rows)
     if job is None:
         return _answer(request, tab, "찾을 줄이 없습니다 — 고른 분은 방 이름이 다 있습니다", 400)
     db.commit()
+    if sender:
+        note = (f"{user.name} 님 PC 의 카톡에서 {job.total}명의 방을 찾습니다(회차 #{job.id}) — "
+                "자동화를 보내는 계정이라 찾은 제목은 이 계정 전용으로 담깁니다(딜 소싱 "
+                "명단의 방 이름은 그대로). 끝나면 팀 현황 › 보내는 계정 기준 방 제목에서 고르세요")
+        return _answer(request, tab, note, job_id=job.id, ids=[r.id for r in rows],
+                       note=note)
     return _answer(request, tab,
                    f"{user.name} 님 PC 의 카톡에서 {job.total}명의 방을 찾습니다"
                    f"(회차 #{job.id}) — 그 PC 의 발송 프로그램이 켜져 있어야 합니다. "

@@ -24,6 +24,24 @@
 3. **자동화가 방을 고를 때**(`room_for`): 그 계정 카톡에서 확인된 제목이
    있으면 그것, 없으면 주인의 제목.
 
+## 딜 소싱 명단도 같은 길이다(0135)
+
+딜 소싱 방 이름(`SourcingContact.kakao_room_name`)은 [방 후보 찾기]를 누른
+팀원 카톡의 제목이다(`services/sourcing_rooms.py`). 딜 소싱 참여 제안 · 소싱
+리마인드 자동화는 보내는 계정 카톡에서 나가므로 그 계정 기준 제목이 따로
+있어야 한다. 그래서
+
+- [전체 방 확인]에 **불참여가 아닌 딜 소싱 분**도 함께 싣는다(`sourcing_targets`).
+  방 이름이 있으면 그 제목으로, 없으면 이름+직함으로 찾는다.
+- **보내는 계정이 딜 소싱 화면에서 [방 후보 찾기]를 눌러도** 찾은 제목은 이 표에만
+  담는다(`queue_sourcing` — `routers/sourcing.search_rooms`). 딜 소싱 명단의 방
+  이름 · 후보 · 확인 표시는 그대로다 — 그 칸은 손으로 보내는 팀원 카톡의 제목이다.
+- 그 계정이 딜 소싱 분께 보낼 때(자동화 · 손으로 보내는 딜 소싱 제안) 확인된
+  제목이 먼저, 없으면 명단의 방 이름(`sourcing_rooms_for`).
+
+**누가 보내는 계정인가는 코드에 적지 않는다** — 팀 현황 자동화 판의 자동 발송
+계정과 자동화마다 고른 계정이다(`senders`).
+
 **아무것도 보내지 않는다.** 확인 잡은 방 제목만 읽는다.
 """
 from __future__ import annotations
@@ -35,8 +53,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import clock
-from ..models import (SENDER_ROOM_TOPIC, SendItem, SendJob, SenderRoom, User,
-                      VcContact)
+from ..models import (SENDER_ROOM_TOPIC, SendItem, SendJob, SenderRoom,
+                      SourcingContact, User, VcContact)
 from . import sheet_owner
 
 #: 줄의 상태 — 화면이 이 말을 그대로 적는다.
@@ -58,11 +76,37 @@ class NotPickable(ValueError):
 
 # ── 읽기 ────────────────────────────────────────────────────────────────────
 
-def row_of(db: Session, sender_id: int, contact_id: int) -> Optional[SenderRoom]:
+def row_of(db: Session, sender_id: int, contact_id: int,
+           sourcing: bool = False) -> Optional[SenderRoom]:
+    """(보내는 계정, 줄) 의 한 줄. `sourcing` 이면 `contact_id` 는 딜 소싱 줄 번호다."""
+    column = SenderRoom.sourcing_contact_id if sourcing else SenderRoom.contact_id
     return db.execute(
         select(SenderRoom).where(SenderRoom.sender_user_id == sender_id,
-                                 SenderRoom.contact_id == contact_id)
+                                 column == contact_id)
     ).scalars().first()
+
+
+def senders(db: Session) -> List[User]:
+    """**보내는 계정들** — 팀 현황 자동화 판의 자동 발송 계정과 자동화마다 고른 계정.
+
+    `/team/sender-rooms` 가 고르는 계정이고, 딜 소싱 화면의 [방 후보 찾기]를 이
+    표로 돌리는 판정(`is_sender`)도 같은 목록을 읽는다.
+    """
+    from . import automation
+
+    seen, out = set(), []
+    ids = [automation.default_sender_id(db)] + [
+        automation.sender_id(db, automation.load(db, k.key)) for k in automation.KINDS]
+    for uid in ids:
+        member = db.get(User, uid) if uid else None
+        if member is not None and automation.may_send(member) and member.id not in seen:
+            seen.add(member.id)
+            out.append(member)
+    return out
+
+
+def is_sender(db: Session, user: Optional[User]) -> bool:
+    return user is not None and any(s.id == user.id for s in senders(db))
 
 
 def candidates(row: Optional[SenderRoom]) -> List[str]:
@@ -113,6 +157,26 @@ def rooms_for(db: Session, sender_id: int,
     return out
 
 
+def sourcing_rooms_for(db: Session, sender_id: int,
+                       people: Iterable[SourcingContact]) -> Dict[int, str]:
+    """딜 소싱 분들 중 **이 계정 카톡에서 확인된 제목**이 있는 분만 — {줄 번호: 제목}.
+
+    없는 분은 들어 있지 않다 — 부르는 쪽이 명단의 방 이름으로 이어 간다
+    (`sourcing_link.room_for`). 딜 소싱 줄에는 주인이 없어서 투자사 쪽처럼
+    "본인 줄이면 주인의 제목" 갈래가 없다.
+    """
+    ids = [p.id for p in people]
+    if not ids:
+        return {}
+    rows = db.execute(
+        select(SenderRoom).where(SenderRoom.sender_user_id == sender_id,
+                                 SenderRoom.sourcing_contact_id.in_(ids),
+                                 SenderRoom.verified == 1)
+    ).scalars().all()
+    return {r.sourcing_contact_id: r.room_name.strip() for r in rows
+            if (r.room_name or "").strip()}
+
+
 # ── 누구를 확인하나 ──────────────────────────────────────────────────────────
 
 def targets(db: Session, sender: User) -> List[VcContact]:
@@ -144,26 +208,74 @@ def targets(db: Session, sender: User) -> List[VcContact]:
     return out
 
 
+def sourcing_targets(db: Session) -> List[SourcingContact]:
+    """확인할 딜 소싱 분 — **불참여가 아닌 분 전부**(방 이름이 없어도).
+
+    방 이름이 없는 분은 이름+직함으로 찾고, 찾은 제목은 후보로만 담긴다. 같은 분이
+    여러 갈래에 있으면 줄마다 따로다 — 딜 소싱 화면과 같다.
+    """
+    from . import sourcing_sync
+
+    rows = db.execute(
+        select(SourcingContact).order_by(SourcingContact.bucket,
+                                         SourcingContact.position, SourcingContact.id)
+    ).scalars().all()
+    return [r for r in rows if (r.name or "").strip() and not sourcing_sync.is_left(r)]
+
+
+def _sourcing_item(job: SendJob, person: SourcingContact) -> SendItem:
+    from .sourcing_rooms import query_of
+
+    return SendItem(job_id=job.id, sourcing_contact_id=person.id,
+                    room_name=(person.kakao_room_name or "").strip() or query_of(person),
+                    message="", status="pending")
+
+
+def _new_job(db: Session, sender: User, total: int) -> SendJob:
+    from ..routers.agent_api import VERIFY_KIND
+
+    job = SendJob(user_id=sender.id, kind=VERIFY_KIND, status="queued",
+                  total=total, sent=0, failed=0, topic=SENDER_ROOM_TOPIC)
+    db.add(job)
+    db.flush()
+    return job
+
+
 def queue_check(db: Session, sender: User) -> Optional[SendJob]:
     """[보내는 계정 PC 로 전체 방 확인] — 방 확인 잡 하나를 **보내는 계정 것으로**.
 
+    투자사 담당자(`targets`)와 딜 소싱 분(`sourcing_targets`)을 한 잡에 싣는다.
     `None` 이면 확인할 사람이 없다. 문구는 비운다(`contacts.verify_rooms` 와
     같은 까닭: 구버전 발송기가 이 잡을 발송으로 오해해도 보낼 내용이 없다).
     """
-    from ..routers.agent_api import VERIFY_KIND
-
     people = targets(db, sender)
-    if not people:
+    sourcing = sourcing_targets(db)
+    if not people and not sourcing:
         return None
-    job = SendJob(user_id=sender.id, kind=VERIFY_KIND, status="queued",
-                  total=len(people), sent=0, failed=0, topic=SENDER_ROOM_TOPIC)
-    db.add(job)
-    db.flush()
+    job = _new_job(db, sender, len(people) + len(sourcing))
     for contact in people:
         db.add(SendItem(job_id=job.id, contact_id=contact.id,
                         room_name=contact.kakao_room_name.strip(), message="",
                         status="pending"))
+    for person in sourcing:
+        db.add(_sourcing_item(job, person))
     db.commit()
+    return job
+
+
+def queue_sourcing(db: Session, sender: User,
+                   rows: List[SourcingContact]) -> Optional[SendJob]:
+    """딜 소싱 화면의 [방 후보 찾기]를 **보내는 계정**이 눌렀을 때 — 같은 확인 잡으로.
+
+    찾은 제목은 이 표에만 담긴다(`apply_result`). 딜 소싱 명단의 후보 · 방 이름 ·
+    확인 표시는 그대로다. `db.commit()` 은 부르는 쪽이 한다(`sourcing_rooms.queue_search`
+    와 같다).
+    """
+    if not rows:
+        return None
+    job = _new_job(db, sender, len(rows))
+    for person in rows:
+        db.add(_sourcing_item(job, person))
     return job
 
 
@@ -180,6 +292,18 @@ def search_terms(contact: VcContact) -> dict:
             "firm": contact.firm or ""}
 
 
+def sourcing_search_terms(person: SourcingContact) -> dict:
+    """딜 소싱 분의 검색어 — 명단의 방 이름, 없으면 이름+직함. 못 찾으면 이름으로.
+
+    `firm` 은 **안 보낸다** — 발송기가 여럿 나온 결과를 회사 이름이 든 방 하나로
+    줄이는데, 그 방은 그분의 딜소개 방이다(`sourcing_rooms.search_terms` 와 같은 까닭).
+    """
+    from .sourcing_rooms import query_of
+
+    return {"query": (person.kakao_room_name or "").strip() or query_of(person),
+            "name": (person.name or "").strip()}
+
+
 # ── 결과 받기 ────────────────────────────────────────────────────────────────
 
 def apply_result(db: Session, item: SendItem, body, verdict: str) -> None:
@@ -190,24 +314,27 @@ def apply_result(db: Session, item: SendItem, body, verdict: str) -> None:
       열어 본 것이다(검색 기능이 없는 발송기의 `verify_room`) — 확인됨.
     - 그 밖(제목이 다르다 · 같은 제목이 여럿) → 후보만, 사람이 고른다.
     """
-    contact = item.contact
+    person = item.sourcing_contact
+    contact = item.contact or person
     job = item.job
     if contact is None or job is None:
         item.status = "failed"
         item.error = "담당자를 찾을 수 없습니다"
         return
+    sourcing = person is not None and item.contact is None
     own = (contact.kakao_room_name or "").strip()
     rooms = [str(r).strip() for r in (body.candidates or []) if str(r).strip()]
     found = (body.found_room or "").strip()
     if found and found not in rooms:
         rooms.insert(0, found)
-    if verdict == "verified" and not rooms:
+    if verdict == "verified" and not rooms and own:
         rooms = [own]
 
-    row = row_of(db, job.user_id, contact.id)
+    row = row_of(db, job.user_id, contact.id, sourcing)
     if row is None:
-        row = SenderRoom(sender_user_id=job.user_id, contact_id=contact.id,
-                         verified=0)
+        row = SenderRoom(sender_user_id=job.user_id, verified=0,
+                         contact_id=None if sourcing else contact.id,
+                         sourcing_contact_id=contact.id if sourcing else None)
         db.add(row)
     row.candidates = json.dumps(rooms, ensure_ascii=False) if rooms else None
     row.checked_at = clock.now_iso()
@@ -236,13 +363,15 @@ def apply_result(db: Session, item: SendItem, body, verdict: str) -> None:
         item.error = "보내는 계정 카톡에서 이 방을 찾지 못했습니다"
 
 
-def confirm(db: Session, sender_id: int, contact_id: int, title: str) -> SenderRoom:
+def confirm(db: Session, sender_id: int, contact_id: int, title: str,
+            sourcing: bool = False) -> SenderRoom:
     """[이 방으로 확정] — 후보 중 하나를 그 계정 카톡의 제목으로 적는다.
 
     **후보에 없는 글자는 받지 않는다** — 카톡 창에서 읽어 온 글자만 확인됨이
     된다. 같은 제목이 후보에 여럿이면 어느 방인지 가를 수 없어 받지 않는다.
+    `sourcing` 이면 `contact_id` 는 딜 소싱 줄 번호다.
     """
-    row = row_of(db, sender_id, contact_id)
+    row = row_of(db, sender_id, contact_id, sourcing)
     text = (title or "").strip()
     picks = candidates(row)
     if row is None or not text or text not in picks:
@@ -256,9 +385,10 @@ def confirm(db: Session, sender_id: int, contact_id: int, title: str) -> SenderR
     return row
 
 
-def clear(db: Session, sender_id: int, contact_id: int) -> None:
+def clear(db: Session, sender_id: int, contact_id: int,
+          sourcing: bool = False) -> None:
     """확정을 거둔다 — 다시 주인의 제목으로 보낸다."""
-    row = row_of(db, sender_id, contact_id)
+    row = row_of(db, sender_id, contact_id, sourcing)
     if row is not None:
         row.verified = 0
         row.room_name = None
@@ -276,20 +406,29 @@ def state_of(row: Optional[SenderRoom]) -> str:
 
 
 def board(db: Session, sender: User) -> dict:
-    """`/team/sender-rooms` 가 읽는 한 판 — 고를 것이 있는 줄이 위로."""
-    people = targets(db, sender)
-    rows = {r.contact_id: r for r in db.execute(
+    """`/team/sender-rooms` 가 읽는 한 판 — 고를 것이 있는 줄이 위로.
+
+    투자사 담당자 줄 다음에 딜 소싱 분 줄(`kind` = `sourcing`)이 함께 선다.
+    """
+    mine = db.execute(
         select(SenderRoom).where(SenderRoom.sender_user_id == sender.id)
-    ).scalars().all()}
+    ).scalars().all()
+    rows = {r.contact_id: r for r in mine if r.contact_id is not None}
+    by_sourcing = {r.sourcing_contact_id: r for r in mine
+                   if r.sourcing_contact_id is not None}
     owners = {u.id: u.name for u in db.execute(select(User)).scalars().all()}
+    lines = ([("vc", c, rows.get(c.id), owners.get(c.user_id, ""))
+              for c in targets(db, sender)]
+             + [("sourcing", p, by_sourcing.get(p.id), f"딜 소싱 · {p.bucket or '-'}")
+                for p in sourcing_targets(db)])
     out = []
-    for contact in people:
-        row = rows.get(contact.id)
+    for kind, contact, row, owner in lines:
         state = state_of(row)
         picks = candidates(row)
         out.append({
+            "kind": kind,
             "contact_id": contact.id,
-            "owner": owners.get(contact.user_id, ""),
+            "owner": owner,
             "name": contact.name,
             "firm": contact.firm or "",
             "own_room": (contact.kakao_room_name or "").strip(),

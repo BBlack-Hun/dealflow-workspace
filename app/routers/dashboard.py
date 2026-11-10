@@ -1668,18 +1668,11 @@ def check_automation_room(
 # ── 보내는 계정 카톡 기준 방 제목 (`services/sender_rooms.py`) ────────────────
 
 def _room_senders(db: Session) -> list:
-    """방 제목을 맞출 **보내는 계정들** — 기본 보내는 계정과 자동화마다 고른 계정."""
-    from ..services import automation
+    """방 제목을 맞출 **보내는 계정들** — 판정은 `sender_rooms.senders` 하나다
+    (딜 소싱 [방 후보 찾기]를 이 표로 돌리는 자리도 같은 목록을 읽는다)."""
+    from ..services import sender_rooms
 
-    seen, out = set(), []
-    ids = [automation.default_sender_id(db)] + [
-        automation.sender_id(db, automation.load(db, k.key)) for k in automation.KINDS]
-    for uid in ids:
-        member = db.get(User, uid) if uid else None
-        if member is not None and automation.may_send(member) and member.id not in seen:
-            seen.add(member.id)
-            out.append(member)
-    return out
+    return sender_rooms.senders(db)
 
 
 def _room_sender_or_404(db: Session, sender_id: int) -> User:
@@ -1735,9 +1728,12 @@ def sender_rooms_check(sender_id: int = Form(0), db: Session = Depends(get_db),
 
 @router.post("/team/sender-rooms/{contact_id}/confirm", include_in_schema=False)
 def sender_rooms_confirm(contact_id: int, sender_id: int = Form(0),
-                         room: str = Form(""), db: Session = Depends(get_db),
+                         room: str = Form(""), kind: str = Form(""),
+                         db: Session = Depends(get_db),
                          user: User = Depends(get_current_user)):
-    """[이 방으로 확정] — 후보 제목을 그 계정 카톡의 제목으로."""
+    """[이 방으로 확정] — 후보 제목을 그 계정 카톡의 제목으로.
+
+    `kind=sourcing` 이면 `contact_id` 는 딜 소싱 줄 번호다(`sender_rooms.board`)."""
     admin_only(user)
     from urllib.parse import quote
 
@@ -1745,7 +1741,7 @@ def sender_rooms_confirm(contact_id: int, sender_id: int = Form(0),
 
     member = _room_sender_or_404(db, sender_id)
     try:
-        sender_rooms.confirm(db, member.id, contact_id, room)
+        sender_rooms.confirm(db, member.id, contact_id, room, kind == "sourcing")
         note = "확정했습니다 — 자동화가 이 제목으로 보냅니다"
     except sender_rooms.NotPickable as exc:
         db.rollback()
@@ -1756,16 +1752,16 @@ def sender_rooms_confirm(contact_id: int, sender_id: int = Form(0),
 
 @router.post("/team/sender-rooms/{contact_id}/clear", include_in_schema=False)
 def sender_rooms_clear(contact_id: int, sender_id: int = Form(0),
-                       db: Session = Depends(get_db),
+                       kind: str = Form(""), db: Session = Depends(get_db),
                        user: User = Depends(get_current_user)):
-    """확정 거두기 — 다시 담당 팀원의 제목으로 보낸다."""
+    """확정 거두기 — 다시 담당 팀원의(딜 소싱이면 명단의) 제목으로 보낸다."""
     admin_only(user)
     from urllib.parse import quote
 
     from ..services import sender_rooms
 
     member = _room_sender_or_404(db, sender_id)
-    sender_rooms.clear(db, member.id, contact_id)
+    sender_rooms.clear(db, member.id, contact_id, kind == "sourcing")
     return RedirectResponse(
         f"/team/sender-rooms?sender={member.id}&msg={quote('확정을 거뒀습니다')}",
         status_code=303)
