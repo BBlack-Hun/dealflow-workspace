@@ -231,7 +231,7 @@ async function main() {
     assert.strictEqual(noteOf(form), "찾기 요청 중…");
     reply(t.calls[0], 200, { ok: true, msg: "…", job_id: 7, ids: [11] });
     await flush();
-    assert.strictEqual(noteOf(form), "찾기 요청됨(회차 #7) — 끝나면 새로고침해 후보를 고르세요");
+    assert.strictEqual(noteOf(form), "찾기 요청됨(회차 #7) — 끝나면 새로고침하세요 · 하나면 바로 확정, 둘 이상이면 고릅니다");
     assert.strictEqual(form.querySelector("button").disabled, false);
     assert.ok(a.hasAttribute("data-no-room"), "찾기만 했는데 방이 생긴 줄로 그렸다");
   }

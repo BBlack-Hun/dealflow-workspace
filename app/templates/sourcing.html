@@ -19,7 +19,8 @@
   보내는 것은 <a href="/deals">딜 제안 관리</a>의 <b>[딜 소싱 제안]</b> 탭에서 합니다.
   <b>카톡방 이름</b>이 비어 있으면 그 사람에게는 나가지 않습니다 — 보낼 방이 없기
   때문입니다. 방은 <b>보내는 분 카톡의 딜 소싱 방</b>입니다 — 보낼 PC 에서 찾을 분을
-  체크하고 <b>[방 후보 찾기]</b> 를 누르면 그 카톡에서 찾아 후보를 담고, 후보를 눌러 확정합니다.
+  체크하고 <b>[방 후보 찾기]</b> 를 누르면 그 카톡에서 찾아, 찾은 방이 하나면 그 방으로 바로 확정하고,
+  둘 이상이면 후보 중 하나를 눌러 확정합니다.
 </p>
 
 {% if msg %}<p class="flash">{{ msg }}</p>{% endif %}
@@ -120,8 +121,8 @@
     {% endif %}
     {# [방 후보 찾기] — 표 맨 왼쪽 체크박스로 **고른 분 중 `방 없음` 인 분**을
        **누른 사람 PC 의 카톡**에서 찾는다(`services/sourcing_rooms.py`). 아무것도
-       보내지 않는다. 찾은 제목은 후보로만 담기고, 각 줄의 카톡방 칸에서 골라
-       확정한다. **아무도 안 골랐으면 단추가 잠긴다** — 예전처럼 이 갈래 전부로
+       보내지 않는다. 찾은 제목이 하나면 그 방으로 확정되고, 둘 이상이면 후보로
+       담겨 각 줄의 카톡방 칸에서 골라 확정한다. **아무도 안 골랐으면 단추가 잠긴다** — 예전처럼 이 갈래 전부로
        대신하지 않는다(서버도 막는다). 고른 줄 번호(`ids`)는 화면 스크립트가 싣는다. #}
     <form method="post" action="/sourcing/rooms/search" class="inline-form js-room-search" data-send="proxy"
           id="sourcing-room-search" data-testid="sourcing-room-search">
@@ -417,7 +418,9 @@
             </form>
           </div>
           {% endif %}
-          {% if pick and pick.rooms and pick.state != 'confirmed' %}
+          {# 고르는 단추는 **후보가 둘 이상일 때만** — 하나뿐이면 찾을 때 확정된다
+             (사용자 결정 2026-11-10 · `sourcing_rooms._confirm_single`). #}
+          {% if pick and pick.rooms|length > 1 and pick.state != 'confirmed' %}
           <div class="cell-sub sourcing-room" data-testid="sourcing-room-picks">
             {% for p in pick.rooms %}
             <form method="post" action="/sourcing/{{ r.id }}/room-confirm" class="inline-form js-room-confirm">

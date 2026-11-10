@@ -36,6 +36,10 @@
 - **보내는 계정이 딜 소싱 화면에서 [방 후보 찾기]를 눌러도** 찾은 제목은 이 표에만
   담는다(`queue_sourcing` — `routers/sourcing.search_rooms`). 딜 소싱 명단의 방
   이름 · 후보 · 확인 표시는 그대로다 — 그 칸은 손으로 보내는 팀원 카톡의 제목이다.
+- 딜 소싱 분은 **찾은 방(같은 제목을 하나로 친)이 하나뿐이면 그 방으로 확정한다**
+  (사용자 결정 2026-11-10 — `sourcing_rooms` 머리말). 사람이 [이 방으로 확정] 을
+  누른 것과 같은 길(`confirm`)이다. 둘 이상일 때만 사람이 고른다. 투자사 담당자
+  줄은 그대로다(제목이 다르면 하나뿐이어도 후보만).
 - 그 계정이 딜 소싱 분께 보낼 때(자동화 · 손으로 보내는 딜 소싱 제안) 확인된
   제목이 먼저, 없으면 명단의 방 이름(`sourcing_rooms_for`).
 
@@ -55,7 +59,7 @@ from sqlalchemy.orm import Session
 from .. import clock
 from ..models import (SENDER_ROOM_TOPIC, SendItem, SendJob, SenderRoom,
                       SourcingContact, User, VcContact)
-from . import sheet_owner
+from . import edit_log, sheet_owner
 
 #: 줄의 상태 — 화면이 이 말을 그대로 적는다.
 CONFIRMED = "confirmed"
@@ -312,6 +316,10 @@ def apply_result(db: Session, item: SendItem, body, verdict: str) -> None:
     - 찾은 제목들 중 주인의 제목과 **똑같은 것이 정확히 하나** → 확인됨.
     - 하나도 못 찾았는데 판정이 `verified` → 발송기가 주인의 제목 그대로 방을
       열어 본 것이다(검색 기능이 없는 발송기의 `verify_room`) — 확인됨.
+    - 딜 소싱 분인데 찾은 제목이 **하나뿐**(같은 제목을 하나로 쳐서) → 그 방으로
+      확정(`confirm` — 사용자 결정 2026-11-10). 같은 제목의 방이 여럿이면 거기서
+      막혀 아래로 간다. 확정해 둔 제목이 이번에 안 걸리고 다른 하나가 걸려도 그
+      하나로 바꾼다 — 예전에도 확정해 둔 제목이 안 걸리면 확정을 거뒀다.
     - 그 밖(제목이 다르다 · 같은 제목이 여럿) → 후보만, 사람이 고른다.
     """
     person = item.sourcing_contact
@@ -352,6 +360,11 @@ def apply_result(db: Session, item: SendItem, body, verdict: str) -> None:
         item.sent_at = clock.now_iso()
         item.error = None
         return
+    if sourcing and len(set(rooms)) == 1 and _confirm_single(db, item, contact, rooms[0]):
+        item.status = "sent"
+        item.sent_at = clock.now_iso()
+        item.error = None
+        return
     row.verified = 0
     row.room_name = None
     item.status = "failed"
@@ -363,13 +376,35 @@ def apply_result(db: Session, item: SendItem, body, verdict: str) -> None:
         item.error = "보내는 계정 카톡에서 이 방을 찾지 못했습니다"
 
 
+def _confirm_single(db: Session, item: SendItem, person: SourcingContact,
+                    title: str) -> bool:
+    """딜 소싱 분의 하나뿐인 후보를 **사람이 고른 것과 같은 길**(`confirm`)로 확정한다.
+
+    이 길에는 요청 문맥이 없어서 수정 로그는 **찾기를 건 계정** 이름으로 남긴다
+    (`sourcing_sync.mark_invited` 와 같은 방식). 확정 못 하는 제목이면 `False`.
+    """
+    sender_id = item.job.user_id
+    db.flush()       # 새 줄 · 후보 · 건 상태는 로그 밖에서 먼저 내보낸다
+    token = edit_log.begin(sender_id, "POST", f"/agent/items/{item.id}/result")
+    try:
+        confirm(db, sender_id, person.id, title, sourcing=True, commit=False)
+        db.flush()
+        return True
+    except NotPickable:
+        return False
+    finally:
+        edit_log.end(token)
+
+
 def confirm(db: Session, sender_id: int, contact_id: int, title: str,
-            sourcing: bool = False) -> SenderRoom:
+            sourcing: bool = False, commit: bool = True) -> SenderRoom:
     """[이 방으로 확정] — 후보 중 하나를 그 계정 카톡의 제목으로 적는다.
 
     **후보에 없는 글자는 받지 않는다** — 카톡 창에서 읽어 온 글자만 확인됨이
     된다. 같은 제목이 후보에 여럿이면 어느 방인지 가를 수 없어 받지 않는다.
-    `sourcing` 이면 `contact_id` 는 딜 소싱 줄 번호다.
+    `sourcing` 이면 `contact_id` 는 딜 소싱 줄 번호다. 딜 소싱 분의 후보가
+    하나뿐이면 찾기 결과를 받을 때 이 함수로 저절로 확정된다(`_confirm_single`
+    — 그때는 결과 받는 쪽이 저장하므로 `commit=False`).
     """
     row = row_of(db, sender_id, contact_id, sourcing)
     text = (title or "").strip()
@@ -381,7 +416,8 @@ def confirm(db: Session, sender_id: int, contact_id: int, title: str,
                           "바꾼 뒤 다시 확인하세요")
     row.room_name = text
     row.verified = 1
-    db.commit()
+    if commit:
+        db.commit()
     return row
 
 
@@ -425,6 +461,14 @@ def board(db: Session, sender: User) -> dict:
     for kind, contact, row, owner in lines:
         state = state_of(row)
         picks = candidates(row)
+        # 딜 소싱 분은 **둘 이상일 때만 고른다** — 하나뿐이면 찾을 때 확정된다
+        # (`apply_result`). 하나뿐인데 확정 안 된 줄(같은 제목이 여럿 · 확정을 거둠 ·
+        # 이 결정 전에 담긴 후보)에는 고르는 단추 · `골라 주세요` 를 안 세운다.
+        choose = kind == "vc" or len(set(picks)) > 1
+        label = STATE_LABELS[state].format(n=len(picks))
+        if state == PICKS and not choose:
+            label = ("같은 제목의 방이 여럿 — 확정 불가" if len(picks) > 1
+                     else "후보 1개 — 다시 확인하면 확정됩니다")
         out.append({
             "kind": kind,
             "contact_id": contact.id,
@@ -434,7 +478,8 @@ def board(db: Session, sender: User) -> dict:
             "own_room": (contact.kakao_room_name or "").strip(),
             "room": (row.room_name or "") if row else "",
             "state": state,
-            "state_label": STATE_LABELS[state].format(n=len(picks)),
+            "state_label": label,
+            "choose": choose,
             "picks": [{"room": p, "same": picks.count(p) > 1,
                        "current": bool(row and row.verified and row.room_name == p)}
                       for p in dict.fromkeys(picks)],

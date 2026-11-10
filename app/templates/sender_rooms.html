@@ -53,7 +53,8 @@
     <b>딜 소싱 명단</b>(불참여 빼고 · 방 이름이 없으면 이름+직함으로)을
     <b>{{ board.sender }}</b> 님 PC 의 발송 프로그램이 카톡에서 찾아봅니다 — 그 PC 가 켜져 있어야
     합니다. 적어 둔 제목과 <b>똑같은 방이 하나</b> 있으면 저절로 확인됨이 되고, 제목이 다르거나
-    여럿이면 아래에서 고릅니다. 담당 팀원의 방 이름 · 딜 소싱 명단의 방 이름은 바뀌지 않습니다.
+    여럿이면 아래에서 고릅니다. 딜 소싱 분은 찾은 방이 <b>하나뿐이면</b> 제목이 달라도 그 방으로
+    확인됨이 되고, 둘 이상일 때만 고릅니다. 담당 팀원의 방 이름 · 딜 소싱 명단의 방 이름은 바뀌지 않습니다.
   </p>
 </section>
 
@@ -79,7 +80,7 @@
             <span class="room-badge ok">✓ 이 제목으로 보냄</span>
             {% elif p.same %}
             <span class="room-badge warn">같은 제목의 방이 여럿 — 확정 불가</span>
-            {% else %}
+            {% elif r.choose %}{# 딜 소싱 분은 둘 이상일 때만 고른다(`sender_rooms.board`) #}
             <form method="post" action="/team/sender-rooms/{{ r.contact_id }}/confirm" class="inline-form">
               <input type="hidden" name="sender_id" value="{{ board.sender_id }}">
               <input type="hidden" name="kind" value="{{ r.kind }}">
