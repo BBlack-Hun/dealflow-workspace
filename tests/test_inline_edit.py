@@ -50,7 +50,7 @@ def test_one_field_is_enough(logged_in, db, company):
                         json={"revenue_recent": "34"})
     assert r.status_code == 200, r.text
     db.refresh(company)
-    assert company.revenue_recent == "34"
+    assert company.revenue_recent == "34억"   # 숫자만 적으면 `억` 이 붙는다(#217)
     assert company.name == "샘플애그", "이름을 안 보냈다고 지워지면 안 된다"
 
 

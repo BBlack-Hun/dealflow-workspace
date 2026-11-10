@@ -162,15 +162,15 @@ def test_업무_보고에서_고치면_IR_줄에_담기고_이어진_Series_A_�
     res = client.patch(f"/api/companies/{stage['ir'].id}", json={"funding_total": "15"})
     assert res.status_code == 200, res.text
     db.expire_all()
-    assert db.get(IrCompany, stage["ir"].id).funding_total == "15"
-    assert db.get(SeriesACompany, stage["linked"].id).funding_total == "15", \
+    assert db.get(IrCompany, stage["ir"].id).funding_total == "15억"   # `억` 이 붙는다(#217)
+    assert db.get(SeriesACompany, stage["linked"].id).funding_total == "15억", \
         "같은 기업의 Series A 줄이 안 따라왔다(company_sync)"
     again = client.get("/report?month=2026-08").text
-    assert '<td class="cell num" data-field="funding_total">15</td>' in _outer(again, "샘플보냄")
+    assert '<td class="cell num" data-field="funding_total">15억</td>' in _outer(again, "샘플보냄")
 
 
 def test_Series_A_탭에서_고친_값도_다음_화면에_그대로(page, stage, client):
     res = client.patch(f"/api/series-a-companies/{stage['sa'].id}", json={"revenue_2026": "6"})
     assert res.status_code == 200, res.text
     again = client.get("/report?month=2026-08").text
-    assert '<td class="cell num" data-field="revenue_2026">6</td>' in _outer(again, "샘플에이랩")
+    assert '<td class="cell num" data-field="revenue_2026">6억</td>' in _outer(again, "샘플에이랩")

@@ -830,10 +830,12 @@
 // (`data-save-url` → `PATCH /api/consulting/{id}`) 응답도 그 길의 꼴이다: 저장된 값은
 // `values`, `기업 관리` 의 갈래는 `management_tag`(서버 한 곳이 센다 — `consulting_status`).
 // 칸에는 **갈래**를 다시 그리고, 다음에 열 편집창이 짚을 값(`data-value`)은 적힌 글 그대로
-// 둔다. 미팅일은 저장된 글자 그대로 — 날짜 입력은 편집 중에 `data-value` 를 안 고친다.
+// 둔다. 미팅일은 글자 칸이라(#216 — `11/12 PM2 (화상)`) 저장된 글자 그대로 그린다.
 (function () {
   var table = document.getElementById("co-table");
   if (!table) return;
+  // 빈 미팅일 칸의 안내 — 표를 처음 그릴 때(`companies.html`)와 같은 글자다.
+  var MEETING_HINT = "눌러서 적습니다 (예: 11/12 PM2 화상)";
 
   table.addEventListener("inline-saved", function (e) {
     var cell = e.detail.cell;
@@ -858,7 +860,7 @@
       cell.title = saved || "눌러서 고릅니다";
     } else {
       cell.textContent = saved;
-      cell.title = saved || "눌러서 날짜를 고릅니다";
+      cell.title = saved || MEETING_HINT;
     }
   });
 })();
@@ -954,6 +956,11 @@
     Object.keys(bands).forEach(function (key) {
       if (row.hasAttribute("data-f-" + key)) row.setAttribute("data-f-" + key, bands[key]);
     });
+    // 금액 칸 글자도 **저장값으로**(#217) — 숫자만 적으면 서버가 `억` 을 붙여 저장한다(`30` → `30억`).
+    var cell = e.detail.cell;
+    var field = cell && cell.getAttribute("data-field");
+    var amounts = data.amounts || {};
+    if (field && typeof amounts[field] === "string") cell.textContent = amounts[field];
     var by = row.querySelector("td.updated-by");
     if (by && "updated_by" in data) {
       by.textContent = data.updated_by;

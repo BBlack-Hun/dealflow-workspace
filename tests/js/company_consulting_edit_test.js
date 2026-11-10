@@ -12,6 +12,8 @@
 //   ⑥ 이어진 줄이 없는 기업(11/07 — "데이터가 들어가야지만 수정이 가능")은 **빈 칸도 열리고**
 //      IR 쪽 주소(`/api/companies/{id}/consulting`)로 저장한다. 줄이 새로 섰다는 응답이 오면
 //      그 줄의 두 칸이 그 줄의 저장 길(`/api/consulting/{새 번호}`)로 바뀐다.
+//   ⑦ 미팅일은 글자 칸이다(#216 · 11/10 — "직접 수기로 기입") — `11/12 PM2 (화상)` 을 그대로
+//      적어 저장한다. 날짜 입력은 시각 · 말을 못 담았다.
 //
 // 값은 전부 지어낸 것이다 — 저장소가 공개다.
 "use strict";
@@ -44,8 +46,7 @@ function build() {
   const b = status("관리중", "관리 중", 43);
   const c = status("연락 안 됨", "기타 메모", 44);
   const meet = D.el("td", {
-    class: "cell", "data-field": "meeting_at", "data-type": "date",
-    "data-value": "2025-09-16", "data-save-url": "/api/consulting/42"
+    class: "cell", "data-field": "meeting_at", "data-save-url": "/api/consulting/42"
   });
   meet.textContent = "2025.09.16";
   const rows = [
@@ -154,13 +155,28 @@ async function main() {
     dom.meet.fire("click");
     const input = dom.meet.querySelector("input");
     assert.ok(input, "미팅일 칸에 입력이 안 열렸다");
-    assert.strictEqual(input.type, "date", "날짜뿐인 값인데 날짜 입력으로 안 열렸다");
-    assert.strictEqual(input.value, "2025-09-16");
+    assert.strictEqual(input.type, "text", "미팅일이 글자 칸으로 안 열렸다(#216)");
+    assert.strictEqual(input.value, "2025.09.16", "적힌 글자 그대로에서 시작해야 한다");
     input.blur();
     await flush();
     assert.strictEqual(dom.meet.textContent, "2025.09.16",
-      "안 고쳤는데 칸 글자가 편집창의 꼴로 바뀌었다");
+      "안 고쳤는데 칸 글자가 바뀌었다");
     assert.deepStrictEqual(sent, [], "안 고쳤는데 저장이 나갔다");
+  }
+
+  // ⑦ 미팅일은 시각 · 말을 그대로 적어 저장한다(#216)
+  {
+    const dom = build();
+    const sent = runInline(dom);
+    dom.meet.fire("pointerdown");
+    dom.meet.fire("click");
+    const input = dom.meet.querySelector("input");
+    input.value = "11/12 PM2 (화상)";
+    input.blur();
+    await flush();
+    assert.deepStrictEqual(sent, [{ url: "/api/consulting/42", method: "PATCH",
+                                    body: { meeting_at: "11/12 PM2 (화상)" } }],
+      "적은 글자가 그대로 컨설턴트 줄로 안 갔다: " + JSON.stringify(sent));
   }
 
   // ⑤ 저장 뒤 companies.js 가 응답으로 다시 그린다
@@ -187,9 +203,13 @@ async function main() {
     assert.strictEqual(dom.a.title, "드랍 : 미팅 완", "칸을 짚으면 적힌 글 전체가 떠야 한다");
 
     dom.table.fire("inline-saved", { detail: { row: dom.tr, cell: dom.meet, data: {
-      id: 42, stamps: {}, values: { meeting_at: "2025-10-01" } } } });
-    assert.strictEqual(dom.meet.textContent, "2025-10-01");
-    assert.strictEqual(dom.meet.getAttribute("data-value"), "2025-10-01");
+      id: 42, stamps: {}, values: { meeting_at: "11/12 PM2 (화상)" } } } });
+    assert.strictEqual(dom.meet.textContent, "11/12 PM2 (화상)");
+    assert.strictEqual(dom.meet.title, "11/12 PM2 (화상)");
+    // 비우면 빈 칸이 무엇을 받는지 말한다 — 날짜를 고르는 칸이 아니다(#216).
+    dom.table.fire("inline-saved", { detail: { row: dom.tr, cell: dom.meet, data: {
+      id: 42, stamps: {}, values: { meeting_at: "" } } } });
+    assert.ok(/눌러서 적습니다/.test(dom.meet.title), "빈 미팅일 칸의 안내: " + dom.meet.title);
   }
 
   // ⑥ 이어진 줄이 없는 기업 — 빈 칸이 열리고, IR 쪽 주소로 저장하고, 새 줄이 서면 주소가 바뀐다
@@ -201,8 +221,7 @@ async function main() {
       "data-value": "", "data-save-url": fresh
     });
     const day = D.el("td", {
-      class: "cell", "data-field": "meeting_at", "data-type": "date",
-      "data-value": "", "data-save-url": fresh
+      class: "cell", "data-field": "meeting_at", "data-save-url": fresh
     });
     const tr = D.el("tr", { "data-id": "7" }, [D.el("td", {}), st, day]);
     const table = D.el("table", { id: "co-table", "data-inline-url": "/api/companies" },
@@ -223,7 +242,7 @@ async function main() {
     day.fire("click");
     const input = day.querySelector("input");
     assert.ok(input, "빈 미팅일 칸이 안 열렸다");
-    assert.strictEqual(input.type, "date", "빈 미팅일 칸이 날짜 입력으로 안 열렸다");
+    assert.strictEqual(input.type, "text", "빈 미팅일 칸이 글자 칸으로 안 열렸다(#216)");
     input.blur();
     await flush();
     assert.strictEqual(sent.length, 1, "안 고쳤는데 저장이 나갔다");

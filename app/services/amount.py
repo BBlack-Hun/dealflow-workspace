@@ -48,6 +48,8 @@
     애매한 것을 짐작해 읽으면 그 짐작이 그대로 투자사에게 나간다.
   · **단위 없는 맨숫자는 언제나 억이다.** 이 칸이 예전부터 억이었고(입력창이
     억이었다) 규칙이 둘이 되는 순간 `18.3` 과 `50000000` 이 서로 다른 단위가 된다.
+    표에서 맨숫자를 적으면 저장할 때 `억` 을 붙인다(#217 · `with_unit`) — 뜻은 같고
+    단위가 눈에 보인다.
 
 이 밖에는 **문구에서 토막째 빠진다**(`10억 이상` 같은 한쪽만 열린 구간도 받지
 않는다). 빼는 편이 안전하다: 못 읽는 글자를 그대로 실어 보내는 쪽이 훨씬 나쁘다.
@@ -354,6 +356,33 @@ def from_million(value: Optional[int]) -> Optional[str]:
     if value < 100:
         return f"{value * 100}만원"
     return format((Decimal(value) / 100).normalize(), "f")
+
+
+#: 금액 칸 이름 — IR 기업 현황 · Series A 두 표가 같은 이름을 쓴다(`with_unit` 을 지나는 칸).
+FIELD_RE = re.compile(r"revenue_\d{4}|revenue_recent|funding_total|raise_target|pre_value")
+
+#: 맨숫자가 이만큼 이상이면 `억` 을 안 붙인다 — 1만억(1조)은 이 칸들에서 억일 리가 없다.
+#: 운영 값으로 쟀다(11/10): 억으로 적힌 맨숫자는 모두 1000 미만, 원으로 적힌 것은 1000만 이상.
+#: 그 사이는 만원 · 원 어느 쪽인지 글자로 못 가른다 — 짐작해 붙이면 그대로 투자사에게 나간다.
+UNIT_LIMIT = Decimal(10000)
+
+_BARE_RE = re.compile(rf"^(?:{_NUM})$")
+
+
+def with_unit(typed: str) -> str:
+    """사람이 칸에 적은 글자 → 저장할 글자(#217). **단위 없는 맨숫자에만 `억` 을 붙인다.**
+
+        `30` → `30억` · `2.5` → `2.5억` · `1,200` → `1200억`
+        `0` · `30억` · `5천만원` · `5-10` · `~` · `확인중` · `35000` → 적은 그대로
+
+    맨숫자는 원래 억으로 읽혔다(위 머리말) — 뜻은 안 바뀌고, 표 · 지난해 매출 칸(적힌
+    그대로 문구에 실린다)에 단위가 보이게 될 뿐이다. 붙이는 모양은 문구의 그것(`phrase`)이다.
+    """
+    raw = text(typed)
+    if not _BARE_RE.match(raw):
+        return raw
+    number = Decimal(_digits(raw))
+    return phrase(raw) if 0 < number < UNIT_LIMIT else raw
 
 
 def is_countable(value) -> bool:

@@ -27,6 +27,9 @@ EXPECTED_OPEN = {
     # 탭 이름 바꾸기. 자기 화면의 탭이라 고칠 수 있어야 한다 — 바뀌는 것은
     # 화면 글자뿐이고, 표 모양은 바뀌지 않는 열쇠가 정한다.
     ("POST", "/consulting/sheets/rename"),
+    # [+ 탭 추가](#215) — 이름 바꾸기와 같은 자리 · 같은 권한이다. 탭은 팀 공용이고
+    # 새 탭에 서는 것은 [기업 추가] 로 넣은 자기 줄뿐이다.
+    ("POST", "/consulting/sheets/add"),
     ("POST", "/consulting/columns"),
     ("POST", "/consulting/columns/{column_id}/rename"),
     ("POST", "/consulting/columns/{column_id}/delete"),
