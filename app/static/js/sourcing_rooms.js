@@ -25,8 +25,10 @@
   }
 
   // 찾기는 잡만 세운다 — 찾는 것은 누른 사람 PC 의 발송기다. 실린 줄마다 적어 둔다.
+  // 서버가 줄 안내(`note`)를 주면 그대로 쓴다 — 보내는 계정이 누른 찾기는 후보가 이
+  // 화면이 아니라 팀 현황 › 보내는 계정 기준 방 제목에 담긴다(`routers/sourcing.py`).
   function searched(form, d) {
-    var text = "찾기 요청됨(회차 #" + d.job_id + ") — 끝나면 새로고침해 후보를 고르세요";
+    var text = d.note || ("찾기 요청됨(회차 #" + d.job_id + ") — 끝나면 새로고침해 후보를 고르세요");
     (d.ids || []).forEach(function (id) {
       var tr = document.querySelector('#sourcing-table tr[data-id="' + id + '"]');
       var rowForm = tr && tr.querySelector(".js-room-search");

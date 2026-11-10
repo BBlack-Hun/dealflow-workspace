@@ -323,13 +323,16 @@ def _company_row(job: SendJob, item: SendItem):
 
 def _verify_search(job: SendJob, item: SendItem) -> dict:
     """방 확인 건에 실어 보내는 검색어."""
-    if (job is not None and job.topic == SENDER_ROOM_TOPIC
-            and item.contact is not None):
-        # **보내는 계정 카톡 기준 제목** 찾기 — 담당자 주인의 방 제목으로 먼저,
-        # 없으면 이름으로(`services/sender_rooms.search_terms`).
+    if job is not None and job.topic == SENDER_ROOM_TOPIC:
+        # **보내는 계정 카톡 기준 제목** 찾기 — 적어 둔 방 제목으로 먼저,
+        # 없으면 이름으로(`services/sender_rooms.search_terms`). 딜 소싱 분도
+        # 같은 잡에 실린다(`sender_rooms.sourcing_search_terms`).
         from ..services import sender_rooms
 
-        return sender_rooms.search_terms(item.contact)
+        if item.contact is not None:
+            return sender_rooms.search_terms(item.contact)
+        if item.sourcing_contact is not None:
+            return sender_rooms.sourcing_search_terms(item.sourcing_contact)
     if (job is not None and job.topic == SOURCING_ROOM_TOPIC
             and item.sourcing_contact is not None):
         # 딜 소싱 명단 줄의 카톡방 후보 찾기(`services/sourcing_rooms.py`) —

@@ -233,3 +233,182 @@ def test_non_admin_cannot_check(client, db, users, team):
     client.post("/team/sender-rooms/check", data={"sender_id": users["u2"].id},
                 follow_redirects=False)
     assert db.execute(select(SendJob)).scalars().all() == []
+
+
+# ── 딜 소싱 명단도 보내는 계정 기준 제목을 따로 둔다(0135) ─────────────────────
+#
+# 딜 소싱 방 이름은 [방 후보 찾기]를 누른 팀원 카톡의 제목이다. 보내는 계정(자동화)이
+# 찾은 제목은 `sender_rooms` 에만 담기고, 명단의 방 이름 · 후보 · 확인 표시는 그대로다.
+# 그 계정이 딜 소싱 분께 보낼 때는 확인된 제목이 먼저, 없으면 명단의 방 이름.
+
+GROUP = "시리즈 A 이상 딜 소싱 참여 심사역"
+SRC_OWN = "홍소싱 심사역 방"
+
+
+@pytest.fixture()
+def sourcing(db, users, team):
+    from app.models import SourcingContact
+
+    def person(name, room=None, participation="참여"):
+        row = SourcingContact(bucket=GROUP, name=name, firm="가나다벤처스", title="심사역",
+                              kakao_room_name=room, participation=participation)
+        db.add(row)
+        db.flush()
+        return row
+
+    rows = {"room": person("홍소싱", SRC_OWN),
+            "noroom": person("이빈방"),
+            "left": person("박불참", "불참방", "불참여")}
+    db.commit()
+    return rows
+
+
+def _sourcing_item(job, person):
+    return next(i for i in job.items if i.sourcing_contact_id == person.id)
+
+
+def test_check_also_carries_sourcing_people_except_those_who_left(
+        client, db, users, team, sourcing):
+    from app.services import sender_rooms
+
+    job = sender_rooms.queue_check(db, users["u2"])
+    assert job.total == 3        # 투자사 1 + 딜 소싱 2(불참여 빼고)
+    got = {i.sourcing_contact_id: i.room_name for i in job.items if i.sourcing_contact_id}
+    assert got == {sourcing["room"].id: SRC_OWN,
+                   sourcing["noroom"].id: "이빈방 심사역"}
+
+    kinds = {"kinds": "deal_intro,verify_room"}
+    items = client.get("/api/agent/poll", params=kinds,
+                       headers=auth(OTHER_TOKEN)).json()["items"]
+    by_room = {i["room_name"]: i for i in items}
+    # 방 이름이 있으면 그 제목, 없으면 이름+직함 — 못 찾으면 이름. 회사는 안 보낸다.
+    assert (by_room[SRC_OWN]["query"], by_room[SRC_OWN]["name"]) == (SRC_OWN, "홍소싱")
+    assert by_room["이빈방 심사역"]["query"] == "이빈방 심사역"
+    assert "firm" not in by_room[SRC_OWN]
+
+
+def test_sourcing_result_goes_to_the_sender_table_only(client, db, users, team, sourcing):
+    from app.models import SourcingContact
+    from app.services import sender_rooms
+
+    job = sender_rooms.queue_check(db, users["u2"])
+    same = _sourcing_item(job, sourcing["room"]).id
+    renamed = _sourcing_item(job, sourcing["noroom"]).id
+    _report(client, same, found_room=SRC_OWN, candidates=[SRC_OWN])
+    _report(client, renamed, verify_result="ambiguous", status="failed",
+            candidates=["곽 카톡 이빈방", "다른 방"])
+    db.expire_all()
+
+    row = sender_rooms.row_of(db, users["u2"].id, sourcing["room"].id, sourcing=True)
+    assert (row.verified, row.room_name, row.contact_id) == (1, SRC_OWN, None)
+    picks = sender_rooms.row_of(db, users["u2"].id, sourcing["noroom"].id, sourcing=True)
+    assert picks.verified == 0
+    assert sender_rooms.candidates(picks) == ["곽 카톡 이빈방", "다른 방"]
+    # 딜 소싱 명단의 줄은 **그대로**다 — 방 이름 · 후보 · 확인 표시 모두.
+    for key in ("room", "noroom"):
+        person = db.get(SourcingContact, sourcing[key].id)
+        assert person.room_candidates is None
+        assert person.room_verified == "unverified"
+    assert db.get(SourcingContact, sourcing["noroom"].id).kakao_room_name is None
+
+
+def test_sourcing_rooms_for_prefers_the_confirmed_sender_title(db, users, team, sourcing):
+    from app.models import SenderRoom
+    from app.services import sender_rooms
+
+    person = sourcing["room"]
+    assert sender_rooms.sourcing_rooms_for(db, users["u2"].id, [person]) == {}
+    db.add(SenderRoom(sender_user_id=users["u2"].id, sourcing_contact_id=person.id,
+                      candidates='["곽 카톡 홍소싱"]', checked_at="2026-11-10"))
+    db.commit()
+    sender_rooms.confirm(db, users["u2"].id, person.id, "곽 카톡 홍소싱", sourcing=True)
+    assert sender_rooms.sourcing_rooms_for(db, users["u2"].id, [person]) == {
+        person.id: "곽 카톡 홍소싱"}
+    # 다른 계정에는 영향이 없다 · 같은 번호의 투자사 줄과 섞이지 않는다.
+    assert sender_rooms.sourcing_rooms_for(db, users["u1"].id, [person]) == {}
+    assert sender_rooms.row_of(db, users["u2"].id, person.id) is None
+    sender_rooms.clear(db, users["u2"].id, person.id, sourcing=True)
+    assert sender_rooms.sourcing_rooms_for(db, users["u2"].id, [person]) == {}
+
+
+def test_page_lists_sourcing_people_and_confirms_by_kind(client, db, users, team, sourcing):
+    from app.models import SenderRoom
+    from app.services import sender_rooms
+
+    person = sourcing["noroom"]
+    db.add(SenderRoom(sender_user_id=users["u2"].id, sourcing_contact_id=person.id,
+                      candidates='["곽 카톡 이빈방"]', checked_at="2026-11-10"))
+    db.commit()
+    _login(client, "01000000002")
+    page = client.get("/team/sender-rooms")
+    assert "PC로 전체 방 확인 (3명)" in page.text
+    assert f"딜 소싱 · {GROUP}" in page.text
+    assert 'data-kind="sourcing"' in page.text
+    client.post(f"/team/sender-rooms/{person.id}/confirm",
+                data={"sender_id": users["u2"].id, "room": "곽 카톡 이빈방",
+                      "kind": "sourcing"}, follow_redirects=False)
+    db.expire_all()
+    assert sender_rooms.sourcing_rooms_for(db, users["u2"].id, [person]) == {
+        person.id: "곽 카톡 이빈방"}
+
+
+def test_sender_pressing_sourcing_search_keeps_the_list_untouched(
+        client, db, users, team, sourcing):
+    """보내는 계정이 딜 소싱 화면에서 [방 후보 찾기]를 눌러도 → 보내는 계정 기준 표로."""
+    from app.models import SENDER_ROOM_TOPIC, SendJob, SourcingContact
+
+    _login(client, "01000000002")
+    person = sourcing["noroom"]
+    answer = client.post("/sourcing/rooms/search",
+                         data={"tab": GROUP, "ids": str(person.id)},
+                         headers={"Accept": "application/json"})
+    assert answer.status_code == 200 and "보내는 계정 기준 방 제목" in answer.json()["note"]
+    [job] = db.execute(select(SendJob)).scalars().all()
+    assert (job.user_id, job.topic) == (users["u2"].id, SENDER_ROOM_TOPIC)
+    item = job.items[0]
+    _report(client, item.id, verify_result="ambiguous", status="failed",
+            candidates=["곽 카톡 이빈방"])
+    db.expire_all()
+    assert db.get(SourcingContact, person.id).room_candidates is None
+
+
+def test_member_pressing_sourcing_search_is_unchanged(client, db, users, team, sourcing):
+    """보내는 계정이 아니면 예전 그대로 — 누른 사람 PC, 명단의 후보로."""
+    from app.models import SOURCING_ROOM_TOPIC, SendJob
+
+    _login(client, "01000000001")
+    client.post("/sourcing/rooms/search",
+                data={"tab": GROUP, "ids": str(sourcing["noroom"].id)})
+    [job] = db.execute(select(SendJob)).scalars().all()
+    assert (job.user_id, job.topic) == (users["u1"].id, SOURCING_ROOM_TOPIC)
+
+
+def test_sender_sends_to_sourcing_with_its_own_title(db, users, team, sourcing):
+    """자동화(참여 제안 · 소싱 리마인드)와 손으로 보내는 딜 소싱 제안 — 확인된 제목 먼저."""
+    from app.models import SenderRoom
+    from app.routers.deals import _room_of
+    from app.services import sender_rooms
+    from app.services.automations import sourcing_remind
+
+    person = sourcing["room"]
+    db.add(SenderRoom(sender_user_id=users["u2"].id, sourcing_contact_id=person.id,
+                      room_name="곽 카톡 홍소싱", verified=1))
+    db.commit()
+    mine = sender_rooms.sourcing_rooms_for(db, users["u2"].id, [person])
+    assert _room_of(person, {}, mine) == "곽 카톡 홍소싱"
+    assert _room_of(person, {}) == SRC_OWN               # 다른 계정은 명단의 방 이름
+    assert sourcing_remind._room(db, users["u2"], person, {}, mine) == "곽 카톡 홍소싱"
+    assert sourcing_remind._room(db, users["u1"], person, {}) == SRC_OWN
+
+
+def test_deleting_a_sourcing_row_takes_its_sender_titles(client, db, users, team, sourcing):
+    from app.models import SenderRoom
+    from app.services import sourcing_rooms
+
+    person = sourcing["room"]
+    db.add(SenderRoom(sender_user_id=users["u2"].id, sourcing_contact_id=person.id,
+                      room_name="곽 카톡 홍소싱", verified=1))
+    db.commit()
+    sourcing_rooms.forget(db, person.id)
+    db.commit()
+    assert db.execute(select(SenderRoom)).scalars().all() == []

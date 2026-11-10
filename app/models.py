@@ -3228,8 +3228,9 @@ class AutomationSend(TimestampMixin, Base):
 
 #: 방 확인 잡(`verify_room`)의 `SendJob.topic` — **보내는 계정 카톡 기준의 방
 #: 제목**을 찾는 확인이다(`services/sender_rooms.py`). 이 값이면 그 잡의 줄
-#: (`VcContact`)은 담당자 주인의 방 제목으로 찾고, 찾은 제목은 그 줄이 아니라
-#: `sender_rooms` 에 담긴다 — 담당자 주인의 방 이름도 확인 표시도 안 건드린다.
+#: (`VcContact` · 딜 소싱 명단 `SourcingContact`)은 적어 둔 방 제목으로 찾고, 찾은
+#: 제목은 그 줄이 아니라 `sender_rooms` 에 담긴다 — 적어 둔 방 이름도 확인 표시도
+#: 안 건드린다.
 SENDER_ROOM_TOPIC = "sender_room"
 
 
@@ -3248,6 +3249,10 @@ class SenderRoom(TimestampMixin, Base):
     - 자동화가 방을 고를 때: 확인된 제목이 있으면 그것, 없으면 주인의 제목
       (`sender_rooms.room_for`).
 
+    **딜 소싱 명단 줄도 담는다**(0135). 딜 소싱 방 이름은 그 방을 찾아 확정한
+    팀원 카톡의 제목이라, 보내는 계정 카톡에서는 다를 수 있다. 한 줄은 투자사
+    담당자(`contact_id`)와 딜 소싱 분(`sourcing_contact_id`) 중 **하나만** 가리킨다.
+
     **아무것도 보내지 않는다** — 확인 잡은 방 제목만 읽는다.
     """
 
@@ -3255,11 +3260,18 @@ class SenderRoom(TimestampMixin, Base):
     __table_args__ = (
         UniqueConstraint("sender_user_id", "contact_id",
                          name="uq_sender_rooms_pair"),
+        UniqueConstraint("sender_user_id", "sourcing_contact_id",
+                         name="uq_sender_rooms_sourcing"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     sender_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
-    contact_id: Mapped[int] = mapped_column(ForeignKey("vc_contacts.id"))
+    #: 투자사 담당자 줄. 딜 소싱 분의 줄이면 비어 있다.
+    contact_id: Mapped[Optional[int]] = mapped_column(ForeignKey("vc_contacts.id"),
+                                                      nullable=True)
+    #: 딜 소싱 명단 줄(0135). 투자사 담당자의 줄이면 비어 있다.
+    sourcing_contact_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("sourcing_contacts.id"), nullable=True)
     #: 보내는 계정 카톡에서의 방 제목(확정된 것). 비어 있으면 주인의 제목을 쓴다.
     room_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     #: 1 이면 `room_name` 이 그 계정 카톡에서 확인된 제목이다.
