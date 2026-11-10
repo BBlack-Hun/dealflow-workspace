@@ -205,6 +205,19 @@
   <a class="sheet-tab {% if selected_sheet == t.key %}active{% endif %}"
      href="/consulting?sheet={{ t.key|urlencode }}">{{ t.label }} <span>{{ t.count }}</span></a>
   {% endfor %}
+  {# **[+ 탭 추가]**(#215) — 새 명단 탭(`consulting_sheets.create`). 딜 소싱의 [+ 탭 추가] 와
+     같은 여닫이 · 모양이다(`sourcing.html`). 명단 탭 맨 뒤 · 참고 자료 구분선 앞에 선다. #}
+  <details class="ref-new">
+    <summary class="sheet-tab ref-new-btn" title="탭 추가 — 새 명단 탭을 만듭니다"
+             aria-label="탭 추가">+ 탭 추가</summary>
+    <form method="post" action="/consulting/sheets/add" class="ref-new-form">
+      <label class="field"><span>탭 이름</span>
+        <input type="text" name="label" maxlength="80" required placeholder="예) 새 탭 이름"></label>
+      <button class="primary-btn inline" type="submit">만들기</button>
+      <p class="hint">팀 모두에게 같은 탭으로 섭니다. 기업은 그 탭에서 <b>기업 추가</b>로 넣고,
+        이름은 탭 아래 <b>이름 저장</b>으로 고칩니다.</p>
+    </form>
+  </details>
 
   {#
     스크립트·가이드. 명단 탭과 성격이 달라 구분선 뒤에 둔다 —

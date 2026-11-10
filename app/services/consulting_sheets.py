@@ -152,3 +152,32 @@ def rename(db: Session, kind: str, label: str) -> Optional[ConsultingSheet]:
     sheet.label = after
     db.flush()
     return sheet
+
+
+#: [+ 탭 추가] 로 세운 탭의 열쇠 머리 — 뒤에 번호가 붙는다(`tab-4`). 표 모양은 열쇠를
+#: 모르는 탭의 표 그대로다(`routers/consulting.layout_of` 의 기본 칸).
+CUSTOM = "tab-"
+
+
+def create(db: Session, label: str) -> ConsultingSheet:
+    """[+ 탭 추가](#215) — 새 탭을 **맨 뒤**에 세운다. 못 세우면 까닭을 담아 `ValueError`.
+
+    이름 규칙은 `rename` 과 같다 — 빈 이름은 누를 자리가 없고, 있는 이름과 겹치면 두
+    탭의 줄이 섞인다. 열쇠는 새로 지어 붙인다(위 `CUSTOM`) — 이름을 바꿔도 이 탭이다.
+    커밋은 부르는 쪽.
+    """
+    name = (label or "").strip()[:80]
+    if not name:
+        raise ValueError("탭 이름을 입력하세요")
+    rows = ensure(db)
+    if any(s.label == name for s in rows):
+        raise ValueError(f"이미 있는 탭 이름입니다: {name}")
+    kinds = {s.kind for s in rows}
+    n = len(rows) + 1
+    while f"{CUSTOM}{n}" in kinds:
+        n += 1
+    sheet = ConsultingSheet(kind=f"{CUSTOM}{n}", label=name,
+                            position=max((s.position for s in rows), default=-1) + 1)
+    db.add(sheet)
+    db.flush()
+    return sheet

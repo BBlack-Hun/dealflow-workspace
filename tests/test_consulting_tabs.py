@@ -312,3 +312,76 @@ def test_참고_자료에_사람_칸이_없다():
     from app.models import RefSheet
 
     assert "user_id" not in RefSheet.__table__.columns
+
+
+# ── 5. [+ 탭 추가] (#215 — 11/10 팀원 "투자컨설턴트에서 탭 추가 할수 있게") ──────────
+#
+# 탭 셋 말고 새 명단 탭을 세운다 — 딜 소싱의 [+ 탭 추가] 와 같은 자리 · 같은 모양이다.
+# 새 탭은 열쇠를 모르는 탭의 표(기본 칸)로 서고, 이름 저장 · [기업 추가] 가 그대로 된다.
+
+def _login_viewer(client, db, users):
+    users["u1"].can_view_consulting = 1
+    db.commit()
+    client.post("/login", data={"phone": users["u1"].phone, "password": DEMO_PASSWORD})
+
+
+def test_탭을_추가하면_탭_줄에_서고_그_탭에_기업을_넣는다(client, db, users):
+    from app.models import ConsultingCompany, ConsultingSheet, EditLog
+    from app.services.consulting_sheets import DEFAULTS, labels
+
+    _login_viewer(client, db, users)
+    before = labels(db)
+    page = client.get("/consulting").text
+    assert 'action="/consulting/sheets/add"' in page and "+ 탭 추가" in page
+
+    r = client.post("/consulting/sheets/add", data={"label": "  샘플 전환 기업 "},
+                    follow_redirects=False)
+    assert r.status_code == 303
+    assert "sheet=" in r.headers["location"], "만든 탭으로 안 열렸다"
+
+    db.expire_all()
+    assert labels(db) == before + ["샘플 전환 기업"], "새 탭이 맨 뒤에 안 섰다"
+    made = db.query(ConsultingSheet).filter_by(label="샘플 전환 기업").one()
+    assert made.kind and made.kind not in {k for k, _ in DEFAULTS}, "탭 셋의 열쇠를 물려받았다"
+
+    body = client.get("/consulting?sheet=샘플 전환 기업").text
+    assert "샘플 전환 기업" in _names(body)
+    # 이름 저장 폼이 선다(열쇠가 있는 탭이다) · 기본 칸이 선다.
+    assert f'name="kind" value="{made.kind}"' in body
+    assert "컨설팅 미팅일" in body and "기업 관리" in body
+
+    r = client.post("/api/consulting", json={"company_name": "샘플새탭기업",
+                                             "sheet": "샘플 전환 기업"})
+    assert r.status_code == 200, r.text
+    db.expire_all()
+    assert db.query(ConsultingCompany).filter_by(
+        company_name="샘플새탭기업").one().sheet == "샘플 전환 기업"
+    assert "샘플새탭기업" in client.get("/consulting?sheet=샘플 전환 기업").text
+
+    # 공용 화면의 탭이라 누가 만들었는지 남는다(`edit_log` 의 `consulting_sheets`).
+    logs = [x for x in db.query(EditLog).all()
+            if x.table_name == "consulting_sheets" and x.action == "create"]
+    assert [x.actor_user_id for x in logs] == [users["u1"].id], logs
+
+
+def test_빈_이름과_있는_이름으로는_탭을_안_만든다(client, db, users):
+    from app.services.consulting_sheets import labels
+
+    _login_viewer(client, db, users)
+    before = labels(db)
+    for bad in ("", "   ", before[0], f" {before[1]} "):
+        r = client.post("/consulting/sheets/add", data={"label": bad}, follow_redirects=False)
+        assert r.status_code == 303 and "msg=" in r.headers["location"], bad
+        db.expire_all()
+        assert labels(db) == before, f"{bad!r} 로 탭이 섰다"
+
+
+def test_투자현황을_못_보는_계정은_탭을_못_만든다(client, db, users):
+    from app.services.consulting_sheets import labels
+
+    client.post("/login", data={"phone": users["u1"].phone, "password": DEMO_PASSWORD})
+    before = labels(db)
+    r = client.post("/consulting/sheets/add", data={"label": "샘플 탭"}, follow_redirects=False)
+    assert r.status_code == 403
+    db.expire_all()
+    assert labels(db) == before
