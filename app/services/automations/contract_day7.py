@@ -95,7 +95,7 @@ def done_on(company: IrCompany) -> Optional[date]:
 
 # ── 계약 완료로 바뀐 날 (`models._stamp_contract_done`) ─────────────────────────
 
-def before_flush(session: Session) -> None:
+def before_flush(session: Session) -> list:
     """IR 기업 계약여부가 **계약 완료로 바뀌면 오늘**을, 계약 완료가 아니게 되면 빈칸을.
 
     무료 ↔ 유료는 계약 완료끼리라 날을 안 바꾼다. 새 줄(옛 값이 없다)은 안 적는다 —
@@ -103,7 +103,11 @@ def before_flush(session: Session) -> None:
 
     같은 순간에 **계약년월**(#122)이 비어 있으면 그 달을 적는다 — IR 기업 · Series A 줄
     둘 다. 이미 있으면 안 건드리고, 계약 완료가 아니게 돼도 지우지 않는다.
+
+    계약년월을 적은 줄을 돌려준다 — 이 자리는 따라 고치기 **뒤에** 돌아서, 부르는 쪽
+    (`models._stamp_contract_done`)이 그 달을 이어진 줄에 마저 적는다(#206).
     """
+    stamped = []
     for company in session.dirty:
         if not isinstance(company, (IrCompany, SeriesACompany)) or company in session.deleted:
             continue
@@ -114,12 +118,14 @@ def before_flush(session: Session) -> None:
         now = _key(history.added[0]) in DONE
         if now and not was and not company.contract_ym:
             company.contract_ym = clock.today().isoformat()[:7]
+            stamped.append(company)
         if not isinstance(company, IrCompany):
             continue
         if now and not was:
             company.contract_done_at = clock.today().isoformat()
         elif was and not now:
             company.contract_done_at = None
+    return stamped
 
 
 # ── 누구에게 ────────────────────────────────────────────────────────────────

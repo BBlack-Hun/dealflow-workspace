@@ -28,6 +28,7 @@
                       — 메타는 11/04 #154)
     계약년월          계약년월(메타 탭만 · 11/04 #154    —
                       · 0133 `contract_ym`)
+                      계약 완료로 바뀌며 저절로 든 달도 이어진 줄의 빈칸에 간다(#206 · `follow_late`).
 
     ── 3단계(10/26) — Series A 이상 딜 소싱(`SeriesACompany`)은 셋째 자리 ──
     대표자명 · 연락처 · 이메일   →  `ceo_name` · `ceo_phone` · `ceo_email`
@@ -723,6 +724,34 @@ def before_flush(session: Session) -> None:
                         and (w := slot(other, field, run.kinds))
                         and _follows(other, w, field, before)):
                     _put(other, w, field, value, run.fill_only)
+
+
+def follow_late(session: Session, objs: Iterable, field: str) -> None:
+    """flush 의 다른 자리가 **따라 고치기 뒤에** 적은 칸을 이어진 줄에도 적는다 — 빈칸만.
+
+    계약 완료로 바뀌는 순간 빈 계약년월에 그 달을 적는 자리(`contract_day7.before_flush`)가
+    그렇다 — 줄에서 IR 로 따라 온 계약여부까지 읽어야 해서 이 모듈의 `before_flush` 뒤에
+    돈다(`models._stamp_contract_done`). 그대로 두면 그 달이 IR(또는 Series A 줄)에만 들고
+    이어진 투자컨설턴트 메타 줄은 빈칸이었다(#206 · 11/10). 그 자리도 빈칸에만 적으므로
+    여기서도 빈칸만 채운다 — 다른 달이 적혀 있으면 `값 다름` 에 선다(`differences`).
+    `objs` 는 IR 기업이거나 이어진 줄이다. 줄이면 IR 을 먼저 채우고 IR 값으로 나머지를 채운다.
+    """
+    run = _Flush(session)
+    for obj in objs:
+        company = obj if isinstance(obj, IrCompany) else (
+            run.company(obj.ir_company_id) if getattr(obj, "ir_company_id", None) else None)
+        if company is None or company.id is None:
+            continue
+        if obj is not company and (where := slot(obj, field, run.kinds)):
+            mine = norm(field, _get(obj, where), where)
+            if mine:
+                _put(company, field, field, mine, fill_only=True)
+        value = norm(field, _value(company, field, field), field)
+        if not value:
+            continue
+        for other in run.linked(company.id):
+            if other is not obj and (w := slot(other, field, run.kinds)):
+                _put(other, w, field, value, fill_only=True)
 
 
 @contextmanager
