@@ -46,8 +46,8 @@ from ..clock import stamp_text, today
 from ..db import get_db
 from ..deps import NotAdmin, get_current_user, templates
 from ..models import IrCompany, SeriesACompany, SourcingContact, User
-from ..services import (custom_columns, deal_history, forecast, ir_link, revenue_years,
-                        series_a_share, sourcing_sync)
+from ..services import (amount, custom_columns, deal_history, forecast, ir_link,
+                        revenue_years, series_a_share, sourcing_sync)
 from ..services.series_a_import import day_text
 from ..ui import base_ctx
 
@@ -59,8 +59,8 @@ TAB = "series-a"
 _DATED = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 #: 사람이 탭에서 적기만 하는 칸(#24 · 0112) — 대표자 · 매출 · 금액. 시트에 없고
-#: 서버가 다듬지도 않는다(적은 그대로, 금액 단위는 억). 응답 · 검색이 이 한 목록을
-#: 읽는다 — 화면은 `companies_series_a.html` 에 손으로 적었다(다른 칸과 같다).
+#: 서버가 다듬지도 않는다(적은 그대로, 금액 단위는 억 — 숫자만 적으면 `억` 만 붙는다 · #217).
+#: 응답 · 검색이 이 한 목록을 읽는다 — 화면은 `companies_series_a.html` 에 손으로 적었다.
 TYPED = ("ceo_name", "ceo_phone", "ceo_email",
          "revenue_2024", "revenue_2025", "revenue_2026", "revenue_2027",
          "funding_total", "raise_target", "pre_value")
@@ -420,7 +420,7 @@ def meeting_text(text: str) -> Optional[str]:
 
 
 def _assign(row: SeriesACompany, body: SeriesAIn) -> None:
-    from .companies import checked_contract, checked_ox, checked_ym
+    from .companies import checked_contract, checked_ox, checked_ym, typed_amount
 
     for field, value in body.model_dump(exclude_unset=True, exclude={"sharer_phone"}).items():
         text = (value or "").strip()
@@ -456,6 +456,9 @@ def _assign(row: SeriesACompany, body: SeriesAIn) -> None:
             row.contract_received = checked_ox(field, text)
         elif field == "contract_ym":
             row.contract_ym = checked_ym(text)
+        elif amount.FIELD_RE.fullmatch(field):
+            # 숫자만 적으면 `억` 을 붙인다(#217) — IR 기업 현황과 같은 판정.
+            setattr(row, field, typed_amount(getattr(row, field), text))
         else:
             setattr(row, field, text or None)
 

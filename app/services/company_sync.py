@@ -245,6 +245,10 @@ def norm(field: str, value, where: Optional[str] = None) -> Optional[str]:
         # 연도 칸은 적힌 그대로 한줄 소개에 실린다 — Series A 의 `18.3`(단위 억)은 `18.3억`
         # 으로 맞춘다(`revenue_years.roll_over` 와 같은 규칙). 단위가 적힌 글은 그대로.
         return text if UNIT.search(text) else (amount.phrase(text) or text)
+    if amount.FIELD_RE.fullmatch(field):
+        # 금액 칸 — 맨숫자는 억이라 `30` 과 `30억` 은 같은 값이다(#217). 저장할 때 붙는 `억`
+        # (`amount.with_unit`)이 고친 것으로 읽혀 이어진 줄의 다른 값을 덮지 않게.
+        return amount.with_unit(text)
     if field == "series":
         # 일곱 단계로 맞춘 값(#162) — 옛 글(`Angel, Seed (…)`)과 `Seed` 는 같은 값이라
         # 맞추기만 한 것은 고친 것으로 안 읽힌다(`_changes`).
@@ -265,7 +269,7 @@ def same(field: str, a, b) -> bool:
         if na and nb:
             return na == nb
         return _raw(a).upper() == _raw(b).upper()
-    elif field in revenue_years.FIELDS:
+    elif field in revenue_years.FIELDS or amount.FIELD_RE.fullmatch(field):
         return (norm(field, a) or "") == (norm(field, b) or "")   # `18.3` 과 `18.3억` 은 같다
     elif field == "series":
         return series_stage.same(_raw(a), _raw(b))   # 같은 단계 · 띄어쓰기 수는 안 가린다

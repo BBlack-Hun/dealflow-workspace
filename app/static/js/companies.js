@@ -954,6 +954,11 @@
     Object.keys(bands).forEach(function (key) {
       if (row.hasAttribute("data-f-" + key)) row.setAttribute("data-f-" + key, bands[key]);
     });
+    // 금액 칸 글자도 **저장값으로**(#217) — 숫자만 적으면 서버가 `억` 을 붙여 저장한다(`30` → `30억`).
+    var cell = e.detail.cell;
+    var field = cell && cell.getAttribute("data-field");
+    var amounts = data.amounts || {};
+    if (field && typeof amounts[field] === "string") cell.textContent = amounts[field];
     var by = row.querySelector("td.updated-by");
     if (by && "updated_by" in data) {
       by.textContent = data.updated_by;
