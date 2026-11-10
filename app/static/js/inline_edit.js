@@ -323,7 +323,7 @@
         // 손 없이 비었으면 고친 것이 없다 — 원래 값으로 돌려 그린다(위 `touched`).
         var after = input.type === "date" && !touched ? before : input.value.trim();
         // 안 고쳤으면 보이던 글자 그대로 — 값을 그려 넣으면 `data-value` 칸은 화면이 바뀐다
-        // (IR `컨설팅 미팅일` 의 `2025.09.16` 이 편집창이 짚은 `2025-09-16` 으로 · #166).
+        // (보이는 글자와 편집창이 짚는 값이 다른 칸이다).
         if (after === before && cell.hasAttribute("data-value")) cell.textContent = shown;
         else cell.textContent = type === "number" ? withCommas(after) : after;
         if (after !== before) save(cell, after, before, type);
