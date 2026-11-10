@@ -56,9 +56,9 @@ def test_새_줄은_이름이_하나_맞으면_저절로_잇고_빈칸을_채운
     data = logged_in.post("/api/series-a-companies", json={"name": "샘플 가람"}).json()
     row = db.get(SeriesACompany, data["id"])
     assert (row.ir_company_id, row.ir_link_auto) == (ir.id, 1)
-    # 빈칸은 IR 값으로 — 응답에도 실린다(화면이 다시 그린다).
+    # 빈칸은 IR 값으로 — 응답에도 실린다(화면이 다시 그린다). 맨숫자 금액은 `억` 을 붙여(#217).
     assert (data["ceo_name"], data["ceo_phone"], data["pre_value"]) == \
-        ("김샘플", "010-0000-1111", "100")
+        ("김샘플", "010-0000-1111", "100억")
 
 
 def test_이름이_같은_IR_기업이_둘이면_안_잇는다(logged_in, db, ir):
@@ -91,7 +91,7 @@ def test_기업명을_고치면_그_자리에서_잇고_채운_값을_응답으�
     assert row.ir_company_id is None
     data = logged_in.patch(f"/api/series-a-companies/{row.id}",
                            json={"name": "샘플가람"}).json()
-    assert (data["ceo_name"], data["revenue_2026"]) == ("김샘플", "12")
+    assert (data["ceo_name"], data["revenue_2026"]) == ("김샘플", "12억")
     assert data["ir_link"]["linked"] and data["ir_link"]["auto"]
     row = _fresh(db, row)[0]
     assert (row.ir_company_id, row.ir_link_auto) == (ir.id, 1)
@@ -161,8 +161,8 @@ def test_Series_A에서_고치면_IR과_다른_날_줄이_따라오고_IR을_고
                         json={"ceo_email": "new@example.com", "raise_target": "50"})
     assert r.status_code == 200, r.text
     company, second = _fresh(db, ir, second)
-    assert (company.contact_email, company.raise_target) == ("new@example.com", "50")
-    assert (second.ceo_email, second.raise_target) == ("new@example.com", "50")
+    assert (company.contact_email, company.raise_target) == ("new@example.com", "50억")
+    assert (second.ceo_email, second.raise_target) == ("new@example.com", "50억")
 
     r = logged_in.patch(f"/api/companies/{ir.id}", json={"contact_name": "최샘플"})
     assert r.status_code == 200, r.text
@@ -180,9 +180,9 @@ def test_IR을_고쳐도_Series_A에서_따로_쓰는_값은_두고_같던_값�
                         json={"contact_name": "최샘플", "revenue_recent": "15"})
     assert r.status_code == 200, r.text
     same, own, blank = _fresh(db, same, own, blank)
-    assert (same.ceo_name, same.revenue_2026) == ("최샘플", "15")
+    assert (same.ceo_name, same.revenue_2026) == ("최샘플", "15억")
     assert (own.ceo_name, own.revenue_2026) == ("박샘플", "20"), "딜 소싱의 값을 덮었다"
-    assert (blank.ceo_name, blank.revenue_2026) == ("최샘플", "15")
+    assert (blank.ceo_name, blank.revenue_2026) == ("최샘플", "15억")
 
 
 def test_Series_A_줄을_고치면_다른_Series_A_줄도_같던_값만_따라간다(logged_in, db, ir):
@@ -263,11 +263,11 @@ def test_2026년에는_26년_칸이_최근_매출액이고_27년_칸은_IR_예�
     row = _deal(db, name="샘플가람")
     row = _fresh(db, row)[0]
     # 잇는 순간: IR `최근 매출액(26년)` → 26년 칸, IR 25년 → 25년 칸.
-    assert (row.revenue_2026, row.revenue_2025) == ("12", "8.2억")
+    assert (row.revenue_2026, row.revenue_2025) == ("12억", "8.2억")
     logged_in.patch(f"/api/series-a-companies/{row.id}",
                     json={"revenue_2026": "15", "revenue_2024": "3", "revenue_2027": "30"})
     company = _fresh(db, ir)[0]
-    assert company.revenue_recent == "15"
+    assert company.revenue_recent == "15억"
     # 지난 해 칸은 단위를 붙여 적는다 — 연도 칸은 적힌 그대로 한줄 소개에 실린다.
     assert company.revenue_2024 == "3억"
     # 내년 칸은 IR 의 내년 예상매출(과제 169 — `revenue_years.forecast`)과 잇는다.
@@ -286,7 +286,7 @@ def test_2027년에는_27년_칸이_최근_매출액이고_26년_칸은_IR_26년
     monkeypatch.setattr(revenue_years, "this_year", lambda: 2027)
     logged_in.patch(f"/api/series-a-companies/{row.id}", json={"revenue_2027": "25"})
     company = _fresh(db, ir)[0]
-    assert company.revenue_recent == "25"
+    assert company.revenue_recent == "25억"
     # 해가 바뀌어 옮겨 적기(`roll_over`)가 IR 26년 칸을 채워도, 저절로 하는 일이라
     # 사람이 적은 Series A 26년 값을 덮지 않는다 — 값 다름에 선다.
     company.revenue_recent = "18"
@@ -373,7 +373,7 @@ def test_연결을_풀면_IR과_같은_칸만_비우고_딜_소싱_값과_IR은_
     row = _deal(db, name="샘플가람", ceo_name="박샘플", revenue_2026="20")
     # 꼴만 다른 같은 값(번호는 숫자만 · `8.2` 와 `8.2억`)도 IR 에서 온 값으로 본다.
     row = _raw_set(db, row, ceo_phone="01000001111", revenue_2025="8.2")
-    assert row.pre_value == "100"
+    assert row.pre_value == "100억"   # 잇는 순간 IR `100` 이 `억` 을 붙여 채워졌다(#217)
     assert ir_link.unlink(db, row) is True
     db.commit()
     row, company = _fresh(db, row, ir)

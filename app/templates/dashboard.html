@@ -465,6 +465,17 @@
       (`걸린 수 == 고른 수`) 숨긴다 — 더 있을지도 모르는데 "이게 전부" 라고
       하면 그건 거짓말이다.
     #}
+    {#
+      **이 목록에 한 번도 안 걸린 분이 곧 반응 없는 분은 아니다** — 딜소개를 아직 안
+      받은 분, IR 요청 말고 미팅 · 답 옴이 있는 분이 섞인다. 그래서 여기서 따로 세지
+      않고 딜 제안 관리의 [반응 없는 담당자만] 과 **같은 한 벌**의 수를 적고, 누르면
+      그 단추가 켜진 채 열린다(#213 · `no_reaction.listed` · `?noreact=1`).
+    #}
+    {% if no_reaction_count %}
+    <p class="hint"><a class="linkbtn" href="/deals?noreact=1"
+       title="딜 제안 관리에서 [반응 없는 담당자만] 을 켠 채로 엽니다">딜소개를 받고 반응이 한 번도 없는 분
+       <b>{{ no_reaction_count }}</b>명 — 딜 제안 관리에서 그분들만 보기</a></p>
+    {% endif %}
     <p class="hint req-rank-all" id="req-rank-all"
        {% if not top_requesters or top_requesters|length >= top_n %}hidden{% endif %}>
       IR 자료를 요청한 곳이 <b>{{ top_requesters|length }}</b>곳뿐입니다 —

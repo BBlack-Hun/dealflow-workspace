@@ -96,8 +96,10 @@ def test_적은_그대로_저장되고_응답과_검색에_실린다(logged_in, 
     res = logged_in.patch(f"/api/series-a-companies/{deal.id}", json=sent)
     assert res.status_code == 200, res.text
     data = res.json()
+    # 금액 칸에 숫자만 적은 것은 `억` 이 붙는다(#217 · `amount.with_unit`).
+    unit = {"revenue_2024": "8.2억", "funding_total": "18.3억", "raise_target": "30억"}
     for field, value in sent.items():
-        assert data[field] == value.strip(), field
+        assert data[field] == unit.get(field, value.strip()), field
     assert "홍길동" in data["search"] and "010-1000-0001" in data["search"]
 
     db.expire_all()

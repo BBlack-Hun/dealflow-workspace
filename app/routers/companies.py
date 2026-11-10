@@ -1033,7 +1033,8 @@ class CompanyIn(BaseModel):
     one_liner: Optional[str] = None
     # 금액 넷은 **글자**다(0074). 단위는 억이고, 화면이 보낸 글자가 그대로
     # 저장된다 — `5-10억 사이` · `~` 가 온다. 숫자로 바꾸는 자리는 어디에도
-    # 없다(`services/amount.py` 가 읽을 때만 뽑는다).
+    # 없다(`services/amount.py` 가 읽을 때만 뽑는다). 숫자만 적으면 `억` 만
+    # 붙는다(#217 · `typed_amount` — 연도 매출 칸도).
     revenue_recent: Optional[str] = None
     funding_total: Optional[str] = None
     raise_target: Optional[str] = None
@@ -1140,6 +1141,20 @@ def checked_ym(value) -> Optional[str]:
     return found
 
 
+def typed_amount(before, value: str) -> Optional[str]:
+    """금액 칸(`amount.FIELD_RE`)에 저장할 값 — 숫자만 적었으면 `억` 을 붙인다(#217).
+    `Series A 이상 딜 소싱` 탭도 지난다.
+
+    **고친 칸만** 붙인다. [수정] 창은 모든 칸을 한 번에 보내므로, 안 고친 칸에 이미 적힌
+    `40` 까지 바꾸면 수정 로그에 사람이 안 고친 칸이 고친 것으로 남는다(이미 있는 값은
+    `scripts/amount_unit_fill.py` 가 한 번 맞춘다).
+    """
+    text = value.strip()
+    if text != amount.text(before):
+        text = amount.with_unit(text)
+    return text or None
+
+
 def _assign(company: IrCompany, body: CompanyIn) -> None:
     data = body.model_dump(exclude_unset=True)
     for field, value in data.items():
@@ -1167,6 +1182,8 @@ def _assign(company: IrCompany, body: CompanyIn) -> None:
         elif field == "name":
             if value and value.strip():
                 company.name = value.strip()
+        elif amount.FIELD_RE.fullmatch(field) and isinstance(value, str):
+            setattr(company, field, typed_amount(getattr(company, field), value))
         elif isinstance(value, str):
             setattr(company, field, value.strip() or None)
         else:
@@ -1305,6 +1322,10 @@ def update_company(company_id: int, body: CompanyIn,
             "has_ir": bool((company.ir_file_name or "").strip()),
             # 투자라운드(#162) — 일곱 단계로 맞춘 값(`시리즈A` → `Series A`)으로 칸을 다시 그린다.
             "series": company.series or "",
+            # 금액 칸(#217) — 숫자만 적으면 `억` 을 붙여 저장한다(`typed_amount`). 보낸 칸만, 저장값으로
+            # 되그린다(`companies.js`) — 안 그리면 새로고침 전까지 칸에 친 글자(`30`)가 남는다.
+            "amounts": {f: getattr(company, f) or "" for f in body.model_fields_set
+                        if amount.FIELD_RE.fullmatch(f)},
             **_contract_result(company),
             **_one_liner_result(company, sent)}
 
