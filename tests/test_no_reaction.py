@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import re
 from datetime import date
 
 
@@ -156,3 +157,36 @@ def test_반응이_적히면_상태의_반응없음이_풀린다(db, users):
     assert got == {"앱요청": active, "앱미팅": active, "시트요청": active, "자료전달": active,
                    "답옴": active, "딜소개만": quiet, "검토중단": held}, got
 
+
+def test_반응_없는_담당자만_단추에_수가_적힌다(logged_in, db, users):
+    """[반응 없는 담당자만] 을 누르면 목록이 그분들만 남는다(#211 — 거르기는 `deals.js`,
+    `tests/js/deals_noreact_filter_test.js`). 단추에는 처음부터 **목록에 선 사람 중**
+    반응 없는 분 수가 적혀야 한다 — 판정은 이 파일이 지키는 `no_reaction` 그대로다."""
+    from app.models import ContactActivity, IrRequest, SheetOwner, VcContact
+
+    u1 = users["u1"]
+    db.add(SheetOwner(label="가 명단", user_id=u1.id))
+    today = date.today().isoformat()
+
+    def person(name, stage="connected"):
+        c = VcContact(user_id=u1.id, name=name, firm="가나벤처스", source_sheet="가 명단",
+                      connect_stage=stage, kakao_room_name=f"{name} 방", channel_kakao=1)
+        db.add(c)
+        db.flush()
+        db.add(ContactActivity(contact_id=c.id, kind="deal_intro", content="딜소개",
+                               happened_at=today, month=today[:7]))
+        return c
+
+    person("무반응1")
+    person("무반응2")
+    person("연결전무반응", stage="in_progress")    # 목록에 안 서는 분 — 수에 안 든다
+    asked = person("요청함")
+    db.add(IrRequest(user_id=u1.id, contact_id=asked.id, company_name="샘플가",
+                     requested_at=today))
+    db.commit()
+
+    html = logged_in.get("/deals").text
+    button = re.search(r'<button[^>]*id="select-noreact"[^>]*>([^<]*)</button>', html)
+    assert button, "[반응 없는 담당자만] 단추가 화면에 없다"
+    assert button.group(1).strip() == "반응 없는 담당자만 · 2명", button.group(1)
+    assert html.count('data-noreact="1"') == 2

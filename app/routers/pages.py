@@ -256,6 +256,9 @@ def deals_page(
         "share_per_person_max": series_a_share.PER_PERSON_MAX,
         "share_per_person_hint": series_a_share.per_person_hint(),
         "no_reaction_ids": no_reaction_ids,
+        # [반응 없는 담당자만] 단추에 처음부터 적는 수 — 목록에 선 사람 중 반응 없는 분(#211).
+        # 걸러 보면 `deals.js` 가 조건 안의 수로 고쳐 적는다.
+        "no_reaction_count": sum(1 for c in contacts if c.id in no_reaction_ids),
         # 메일 채널은 설정이 있어야 고를 수 있다.
         # 고를 수 있는데 나가지 않는 것이 제일 나쁘다.
         "mail": mailer.status(),

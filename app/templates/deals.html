@@ -630,7 +630,10 @@
         <button type="button" class="linkbtn" id="select-all-contacts">전체선택</button>
         <button type="button" class="linkbtn" id="clear-all-contacts" disabled
                 title="걸러진 범위와 상관없이, 지금 고른 사람을 모두 해제합니다">전체해제</button>
-        <button type="button" class="linkbtn" id="select-noreact">반응 없는 담당자만</button>
+        {# 누르면 반응 없는 분만 남기고 고른다 · 다시 누르면 함께 풀린다(#211 · `deals.js`).
+           수는 지금 조건 안의 반응 없는 분이다 — 판정은 `services/no_reaction` 한 곳. #}
+        <button type="button" class="linkbtn" id="select-noreact" aria-pressed="false"
+                title="반응 없는 분만 남기고 그분들을 고릅니다">반응 없는 담당자만 · {{ no_reaction_count }}명</button>
       </span>
     </h2>
     {#

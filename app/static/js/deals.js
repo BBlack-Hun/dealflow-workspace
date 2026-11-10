@@ -540,6 +540,8 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     var q = (box.value || "").trim().toLowerCase();
     var pickedOnly = onlyPicked && onlyPicked.checked;
     var shown = 0, total = 0, outside = 0;
+    // 지금 조건(검색 · 그룹) 안의 반응 없는 분 — [반응 없는 담당자만] 단추에 적는 수(#211).
+    var noreactInView = 0;
     // 지금 조건(검색 · 갈래 · 담당) 안에서 이 달 딜 받음인 사람 — 리마인드의
     // `이번 달 딜 받음 N명 제외` 가 이 수다.
     var receivedInView = 0;
@@ -587,7 +589,14 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       // 그래서 `보이는 것 = 조건에 맞는 것` 이라고 읽으면, 그룹으로 추려 놓고
       // [전체선택]을 눌렀을 때 **아까 고른 다른 그룹 사람까지 함께 켜진다** —
       // 실제 투자사에게 문구가 나가는 자리라 그 차이를 여기서 갈라 적어 둔다.
-      var matched = hit && inBucket && inAssignee && inGroup && !excluded && !covered;
+      // [반응 없는 담당자만] 을 켜 두면 반응 없는 분만 조건에 맞는다(#211). 판정은 서버가
+      // 실어 준 `data-noreact` 그대로다(`services/no_reaction`) — 여기서 다시 가리지 않는다.
+      var noreact = !!cb && cb.getAttribute("data-noreact") === "1";
+      var inNoReact = !noreactOnly || mode === "sourcing" || noreact;
+      if (noreact && hit && inBucket && inAssignee && inGroup && !excluded && !covered) {
+        noreactInView += 1;
+      }
+      var matched = hit && inBucket && inAssignee && inGroup && inNoReact && !excluded && !covered;
       var visible = (picked && !excluded) || (matched && !pickedOnly);
       card.setAttribute("data-match", matched ? "1" : "0");
       card.hidden = !visible;
@@ -596,13 +605,16 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     });
     syncReceivedNote(receivedInView);
     syncSharedNote(coveredInView, ownInView, gotInView);
+    syncNoReactBtn(noreactInView);
 
+    var noreactOn = noreactOnly && mode !== "sourcing";
     if (note) {
-      if (q || pickedOnly || bucketFilter || assigneeFilter || groupFilter) {
+      if (q || pickedOnly || bucketFilter || assigneeFilter || groupFilter || noreactOn) {
         note.hidden = false;
         note.textContent = shown + " / " + total + "명 표시 중" +
           (q ? " (검색: " + box.value.trim() + ")" : "") +
           (groupFilter ? " (그룹: " + groupFilter + ")" : "") +
+          (noreactOn ? " (반응 없음만)" : "") +
           (bucketFilter ? " (갈래: " + bucketLabel(bucketFilter) + ")" : "") +
           (assigneeFilter ? " (담당: " + assigneeFilter + ")" : "") +
           // 조건 밖인데 이미 고른 사람은 그대로 발송에 들어간다 — 숫자만
@@ -637,6 +649,26 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   // 뺀다. 그 칩을 골라 누르면 켜진다(따로 보내는 길). 이름은 서버가 실어 준다.
   var SEPARATE = (groupBar && groupBar.getAttribute("data-separate")) || "";
   var separateNote = document.getElementById("separate-note");
+
+  // ── [반응 없는 담당자만] 거르기(#211) ─────────────────────────────────────
+  // 예전에는 체크만 켜고 목록은 그대로라, 116명 사이에 흩어진 체크로는 누가 반응
+  // 없는 분인지도 몇 명인지도 알 수 없었다. 이제 누르면 **그분들만 남기고 고른다**
+  // (그룹 칩과 같은 거르기 — 고른 사람은 조건 밖이어도 계속 보인다는 규칙도 같다).
+  // 다시 누르면 거르기와 고른 것이 함께 풀린다(예전 두 번째 누름과 같다).
+  var noreactOnly = false;
+
+  // 단추 글자에 **지금 조건 안의** 반응 없는 분 수를 적는다 — 그룹으로 추리면 그 안의
+  // 수다. 누르면 골라질 사람 수와 같아야 단추를 믿고 누를 수 있다.
+  function syncNoReactBtn(count) {
+    var b = document.getElementById("select-noreact");
+    if (!b) return;
+    var on = noreactOnly && mode !== "sourcing";
+    b.textContent = "반응 없는 담당자만 · " + count + "명";
+    b.classList.toggle("active", on);
+    b.setAttribute("aria-pressed", on ? "true" : "false");
+    b.title = on ? "다시 누르면 거르기와 고른 것이 함께 풀립니다"
+                 : "반응 없는 분만 남기고 그분들을 고릅니다";
+  }
 
   function matchesGroup(card) {
     if (!groupFilter) return true;
@@ -1437,6 +1469,9 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     var noReactBtn = document.getElementById("select-noreact");
     // 소싱 명단에는 '반응' 이라는 개념이 없다 — 아직 보낸 적이 없다.
     if (noReactBtn) noReactBtn.hidden = sourcingMode;
+    // 숨는 단추의 거르기는 함께 푼다 — 켜져 있는데 안 보이는 필터가 제일 나쁘다
+    // (아래 그룹 필터와 같은 까닭).
+    if (sourcingMode) noreactOnly = false;
     if (filterBox) {
       filterBox.hidden = !sourcingMode;
       // 필터를 켜 둔 채 다른 탭으로 갔다 오면, 왜 사람이 적은지 모른다.
@@ -1979,18 +2014,24 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
 
   var noreactBtn = document.getElementById("select-noreact");
   if (noreactBtn) noreactBtn.addEventListener("click", function () {
-    // [전체선택]과 같은 규칙이다 — 그룹으로 추려 놓았으면 그 안에서만 고른다.
-    // 여기만 전체 목록을 훑으면, 추려 놓은 줄 알고 눌렀는데 다른 그룹으로
-    // 문구가 나간다.
-    var targets = filteredBoxes().filter(function (c) {
-      return c.getAttribute("data-noreact") === "1";
-    });
-    if (!targets.length) { alert("반응이 없는 담당자가 없습니다."); return; }
-    var allOn = targets.every(function (c) { return c.checked; });
-    contactCbs().forEach(function (c) { c.checked = false; });
-    if (!allOn) targets.forEach(function (c) { c.checked = true; });
+    if (noreactOnly) {
+      // 다시 누름 — 거르기와 이 단추로 고른 것을 함께 푼다.
+      noreactOnly = false;
+      contactCbs().forEach(function (c) { c.checked = false; });
+    } else {
+      // [전체선택]과 같은 규칙이다 — 그룹으로 추려 놓았으면 그 안에서만 고른다.
+      // 여기만 전체 목록을 훑으면, 추려 놓은 줄 알고 눌렀는데 다른 그룹으로
+      // 문구가 나간다.
+      var targets = filteredBoxes().filter(function (c) {
+        return c.getAttribute("data-noreact") === "1";
+      });
+      if (!targets.length) { alert("반응이 없는 담당자가 없습니다."); return; }
+      noreactOnly = true;
+      contactCbs().forEach(function (c) { c.checked = false; });
+      targets.forEach(function (c) { c.checked = true; });
+    }
     updateCounts();
-    applyContactFilter();   // 켠 사람은 조건과 무관하게 계속 보인다
+    applyContactFilter();   // 거르기를 다시 걸고 단추 글자 · 안내 줄을 맞춘다
   });
 
   // 후속 관리·IR 관리에서 넘어오면 방식·대상·기업을 그대로 받는다.
