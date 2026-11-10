@@ -582,6 +582,8 @@ def _distribution(values: List[str], top: int = 6) -> List[dict]:
 def user_dashboard(db: Session, user: User, today: Optional[date] = None,
                    top_n: int = 10) -> dict:
     """`top_n` — '내 투자사 선호'에 몇 명까지 세울지. 화면에서 고른다(10~20)."""
+    from . import no_reaction   # 그쪽이 이 파일(`reaction_hits`)을 불러 쓴다 — 늦게 부른다
+
     today = today or date.today()
     cutoff = (today - timedelta(days=REACTION_WINDOW_DAYS)).isoformat()
 
@@ -769,6 +771,10 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None,
         "sectors": _distribution([s for c in contacts for s in _split_csv(c.sectors)]),
         # 다음 회차에 누구를 먼저 챙길지 — 자료를 달라고 한 횟수가 관심의 크기다.
         "top_requesters": top_requesters(db, ids, limit=top_n),
+        # `내 투자사 선호` 에 한 번도 안 걸린 분 ≠ 반응 없는 분이다(딜소개 전 · 미팅만 있는
+        # 분이 섞인다). 그래서 따로 세지 않고 딜 제안 관리와 같은 한 벌의 수를 적는다 —
+        # 누르면 [반응 없는 담당자만] 이 켜진 채 열린다(#213 · `no_reaction.listed`).
+        "no_reaction_count": len(no_reaction.listed(db, user)),
         "recent_batches": recent_batches(db, user_id=user.id),
     }
 
