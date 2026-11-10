@@ -437,8 +437,9 @@ def test_the_series_a_tab_counts_who_got_each_company(world, client, db):
     head = re.search(r'id="sa-table".*?</thead>', page, re.S).group(0)
     heads = [re.sub(r"<[^>]+>", "", h).strip()
              for h in re.findall(r"<th\b[^>]*>(.*?)</th>", head, re.S)]
-    # #87 — 옆 두 탭과 같은 이름(`수신일`). 그 앞은 #142 의 메모 · 수정한 팀원 · 수정한 날짜.
-    assert heads[:6] == ["NO", "기업명", "메모", "수정한 팀원", "수정한 날짜", "수신일"], heads
+    # #87 — 옆 두 탭과 같은 이름(`수신일`). 그 앞은 #142 의 메모 · 수정한 팀원 · 수정한 날짜,
+    # 수정한 팀원 바로 오른쪽은 #209 의 담당자.
+    assert heads[:7] == ["NO", "기업명", "메모", "수정한 팀원", "담당자", "수정한 날짜", "수신일"], heads
     assert "공유한 심사역" not in heads
     rows = re.findall(r"<tr data-id=.*?</tr>", page, re.S)
     bio = next(r for r in rows if "샘플바이오" in r)

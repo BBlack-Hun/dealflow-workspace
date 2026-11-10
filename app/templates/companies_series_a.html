@@ -136,6 +136,9 @@
            탭마다 다르게 부르면 같은 칸인지 알 수 없다(위 머리 주석). 차례는 요청대로 팀원 → 날짜. #}
         <th style="width:240px" title="두 줄까지 보입니다 · 눌러서 수정">메모</th>
         <th style="width:76px" title="이 줄을 마지막으로 고친 팀원 — 수정 로그 기준 · 사람 손 없이 앱이 바꾼 것이 마지막이면 '자동'">수정한 팀원</th>
+        {# **`수정한 팀원` 바로 오른쪽**(#209 · 11/10 팀원 요청) — IR 기업 현황과 같은 자리다.
+           예전 자리는 `딜 소개 문구` 뒤였다. 칸 · 필터 열쇠 · 폭은 그대로다. #}
+        <th style="width:110px" data-filters="assignee:담당자">담당자<div class="th-filters"></div></th>
         <th style="width:130px" title="이 줄을 마지막으로 고친 시각 — 앱이 적습니다(눌러 고칠 수 없습니다)">수정한 날짜</th>
         {# `공유한 심사역`(Series A 딜 공유로 이 기업을 받은 심사역 수) 칸은 **뺐다**
            (#24) — 사용자: "공유심사역 컬럼이 있고, 공유한 심사역 컬럼이 있는데 같은
@@ -186,7 +189,6 @@
         <th style="width:120px" data-filters="series:투자라운드">투자라운드<div class="th-filters"></div></th>
         <th title="두 줄까지 보입니다 · 눌러서 수정">상세 내용</th>
         <th style="width:280px" title="두 줄까지 보입니다 · 눌러서 수정 · 비었거나 자동으로 만든 문구는 매출 · 금액 칸을 고치면 따라 바뀝니다(직접 쓴 문구는 그대로)">딜 소개 문구</th>
-        <th style="width:110px" data-filters="assignee:담당자">담당자<div class="th-filters"></div></th>
         {# 필터가 하나뿐인 칸은 이름 자리에 단추(`Type (1) ▾`)가 선다 — 폭은
            **고른 뒤의 단추**에 맞춘다(옆 두 탭과 같은 셈: 단추 + th 여백 18px
            + 단추 여백 14px). 값이 단추보다 넓은 칸은 값에 맞췄다. #}
@@ -248,6 +250,8 @@
           <div class="cell clamp2 keep-lines" data-field="memo" data-type="long" data-memo-date>{{ r.memo }}</div>
         </td>
         <td class="updated-by{% if r.updated_never %} muted{% endif %}">{{ r.updated_by }}</td>
+        <td class="cell" data-field="assignee_name" data-type="pick"
+            data-filter-key="assignee">{{ r.assignee_name }}</td>
         <td class="updated-at{% if r.updated_never %} muted{% endif %}"
             title="{% if r.updated_never %}만든 뒤로 아직 고친 적이 없습니다 — 만든 시각입니다{% else %}마지막으로 고친 시각{% endif %}">{{ r.updated_at }}</td>
         <td class="cell" data-field="received_at" data-type="date">{{ r.received_at }}</td>
@@ -295,8 +299,6 @@
         <td title="{{ r.deal_pitch }}">
           <div class="cell clamp2" data-field="deal_pitch" data-type="long">{{ r.deal_pitch }}</div>
         </td>
-        <td class="cell" data-field="assignee_name" data-type="pick"
-            data-filter-key="assignee">{{ r.assignee_name }}</td>
         <td class="cell" data-field="deal_type" data-type="pick"
             data-filter-key="type">{{ r.deal_type }}</td>
         {# 칸 아래 — 이 글자를 딜 소싱 명단의 **그 분 줄로 확정**하는 자리.
