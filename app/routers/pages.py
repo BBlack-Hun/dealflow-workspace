@@ -151,6 +151,15 @@ def deals_page(
         per_bucket[name] = per_bucket.get(name, 0) + 1
     sourcing_buckets = [{"name": b["key"], "count": per_bucket[b["key"]]}
                         for b in bucket_tabs if per_bucket.get(b["key"])]
+    # 시리즈 A 갈래는 칩 둘 — `검토가능 심사역` · `참여 심사역`(#210, 딜 소싱 화면의 그 탭 칩과
+    # 같은 수). 검토가능 = 참여 안내(처음)만 받는 카드(`sourcing_invite_only` — `can_get_invite`),
+    # 참여 = 나머지(`takes_part`). 화면이 같은 셈으로 다시 센다(`deals.js` 의 `splitCount`).
+    share_key = next((b["key"] for b in bucket_tabs if series_a_share.is_share_bucket(b["key"])),
+                     series_a_share.BUCKET)
+    share_cards = [c for c in sourcing_contacts
+                   if sourcing_bucket_of.get(c.bucket, c.bucket) == share_key]
+    share_invite = sum(c.id in sourcing_invite_only for c in share_cards)
+    sourcing_split = {"invite": share_invite, "joined": len(share_cards) - share_invite}
     # 담당(우리 쪽 심사역)도 거를 수 있어야 한다 — 39명을 통째로 훑는 것과
     # 내 담당 14명만 보는 것은 다른 일이다. 많은 순으로 둔다.
     #
@@ -245,9 +254,8 @@ def deals_page(
         # 이 글을 받는 하나뿐인 갈래(`series_a_share.BUCKET` — 다른 갈래 카드는
         # 이 글에서 고를 수 없다).
         "series_a_rows": series_a_pick_rows(db),
-        "share_bucket": next((b["key"] for b in bucket_tabs
-                              if series_a_share.is_share_bucket(b["key"])),
-                             series_a_share.BUCKET),
+        "share_bucket": share_key,
+        "sourcing_split": sourcing_split,
         "share_topic": series_a_share.KIND,
         "share_label": series_a_share.LABEL,
         # 사람당 보낼 기업 수(기본 · 한도)와 그 옆 안내 — 화면이 칸을 바꾸면 같은

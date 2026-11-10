@@ -36,7 +36,8 @@ def _page(client):
 def test_칸이_요청한_자리에_선다(logged_in, deal):
     labels, row = _page(logged_in)
     at = labels.index("기업명")
-    assert labels[at + 1:at + 4] == ["메모", "수정한 팀원", "수정한 날짜"], labels
+    # 담당자는 수정한 팀원 바로 오른쪽(#209).
+    assert labels[at + 1:at + 5] == ["메모", "수정한 팀원", "담당자", "수정한 날짜"], labels
     assert labels[labels.index("후속라운드 시작") + 1] == "IR 투자컨설팅 미팅일시", labels
     fields = re.findall(r'class="cell[^"]*" data-field="([^"]+)"', row)
     assert fields[fields.index("name") + 1] == "memo", fields

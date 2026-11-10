@@ -46,8 +46,9 @@ def test_the_column_is_gone(logged_in, companies):
     assert "공유한 심사역" not in heads, heads
     # 이 딜을 **우리에게** 넘겨 준 분 칸은 그대로다 — 남는 쪽이다.
     assert "공유 심사역" in heads
-    # #87 — 옆 두 탭과 같은 이름(`수신일`). 그 앞은 #142 의 메모 · 수정한 팀원 · 수정한 날짜.
-    assert heads[:6] == ["NO", "기업명", "메모", "수정한 팀원", "수정한 날짜", "수신일"], heads
+    # #87 — 옆 두 탭과 같은 이름(`수신일`). 그 앞은 #142 의 메모 · 수정한 팀원 · 수정한 날짜,
+    # 수정한 팀원 바로 오른쪽은 #209 의 담당자.
+    assert heads[:7] == ["NO", "기업명", "메모", "수정한 팀원", "담당자", "수정한 날짜", "수신일"], heads
     assert 'class="sa-shared"' not in table and 'data-testid="sa-shared"' not in table
 
 

@@ -813,8 +813,25 @@
         <button type="button" class="chip active" data-value="">
           전체 <b>{{ sourcing_contacts|length }}</b></button>
         {% for b in sourcing_buckets %}
+        {% if b.name == share_bucket %}
+        {# **시리즈 A 갈래는 칩 둘**(#210 · 11/10 팀원 요청) — 딜 소싱 화면의 그 탭 칩
+           (`검토가능` · `참여`)과 같은 두 묶음 · 같은 수다(`pages.py` 의 `sourcing_split`).
+           누르면 그 갈래로 거르고 문구를 그 묶음 것으로 바꾼 뒤(`data-topic`) 뜬 카드를 다
+           고른다 — 보내기는 지금처럼 사람이 [미리보기] · [보내기]로 한다(`deals.js`).
+           수는 고른 문구와 상관없이 그 묶음 인원이고, 명단을 다시 읽을 때 따라 바뀐다.
+           `data-label` 은 갈래 이름 그대로다(요약 줄 · 섞임 경고가 읽는다). #}
+        <button type="button" class="chip" data-value="{{ b.name }}" data-label="{{ bucket_label(b.name) }}"
+                data-split="invite" data-topic="sourcing_intro" data-testid="split-invite"
+                title="{{ bucket_label(b.name) }} 중 참여 확인 전(제안 대기중 · 물어보는 중) — 누르면 참여 안내 (처음) 문구로 이분들을 고릅니다">
+          검토가능 심사역 <b>{{ sourcing_split.invite }}</b></button>
+        <button type="button" class="chip" data-value="{{ b.name }}" data-label="{{ bucket_label(b.name) }}"
+                data-split="joined" data-topic="sourcing_remind" data-testid="split-joined"
+                title="{{ bucket_label(b.name) }} 중 참여 — 누르면 딜 발송 요청 문구로 이분들을 고릅니다(이번 달 딜 받음은 기본으로 뺍니다)">
+          참여 심사역 <b>{{ sourcing_split.joined }}</b></button>
+        {% else %}
         <button type="button" class="chip" data-value="{{ b.name }}" data-label="{{ bucket_label(b.name) }}">
           {{ bucket_label(b.name) }} <b>{{ b.count }}</b></button>
+        {% endif %}
         {% endfor %}
       </div>
       {# 우리 쪽 담당 심사역. 39명을 통째로 훑는 것과 내 담당만 보는 것은
