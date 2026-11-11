@@ -174,14 +174,26 @@ def test_섞인_곳이_있으면_통째로_거절한다(db, seeded, client, key,
     assert not _jobs(db)
 
 
-def test_주소로_찔러도_같은_길이_막는다(db, seeded, client):
-    """`create_send_list` 자체가 막는다 — 화면 라우터를 건너뛰어도 같은 판정이다."""
+def test_세우는_함수를_바로_불러도_같은_판정이_막는다(db, seeded, client):
+    """판정은 세우는 함수(`deals.build_send_list`) 안 한 곳이다 — 화면 라우터를
+    건너뛰어도 같다. 공용 주소(`/api/deals/send`)는 이 모드를 아예 안 받는다."""
+    from fastapi import BackgroundTasks, HTTPException
+
+    from app.models import User
+    from app.routers.deals import MODE_STARTUP_MSG_IR, SendRequest, build_send_list
+
     me = _login(client)
-    for key in ("blocked", "closed", "paused", "typed"):
+    for key, why in (("blocked", "딜소개 불가"), ("closed", "폐업"),
+                     ("paused", "검토중단"), ("typed", "확인 안 됨")):
         res = me.post("/api/deals/send", json={
             "mode": "startup_msg_ir", "topic": "startup_msg_quote",
             "contact_ids": [seeded[key].id]})
-        assert res.status_code == 400, key
+        assert res.status_code == 404, key
+        with pytest.raises(HTTPException) as caught:
+            build_send_list(SendRequest(contact_ids=[seeded[key].id], mode=MODE_STARTUP_MSG_IR,
+                                        topic="startup_msg_quote"),
+                            BackgroundTasks(), db=db, user=db.get(User, 1))
+        assert caught.value.status_code == 400 and why in caught.value.detail, key
     assert not _jobs(db)
     # 딜 제안 화면의 미리보기는 이 글을 짓지 않는다(짓는 자리는 그 화면 하나).
     res = me.post("/api/deals/preview", json={"mode": "startup_msg_ir", "contact_ids": []})
@@ -468,3 +480,262 @@ def test_발송기_판을_올리지_않았다():
 
     assert STARTUP_MSG_KIND in agent_main.SUPPORTED_KINDS
     assert "verify_room" in agent_main.SUPPORTED_KINDS
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 리뷰(#522)에서 짚은 것 — 하나씩 재현해 막는다
+# ═══════════════════════════════════════════════════════════════════════════
+
+INVESTOR_ROOM = "김투자 이사님 다라마벤처스 Deal 공유"
+
+
+def _investor(db):
+    """투자사 명단의 담당자 줄 — 그 방은 투자사 방이다(`room_match.investor_rooms`)."""
+    from app.models import VcContact
+
+    row = VcContact(user_id=1, source_sheet="투자사 · 강민준", name="김투자", title="이사님",
+                    firm="다라마벤처스", kakao_room_name=INVESTOR_ROOM,
+                    room_verified="verified", connect_stage="connected")
+    db.add(row)
+    db.commit()
+    return row
+
+
+# ── ① 공용 발송 주소로는 못 세운다 · 세우는 길은 하나 · 늘 draft ────────────────
+
+def test_공용_발송_주소로는_IR_안내_카톡을_못_세운다(db, seeded, client):
+    """`/api/deals/send` 로 바로 찌르면 대기 목록 · 최근 받음 · 대기 중 회차 막이를
+    건너뛰고 `queued` 로 서서 곧장 나갔다(리뷰 재현). 그 주소는 이 모드를 안 받는다."""
+    me = _login(client)
+    for _ in range(2):
+        res = me.post("/api/deals/send", json={
+            "mode": "startup_msg_ir", "topic": "startup_msg_free",
+            "contact_ids": [seeded["ok"].id],
+            "overrides": [{"contact_id": seeded["ok"].id, "message": "아무 글"}]})
+        assert res.status_code == 404, res.text
+    assert not _jobs(db)
+    assert me.get("/api/agent/poll", params={"kinds": "startup_msg"},
+                  headers=auth(OTHER_TOKEN)).status_code == 204
+
+
+def test_세우는_함수를_바로_불러도_draft_이고_고친_글은_안_받는다(db, seeded):
+    """세우는 자리는 하나다(`deals.build_send_list`) — 판정 · draft · 고친 글 무시가
+    그 안에 있다. 부르는 쪽이 `draft=False` · `overrides` 를 넘겨도 같다."""
+    from fastapi import BackgroundTasks, HTTPException
+
+    from app.models import User
+    from app.routers.deals import MODE_STARTUP_MSG_IR, SendRequest, build_send_list
+
+    user = db.get(User, 1)
+    req = SendRequest(contact_ids=[seeded["ok"].id], mode=MODE_STARTUP_MSG_IR,
+                      draft=False, topic="startup_msg_free",
+                      overrides=[{"contact_id": seeded["ok"].id, "message": "아무 글"}])
+    made = build_send_list(req, BackgroundTasks(), db=db, user=user)
+    [job] = _jobs(db)
+    assert made["status"] == "draft" and job.status == "draft"
+    assert "아무 글" not in job.items[0].message and "강민준 팀장" in job.items[0].message
+
+    # 두 번째는 **아직 안 나간 회차에 들어 있어** 막힌다 — 둘 다 나가면 두 번 받는다.
+    with pytest.raises(HTTPException) as caught:
+        build_send_list(req, BackgroundTasks(), db=db, user=user)
+    assert "아직 안 나간 회차" in caught.value.detail
+    assert len(_jobs(db)) == 1
+
+
+def test_대기_중인_회차는_N일이_0이어도_막는다(db, seeded, client):
+    me = _login(client)
+    assert _send(me, _ids(seeded, "ok")).status_code == 200
+    for days in (30, 0):
+        d = _preview(me, _ids(seeded, "ok"), days=days).json()
+        assert d["ready_ids"] == [], days
+        assert "아직 안 나간 회차" in d["skipped"][0]["reason"]
+        res = _send(me, _ids(seeded, "ok"), days=days)
+        assert res.status_code == 400 and "아직 안 나간 회차" in res.json()["detail"]
+    assert len(_jobs(db)) == 1
+
+
+# ── ② 투자사 방은 대표 방으로 확인되지 않고, 그리로 보내지도 않는다 ───────────
+
+def test_투자사_방_제목을_대조해도_확인됨이_안_된다(db, seeded, client):
+    _investor(db)
+    seeded["typed"].kakao_room_name = INVESTOR_ROOM
+    db.commit()
+    me = _login(client)
+    me.post("/api/ir-rooms/check", json={"company_ids": _ids(seeded, "typed")})
+    [job] = _jobs(db, "verify_room")
+    [item] = job.items
+    assert item.room_name == INVESTOR_ROOM
+    me.post(f"/api/agent/items/{item.id}/result", headers=auth(OTHER_TOKEN),
+            json={"status": "sent", "verify_result": "verified", "found_room": INVESTOR_ROOM,
+                  "candidates": [INVESTOR_ROOM]})
+    db.expire_all()
+    assert seeded["typed"].room_verified != "verified", "투자사 방이 대표 방으로 확인됐다"
+    assert item.status == "failed" and "투자사" in (item.error or "")
+    assert _preview(me, _ids(seeded, "typed")).json()["ready_ids"] == []
+
+
+def test_이미_확인된_투자사_방에는_안_보낸다(db, seeded, client):
+    """확인 값이 이미 붙어 있어도(예전 길) 보내기 전 마지막 판정이 막는다."""
+    _investor(db)
+    seeded["ok"].kakao_room_name = INVESTOR_ROOM
+    db.commit()
+    me = _login(client)
+    d = _preview(me, _ids(seeded, "ok")).json()
+    assert d["ready_ids"] == []
+    assert "투자사" in d["skipped"][0]["reason"]
+    assert _send(me, _ids(seeded, "ok")).status_code == 400
+    assert not _jobs(db)
+
+
+# ── ③ 나가는 순간 다시 본다 — [발송 시작] · 예약 ─────────────────────────────
+
+def test_시작할_때_방이_바뀌었거나_막힌_기업은_뺀다(db, seeded, client):
+    me = _login(client)
+    job_id = _send(me, _ids(seeded, "ok", "ok2")).json()["job_id"]
+    seeded["ok"].kakao_room_name = ROOM_OK + " 새방"          # 고치면 확인이 풀린다
+    seeded["ok2"].contract_status = "blocked"
+    db.commit()
+    res = me.post(f"/api/jobs/{job_id}/start")
+    assert res.status_code == 200, res.text
+    [job] = _jobs(db)
+    assert {i.status for i in job.items} == {"canceled"}
+    errors = " ".join(i.error or "" for i in job.items)
+    assert "딜소개 불가" in errors and "나가기 전에 다시 보고 뺐습니다" in errors
+    assert job.status == "canceled", "다 빠졌는데 큐에 섰다"
+
+
+def test_방_이름만_바뀌어도_뺀다(db, seeded, client):
+    """확인 값이 그대로여도(사람이 다른 확인된 제목으로 바꿨다) 건의 방과 다르면 뺀다."""
+    me = _login(client)
+    job_id = _send(me, _ids(seeded, "ok", "ok2")).json()["job_id"]
+    seeded["ok"].kakao_room_name = "다른 확인된 방"
+    seeded["ok"].room_verified = "verified"
+    db.commit()
+    me.post(f"/api/jobs/{job_id}/start")
+    [job] = _jobs(db)
+    by = {i.ir_company_id: i for i in job.items}
+    assert by[seeded["ok"].id].status == "canceled"
+    assert "방 이름이 바뀜" in by[seeded["ok"].id].error
+    assert by[seeded["ok2"].id].status == "pending" and job.status == "queued"
+
+
+def test_스타트업_안내_카톡도_시작할_때_다시_본다(db, seeded, client):
+    from app.models import STARTUP_MSG_KIND, SendItem, SendJob
+
+    row = seeded["typed_link"]
+    row.room_verified = "verified"
+    job = SendJob(user_id=1, kind=STARTUP_MSG_KIND, topic="startup_msg_free", status="draft",
+                  total=1)
+    db.add(job)
+    db.flush()
+    db.add(SendItem(job_id=job.id, contact_id=row.id, room_name=ROOM_LINKED, message="x",
+                    status="pending"))
+    row.status = "paused"
+    db.commit()
+    assert _login(client).post(f"/api/jobs/{job.id}/start").status_code == 200
+    [job] = _jobs(db)
+    assert job.items[0].status == "canceled" and "검토중단" in job.items[0].error
+
+
+# ── ④ 같은 방 제목의 기업 둘은 대조로 확인하지 않는다 ─────────────────────────
+
+def test_같은_방_제목의_기업은_대조하지_않고_여럿으로_적는다(db, seeded, client):
+    from app.models import IrCompany
+
+    twin = IrCompany(name="사아자랩스2", kakao_room_name=ROOM_TYPED + " ", room_verified="unverified")
+    db.add(twin)
+    db.commit()
+    me = _login(client)
+    res = me.post("/api/ir-rooms/check", json={"company_ids": [seeded["typed"].id, twin.id]})
+    assert res.status_code == 400
+    assert "같은 방 제목" in res.json()["detail"]
+    assert not _jobs(db)
+    db.expire_all()
+    assert seeded["typed"].room_verified == "ambiguous" and twin.room_verified == "ambiguous"
+
+
+# ── ⑤ 찾는 중인 기업은 또 안 싣고, 한 번에 싣는 수에 끝이 있다 ────────────────
+
+def test_찾는_중인_기업이_섞이면_다시_안_세운다(db, seeded, client):
+    me = _login(client)
+    assert me.post("/api/ir-rooms/check",
+                   json={"company_ids": _ids(seeded, "noroom")}).status_code == 200
+    res = me.post("/api/ir-rooms/check", json={"company_ids": _ids(seeded, "noroom", "typed")})
+    assert res.status_code == 400
+    assert "이미" in res.json()["detail"] and "차카타랩스" in res.json()["detail"]
+    assert len(_jobs(db)) == 1
+
+
+def test_한_번에_싣는_수에_끝이_있다(db, seeded, client):
+    from app.models import IrCompany
+    from app.services import ir_outreach
+
+    many = [IrCompany(name=f"샘플{i:03d}랩스") for i in range(ir_outreach.MAX_ROOM_CHECK + 1)]
+    db.add_all(many)
+    db.commit()
+    res = _login(client).post("/api/ir-rooms/check", json={"company_ids": [c.id for c in many]})
+    assert res.status_code == 400
+    assert f"{ir_outreach.MAX_ROOM_CHECK}곳" in res.json()["detail"]
+    assert not _jobs(db)
+
+
+# ── ⑥ 세운 사람이 잊지 않게 · 다루는 사람은 세운 사람 + 관리자 ──────────────
+
+def test_예약해_둔_회차가_세운_사람의_오늘_할_일에_선다(db, seeded, client):
+    from app.models import User
+    from app.services import scheduled_send
+
+    me = _login(client)
+    res = me.post("/api/ir-msg/send", json={
+        "topic": "startup_msg_free", "company_ids": _ids(seeded, "ok"),
+        "scheduled_at": "2099-03-12T14:00"})
+    assert res.status_code == 200, res.text
+    job_id = res.json()["job_id"]
+    assert [b["job_id"] for b in scheduled_send.standing_for(db, db.get(User, 1))] == [job_id]
+    assert scheduled_send.standing_for(db, db.get(User, 2)) == [], \
+        "보내는 계정 화면에 남이 세운 회차가 섰다 — 그 계정은 못 다룬다"
+
+
+def test_보내는_계정은_남이_세운_회차를_못_다루고_관리자는_다룬다(db, seeded, client):
+    from app.models import User
+
+    job_id = _send(_login(client), _ids(seeded, "ok")).json()["job_id"]
+    sender = _login(client, phone="01000000002")
+    assert sender.post(f"/api/jobs/{job_id}/start").status_code == 404
+    assert "조회만 가능합니다" in sender.get(f"/jobs/{job_id}").text
+
+    db.get(User, 3).role = "admin"
+    db.commit()
+    admin = _login(client, phone="01000000003")
+    assert admin.post(f"/api/jobs/{job_id}/start").status_code == 200
+
+
+def test_아직_안_나간_내_회차가_탭에_선다(db, seeded, client):
+    me = _login(client)
+    job_id = _send(me, _ids(seeded, "ok")).json()["job_id"]
+    page = me.get("/companies").text
+    assert f'href="/jobs/{job_id}"' in page and 'data-testid="irm-my-drafts"' in page
+    other = _login(client, phone="01000000003").get("/companies").text
+    assert f'href="/jobs/{job_id}"' not in other
+
+
+# ── 덤 — 이어 둔 줄의 다른 팀원 몫(같은 기업)이 받은 것도 센다 ──────────────────
+
+def test_이어_둔_줄의_다른_팀원_몫이_받은_것도_센다(db, seeded, client):
+    from app.clock import now_iso
+    from app.models import STARTUP_MSG_KIND, SendItem, SendJob, VcContact
+
+    seeded["typed"].room_verified = "verified"
+    twin = VcContact(user_id=2, source_sheet="스타트업 · 윤서아", name="이영희",
+                     firm="사아자랩스")
+    db.add(twin)
+    db.flush()
+    job = SendJob(user_id=2, kind=STARTUP_MSG_KIND, topic="startup_msg_free", status="done")
+    db.add(job)
+    db.flush()
+    db.add(SendItem(job_id=job.id, contact_id=twin.id, room_name="x", message="x",
+                    status="sent", sent_at=now_iso()))
+    db.commit()
+    d = _preview(_login(client), _ids(seeded, "typed")).json()
+    assert d["ready_ids"] == []
+    assert "윤서아 님 명단에서" in d["skipped"][0]["reason"]

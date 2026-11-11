@@ -318,7 +318,7 @@ def _company_row(job: SendJob, item: SendItem):
 
     한 번 누르면 한 잡에 두 갈래가 섞여 선다 — 방 이름이 적힌 줄은 그 이름
     그대로 확인하고, 없는 줄은 회사명으로 찾는다(`services/startup_room_pick.
-    plan` · `services/ir_outreach.room_plan`). 가르는 것은 **건에 실린 방 이름**
+    plan` · `services/ir_outreach.room_task`). 가르는 것은 **건에 실린 방 이름**
     하나다: 찾는 건은 늘 빈 글자로 선다(모르는 값을 지어 넣지 않는다 — 아래
     `search_rooms` 들). 이름이 실린 건은 여기서 `None` 이 되어 담당자 줄과 같은
     대조 길(`exact` · `_exact_verdict`)을 탄다.
@@ -532,6 +532,13 @@ def _apply_verify_result(item: SendItem, body: ItemResult,
     contact = item.contact or item.ir_company
     renamed = contact is not None and not room_name.same_title(
         contact.kakao_room_name, want)
+    # ★ 받는 쪽이 **스타트업**(IR 기업 줄 · 스타트업 명단 줄)인 대조에서 그 이름이
+    #   **투자사 방**이면 확인됨으로 올리지 않는다(#522 리뷰) — 확인되면 그 방으로 안내
+    #   카톡이 나간다. 후보 쪽이 이미 같은 함수로 거른다(`room_match.drop_investor_rooms`).
+    investor = (_startup_investor_room(item, contact, want)
+                if verdict == "verified" and not renamed else "")
+    if investor:
+        verdict = "not_found"
     if contact is not None and not renamed:
         # 결과를 적는 자리는 **한 곳**이다 — `카톡방 참여여부` 도 거기서 함께
         # 맞춘다(확인됨이면 `O`. 못 찾았으면 참여여부는 그대로).
@@ -544,6 +551,9 @@ def _apply_verify_result(item: SendItem, body: ItemResult,
     elif renamed:
         # 잡을 세운 뒤 방 이름을 고쳤다 — 옛 이름의 결과를 새 이름에 달지 않는다.
         item.error = "확인하는 사이 방 이름이 바뀌어 결과를 적지 않았습니다 — 다시 확인하세요"
+    elif investor:
+        item.error = (f"투자사 방으로 보입니다({investor}) — 대표와의 방 제목을 적거나 "
+                      "회사명으로 다시 찾아 주세요")
     elif blind:
         item.error = ("이 발송기 판은 방 제목을 대조하지 못합니다 — 발송 프로그램을 새로 "
                       "받아 다시 확인하세요")
@@ -551,6 +561,25 @@ def _apply_verify_result(item: SendItem, body: ItemResult,
         item.error = _mismatch_error(titles, _other_rooms(item))
     else:
         item.error = body.error or VERIFY_ERRORS.get(verdict, verdict)
+
+
+def _startup_investor_room(item: SendItem, contact, want: str) -> str:
+    """스타트업 쪽 대조 건이고 그 이름이 투자사 방으로 보이면 그 까닭, 아니면 빈 글자.
+
+    판정은 후보를 거르는 그 함수다(`room_match.investor_reason`). 투자사 담당자 줄의
+    [방 연결 확인] 은 찾는 방이 곧 투자사 방이라 여기 걸리지 않는다.
+    """
+    startup = item.ir_company is not None or (
+        item.contact is not None and item.job is not None
+        and item.job.topic == ROOM_SEARCH_TOPIC)
+    if not startup or contact is None:
+        return ""
+    from sqlalchemy.orm import object_session
+
+    from ..services import room_match
+
+    return room_match.investor_reason(want, room_match.company_name(contact),
+                                      room_match.investor_rooms(object_session(contact)))
 
 
 def _exact_verdict(want: str, body: ItemResult, verdict: str) -> tuple:

@@ -412,16 +412,19 @@ def _summary(hits) -> Optional[dict]:
 def recent_reason(info: Optional[dict], days: int) -> str:
     """`N일 안에 받은 곳 빼기` 에 걸리는 까닭. 안 걸리면 빈 글자.
 
-    `days` 가 0 이면 아무것도 빼지 않는다(사람이 일부러 다시 보내는 자리).
-    대기 중인 회차에 이미 들어 있으면 그것도 뺀다 — 둘 다 나가면 같은 문구를
-    두 번 받는다.
+    대기 중인 회차에 이미 들어 있으면 **언제나** 뺀다 — 둘 다 나가면 같은 문구를
+    두 번 받는다(#522 리뷰 — `days` 를 0 으로 둬도 그 막이는 안 풀린다. 다시 보내려면
+    그 회차를 보내거나 빼면 된다). `days` 가 0 이면 **이미 받은 것**은 빼지 않는다
+    (사람이 일부러 다시 보내는 자리).
     """
-    if not info or days <= 0:
+    if not info:
         return ""
     if info.get("pending_job"):
         # 회차 번호를 적는다 — 그 회차를 열어 보내거나 빼는 것이 할 일이다.
         by = _where(info.get("pending_by"), "님 ", "에서 세운 ")
         return f"{by}아직 안 나간 회차 #{info['pending_job']} 에 이미 들어 있음"
+    if days <= 0:
+        return ""
     since = (clock.today() - timedelta(days=days - 1)).isoformat()
     if info.get("date") and info["date"] >= since:
         by = _where(info.get("by_twin"), "님 명단에서 ", "에서 ")

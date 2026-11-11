@@ -384,6 +384,22 @@ def test_적어_둔_이름은_그_이름_그대로_대조하고_다른_제목은
     assert item["query"] == "라마바랩스" and item["target"] == "company"
 
 
+def test_대조한_이름이_투자사_방이면_확인됨이_안_된다(db, seeded, client):
+    """#522 리뷰 — 스타트업 줄에 투자사 담당자 방 제목이 적혀 있으면, 카톡에서 글자까지
+    같은 방을 찾아도 확인됨으로 안 올린다(올리면 안내 카톡이 투자사 방으로 간다)."""
+    room = seeded["investor"].kakao_room_name
+    seeded["typed"].kakao_room_name = room
+    db.commit()
+    me = _login(client)
+    _search(me, [seeded["typed"].id])
+    item = _item(db, _jobs(db)[0], seeded["typed"].id)
+    assert item.room_name == room
+    _report(me, item.id, verdict="verified", found_room=room, candidates=[room])
+    db.expire_all()
+    assert seeded["typed"].room_verified == "not_found"
+    assert "투자사" in (item.error or "")
+
+
 def test_한_잡에_대조와_찾기가_섞여도_발송기에_갈래대로_간다(db, seeded, client):
     """**잡 하나**(11/11). 대조 건은 적어 둔 이름 그대로 · `exact` · 회사 표시 없음,
     찾기 건은 회사명 · `target: company` — 건에 실린 방 이름 하나로 갈린다."""

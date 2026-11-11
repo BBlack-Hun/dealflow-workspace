@@ -863,7 +863,8 @@ def job_page(
                 "again_href": ("/companies" if ir_job and outreach
                                else f"{STARTUP_PAGE.msg_href}?topic={job.topic or ''}"
                                if outreach else "/deals"),
-                "readonly": can_view and job.user_id != user.id and not made,
+                # 다루는 사람(`ir_outreach.may_operate` — 단추를 받는 자리와 같은 판정)이 아니면 보기만.
+                "readonly": can_view and not ir_outreach.may_operate(db, job, user),
                 # 팀원 화면으로 보는 중에도 단추를 여는 회차(`deps.proxy_job`).
                 "proxy_job": can_view and proxy_job(db, job)})
     if can_view:

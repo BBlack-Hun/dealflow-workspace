@@ -597,14 +597,24 @@ def standing_for(db: Session, user, now: Optional[datetime] = None) -> list:
 
     문장은 여기서 짓지 않는다 — `sentence()` 한 곳이 짓는다.
     """
+    from sqlalchemy import or_
+
+    from ..models import DealBatch
+    from . import ir_outreach
+
     now = _aware(now or clock.now())
+    # **세운 사람** 것도 — IR 기업현황 탭의 안내 카톡은 회차가 보내는 계정 것이라
+    # 주인으로만 찾으면 세운 사람 화면에 안 선다(묶음 주인 = 세운 사람). 그 회차를 못
+    # 다루는 사람(남이 세운 것을 받은 보내는 계정)에게는 세우지 않는다(`ir_outreach.may_operate`).
+    mine = select(DealBatch.id).where(DealBatch.user_id == user.id)
     rows = db.execute(
-        select(SendJob).where(SendJob.user_id == user.id,
+        select(SendJob).where(or_(SendJob.user_id == user.id, SendJob.batch_id.in_(mine)),
                               SendJob.status == "draft",
                               SendJob.scheduled_at.isnot(None),
                               SendJob.released_at.is_(None))
         .order_by(SendJob.scheduled_at)
     ).scalars().all()
+    rows = [job for job in rows if ir_outreach.may_operate(db, job, user)]
 
     out = []
     for job in rows:

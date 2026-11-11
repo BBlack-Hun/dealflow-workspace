@@ -930,6 +930,9 @@ class SendRequest(BaseModel):
     # 어느 문구인가 — `startup_outreach.TOPICS` 의 `key`. 회차에 그대로 남아
     # "이 문구를 언제 받았나" 가 이것을 읽는다(`SendJob.topic`).
     topic: str = ""
+    # `이 문구를 N일 안에 받은 곳 빼기` 의 N — IR 기업현황 탭의 안내 카톡에서 그 판정
+    # (`ir_outreach.rows`)을 **이 함수 안에서** 다시 한다(대기 중인 회차는 N 과 상관없이 막는다).
+    days: int = startup_outreach.DEFAULT_DAYS
     # 사람이 화면에서 고친 **문구틀**(채움말 `{대표명}` 등이 든 채). 비어 있으면
     # 그 사람이 고른 문구틀 그대로다. 줄마다 채우는 것은 서버다
     # (`startup_outreach.render`) — 화면이 채운 글을 받으면 미리보기와 나가는
@@ -1208,10 +1211,27 @@ def create_send_list(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    """[발송 목록 만들기] — 딜 제안 관리 화면이 부르는 **공용 주소**.
+
+    IR 기업현황 탭의 안내 카톡(`MODE_STARTUP_MSG_IR`)은 이 주소로 **받지 않는다** —
+    그 회차는 보내는 계정 PC 로 서서, 이 주소로 바로 찌르면 `queued` 로 곧장 나가거나
+    같은 기업에 두 번 설 수 있었다(#522 리뷰). 그 탭은 `routers/ir_outreach.make_draft`
+    → `build_send_list` 로만 세운다(판정은 그 함수 안 한 곳이다). 없는 자리처럼 404.
+    """
+    if req.mode == MODE_STARTUP_MSG_IR:
+        raise HTTPException(status_code=404, detail="없는 자리입니다")
+    return build_send_list(req, background, db=db, user=user)
+
+
+def build_send_list(req: SendRequest, background: BackgroundTasks,
+                    db: Session, user: User):
     """Create deal_batch + send_job(queued) + send_items(pending) with message snapshots.
 
     FEATURE_SPEC §5 ⑥: 발송 목록 생성 → send_job(queued). The mock/real agent
     then claims it via the queue API.
+
+    다른 화면(스타트업 월간 · 안내 카톡 · 예약 큐)은 `create_send_list` 를 함수로
+    부르고, IR 기업현황 탭의 안내 카톡만 이 함수를 바로 부른다(위 설명).
     """
     if req.mode in MODES_WITH_COMPANIES and not (1 <= _picked_count(req) <= MAX_COMPANIES_PER_SEND):
         raise HTTPException(
@@ -1423,10 +1443,20 @@ def create_send_list(
     # 화면이 고를 수 없게 한 것과 **같은 함수**를 지난다(`startup_outreach.
     # refusal`) — 오래된 탭의 체크나 손으로 만든 요청도 여기서 걸린다.
     # 조용히 빼지 않고 말하고 멈춘다(아래 방 이름 확인과 같은 방식).
-    if msg_outreach:
+    #
+    # IR 기업현황 탭은 **미리보기와 같은 판정 전부**를 여기서 다시 한다
+    # (`ir_outreach.rows` — 막는 규칙 + 이 문구를 N일 안에 받음 + 아직 안 나간 회차).
+    # 판정하는 자리가 이 한 곳이라, 탭 라우터는 따로 거르지 않는다.
+    if req.mode == MODE_STARTUP_MSG_IR:
+        view = ir_outreach.rows(db, contacts, topic, startup_outreach.clamp_days(req.days))
+        for row in view["rows"]:
+            if not row["sendable"]:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"'{row['firm']}' {row['reason']} — 발송 대상에서 제외하세요")
+    elif msg_outreach:
         for contact in contacts:
-            why = (ir_outreach.refusal(db, contact) if req.mode == MODE_STARTUP_MSG_IR
-                   else startup_outreach.refusal(contact))
+            why = startup_outreach.refusal(contact)
             if why:
                 raise HTTPException(
                     status_code=400,
@@ -1532,7 +1562,9 @@ def create_send_list(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from None
     # 예약을 걸었으면 **세워만 둔다** — `draft` 와 같은 뜻이다.
-    standing = req.draft or scheduled is not None
+    # IR 기업현황 탭의 안내 카톡은 **언제나** 세워만 둔다 — 남의 PC(보내는 계정)에서
+    # 나가는 회차라, 세운 사람이 진행 화면에서 한 번 더 보고 눌러야 한다.
+    standing = req.draft or scheduled is not None or req.mode == MODE_STARTUP_MSG_IR
 
     # Batch + companies
     batch = DealBatch(
@@ -1596,7 +1628,10 @@ def create_send_list(
     db.add(job)
     db.flush()
 
-    overrides = _override_map(req, {c.id for c in contacts})
+    # IR 기업현황 탭은 고친 글을 기업마다 받지 않는다 — 미리보기와 나가는 글이
+    # 같은 함수(`startup_outreach.render`)를 지나야 한다.
+    overrides = ({} if req.mode == MODE_STARTUP_MSG_IR
+                 else _override_map(req, {c.id for c in contacts}))
 
     for contact in contacts:
         # **번호순으로 늘어선 이 담당자의 기업들.** 화면의 [보낼 자료] 목록과

@@ -251,6 +251,15 @@
       대기 목록은 그 계정 회차로 서고, <b>만든 사람</b>이 진행 화면에서 <b>[발송 시작]</b> 을
       누르거나 보낼 시각을 고르면 나갑니다. 카톡에서 <b>확인된 방</b>에만 보냅니다.
     </p>
+    {# **내가 세운 아직 안 나간 회차** — 회차가 보내는 계정 것이라 다른 목록에는 안 선다.
+       잊고 두면 같은 기업이 `아직 안 나간 회차` 로 계속 빠진다(`ir_outreach.drafts_by`). #}
+    {% if ir_msg.my_drafts %}
+    <p class="warn-box" data-testid="irm-my-drafts">
+      ⏳ 아직 안 나간 내 회차:
+      {% for d in ir_msg.my_drafts %}<a href="/jobs/{{ d.id }}">#{{ d.id }}{% if d.topic %} {{ d.topic.label }}{% endif %} · {{ d.total }}곳{% if d.scheduled %} · 예약{% endif %}</a>{% if not loop.last %} · {% endif %}{% endfor %}
+      — 열어서 [발송 시작] 을 누르거나 [중단] 하세요.
+    </p>
+    {% endif %}
     {# 방을 맞추는 단추는 **하나**다 — 스타트업 화면과 같다(`ir_outreach.room_task`). #}
     <div class="assign-bar">
       <button type="button" class="secondary-btn" id="irm-room-check-btn" data-send disabled
@@ -278,7 +287,7 @@
       <label class="muted">이 문구를
         <input type="number" id="irm-days" value="{{ ir_msg.days }}" min="0" max="365" class="days-input">
         일 안에 받은 곳 빼기</label>
-      <span class="hint" title="같은 대표가 같은 문구를 두 번 받지 않게 — 이어 둔 스타트업 명단 줄이 받은 것도 셉니다. 0 이면 빼지 않습니다.">ⓘ 0 이면 빼지 않음</span>
+      <span class="hint" title="같은 대표가 같은 문구를 두 번 받지 않게 — 이어 둔 스타트업 명단 줄이 받은 것도 셉니다. 0 이면 이미 받은 곳을 빼지 않습니다(아직 안 나간 회차에 든 곳은 늘 뺍니다).">ⓘ 0 이면 받은 곳도 보냄 · 대기 중 회차는 늘 뺌</span>
       <label class="muted">회차명 <input type="text" id="irm-title" value="{{ first.title }}"></label>
       <label class="muted">보낼 시각 (선택) <input type="datetime-local" id="irm-when"></label>
     </div>

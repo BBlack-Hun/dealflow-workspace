@@ -14,11 +14,13 @@
 (`MODE_STARTUP_MSG_IR`). 방 이름 확인 · 문구 스냅숏 · 예약 · `draft` 가 전부 그 함수
 안에 있다. 글을 채우는 자리도 `startup_outreach.render` 하나다 — 미리보기와 같은 함수.
 
-## 화면이 거른 것과 여기서 거르는 것이 같은 함수다
+## 판정하는 자리는 하나다 (#522 리뷰)
 
-미리보기와 목록 만들기가 둘 다 `ir_outreach.rows` 를 지난다. 미리보기 뒤에 방이 풀렸거나
-다른 사람이 같은 문구를 보냈으면 목록 만들기가 **통째로 거절하고 까닭을 말한다** —
-조용히 빼고 나머지만 세우면 몇 곳에 나가는지 아무도 모른다(스타트업 화면과 같다).
+미리보기와 목록 만들기가 둘 다 `ir_outreach.rows` 를 지나는데, 목록 쪽 판정은 **세우는
+함수 안**(`deals.build_send_list`)에만 있다 — 여기서 한 벌 더 거르지 않는다. 미리보기 뒤에
+방이 풀렸거나 다른 사람이 같은 문구를 보냈으면 그 함수가 **통째로 거절하고 까닭을
+말한다** — 조용히 빼고 나머지만 세우면 몇 곳에 나가는지 아무도 모른다. 공용 주소
+`/api/deals/send` 는 이 모드를 안 받는다(거기로 찌르면 판정을 건너뛰고 곧장 나갔다).
 """
 from __future__ import annotations
 
@@ -65,6 +67,8 @@ def screen(db: Session, user: User) -> Optional[dict]:
         "send_latest_hour": send_window.latest(),
         "agent_needs": VERSION,
         "rooms_href": ir_outreach.ROOMS_HREF,
+        # 내가 세운 **아직 안 나간** 회차(보내는 계정 것이라 내 다른 목록에는 안 선다).
+        "my_drafts": ir_outreach.drafts_by(db, user),
     }
 
 
@@ -145,9 +149,9 @@ def make_draft(body: SendIn, background: BackgroundTasks,
 
     회차는 **보내는 계정 것**으로, 묶음은 누른 사람 것으로 선다(`create_send_list` 의
     `MODE_STARTUP_MSG_IR`). 누른 사람이 진행 화면에서 [발송 시작] 을 누르거나 고른
-    시각이 되어야 그 계정 PC 에서 나간다.
+    시각이 되어야 그 계정 PC 에서 나간다. 보낼 수 있는지는 세우는 함수가 판정한다.
     """
-    from .deals import MODE_STARTUP_MSG_IR, SendRequest, create_send_list
+    from .deals import MODE_STARTUP_MSG_IR, SendRequest, build_send_list
 
     topic = _topic(body.topic)
     ids = list(dict.fromkeys(body.company_ids or []))
@@ -156,21 +160,12 @@ def make_draft(body: SendIn, background: BackgroundTasks,
     owner = ir_outreach.sender(db)
     if owner is None:
         raise HTTPException(status_code=400, detail=ir_outreach.NO_SENDER)
-    companies = ir_outreach.load(db, ids)
-    if len(companies) != len(ids):
+    if len(ir_outreach.load(db, ids)) != len(ids):
         raise HTTPException(status_code=404,
                             detail="없는 기업이 섞였습니다 — 화면을 새로 여세요")
-    view = ir_outreach.rows(db, companies, topic, startup_outreach.clamp_days(body.days))
-    blocked = [r for r in view["rows"] if not r["sendable"]]
-    if blocked:
-        first = blocked[0]
-        raise HTTPException(
-            status_code=400,
-            detail=(f"'{first['firm']}' {first['reason']} — 목록에서 빼거나 "
-                    "미리보기를 다시 보세요"))
-    made = create_send_list(
+    made = build_send_list(
         SendRequest(contact_ids=ids, mode=MODE_STARTUP_MSG_IR, draft=True,
-                    topic=topic.key, body=body.body or "",
+                    topic=topic.key, body=body.body or "", days=body.days,
                     title=(body.title or "").strip() or None,
                     scheduled_at=(body.scheduled_at or "").strip()),
         background, db=db, user=user)
@@ -199,17 +194,24 @@ def check_rooms(body: RoomCheckIn, db: Session = Depends(get_db),
     if owner is None:
         raise HTTPException(status_code=400, detail=ir_outreach.NO_SENDER)
     companies = ir_outreach.load(db, ids)
-    made = ir_outreach.queue_rooms(db, owner, companies)
+    try:
+        made = ir_outreach.queue_rooms(db, owner, companies)
+    except ir_outreach.RoomCheckRefused as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     job = made["job"]
     rooms_href = f"{ir_outreach.ROOMS_HREF}?ids={','.join(str(c.id) for c in companies)}"
     if job is None:
-        raise HTTPException(
-            status_code=400,
-            detail=("찾을 곳이 없습니다 — 고른 기업이 모두 카톡방이 확인됐거나, 딜소개 불가 · "
-                    "폐업이거나, 회사명이 비어 있습니다"))
+        detail = ("찾을 곳이 없습니다 — 고른 기업이 모두 카톡방이 확인됐거나, 딜소개 불가 · "
+                  "폐업이거나, 회사명이 비어 있습니다")
+        if made["conflicts"]:
+            detail = (f"같은 방 제목을 가진 기업이 둘 이상이라 대조하지 않았습니다: "
+                      f"{', '.join(made['conflicts'][:5])} — 카톡에서 방 이름을 서로 다르게 "
+                      "바꾼 뒤 적어 주세요(다음에 누르면 회사명으로 찾습니다)")
+        raise HTTPException(status_code=400, detail=detail)
     viewable = job.user_id == user.id or user.role == "admin"
     return {"job_id": job.id, "total": job.total,
             "exact": made["exact"], "search": made["search"],
+            "conflicts": made["conflicts"],
             "skipped": len(ids) - job.total, "sender": owner.name,
             "href": f"/jobs/{job.id}" if viewable else "",
             "rooms_href": rooms_href}
