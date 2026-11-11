@@ -762,8 +762,8 @@
       #}
       <div class="filter-line" id="sourcing-topic">
         <span class="filter-label">보낼 문구</span>
-        <button type="button" class="chip active" data-value="sourcing_intro">참여 안내 (처음)</button>
-        <button type="button" class="chip" data-value="sourcing_remind">딜 발송 요청</button>
+        <button type="button" class="chip active" data-value="sourcing_intro">검토 가능 심사역 참여 안내</button>
+        <button type="button" class="chip" data-value="sourcing_remind">참여 심사역 딜 발송 요청</button>
         {# 시리즈 A 갈래 심사역께 `Series A 이상 딜 소싱` 탭의 받은 딜을 소개한다 —
            ① 칸이 그 기업 고르개로 바뀌고, 다른 갈래 카드는 고를 수 없다
            (`data-bucket` — `services/series_a_share.BUCKET`). 글은 문구 화면의
@@ -806,7 +806,7 @@
       {% if held %}
       <p class="hint" id="sourcing-held" data-testid="sourcing-held">
         {%- for label, n in held %}{{ label }} <b>{{ n }}</b>명{% if not loop.last %}·{% endif %}{% endfor %}은
-        참여 안내 대상이 아니라 뺐습니다.</p>
+        검토 가능 심사역 참여 안내 대상이 아니라 뺐습니다.</p>
       {% endif %}
       <div class="filter-line" id="bucket-filter">
         <span class="filter-label">갈래</span>
@@ -822,11 +822,11 @@
            `data-label` 은 갈래 이름 그대로다(요약 줄 · 섞임 경고가 읽는다). #}
         <button type="button" class="chip" data-value="{{ b.name }}" data-label="{{ bucket_label(b.name) }}"
                 data-split="invite" data-topic="sourcing_intro" data-testid="split-invite"
-                title="{{ bucket_label(b.name) }} 중 참여 확인 전(제안 대기중 · 물어보는 중) — 누르면 참여 안내 (처음) 문구로 이분들을 고릅니다">
+                title="{{ bucket_label(b.name) }} 중 참여 확인 전(제안 대기중 · 물어보는 중) — 누르면 검토 가능 심사역 참여 안내 문구로 이분들을 고릅니다">
           검토가능 심사역 <b>{{ sourcing_split.invite }}</b></button>
         <button type="button" class="chip" data-value="{{ b.name }}" data-label="{{ bucket_label(b.name) }}"
                 data-split="joined" data-topic="sourcing_remind" data-testid="split-joined"
-                title="{{ bucket_label(b.name) }} 중 참여 — 누르면 딜 발송 요청 문구로 이분들을 고릅니다(이번 달 딜 받음은 기본으로 뺍니다)">
+                title="{{ bucket_label(b.name) }} 중 참여 — 누르면 참여 심사역 딜 발송 요청 문구로 이분들을 고릅니다(이번 달 딜 받음은 기본으로 뺍니다)">
           참여 심사역 <b>{{ sourcing_split.joined }}</b></button>
         {% else %}
         <button type="button" class="chip" data-value="{{ b.name }}" data-label="{{ bucket_label(b.name) }}">

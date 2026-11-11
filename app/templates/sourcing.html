@@ -123,13 +123,17 @@
        **누른 사람 PC 의 카톡**에서 찾는다(`services/sourcing_rooms.py`). 아무것도
        보내지 않는다. 찾은 제목이 하나면 그 방으로 확정되고, 둘 이상이면 후보로
        담겨 각 줄의 카톡방 칸에서 골라 확정한다. **아무도 안 골랐으면 단추가 잠긴다** — 예전처럼 이 갈래 전부로
-       대신하지 않는다(서버도 막는다). 고른 줄 번호(`ids`)는 화면 스크립트가 싣는다. #}
+       대신하지 않는다(서버도 막는다). 고른 줄 번호(`ids`)는 화면 스크립트가 싣는다.
+       **자동화를 보내는 계정**으로 열었으면 `방 없음`(`data-no-room`) 대신 **이 계정
+       제목이 확인 안 된 분**을 찾는다(`sender_rooms.sourcing_needs`) — 명단의 방 이름이
+       있어도 실린다. 뺀 분을 말하는 글(`data-skip`)도 그에 맞춘다. #}
     <form method="post" action="/sourcing/rooms/search" class="inline-form js-room-search" data-send="proxy"
-          id="sourcing-room-search" data-testid="sourcing-room-search">
+          id="sourcing-room-search" data-testid="sourcing-room-search"
+          {% if room_sender %}data-skip="이 계정 제목이 이미 확인된(또는 불참여인)"{% endif %}>
       <input type="hidden" name="tab" value="{{ selected or 'all' }}">
       <input type="hidden" name="ids" value="">
       <button type="submit" class="secondary-btn" id="sourcing-room-btn" disabled
-              title="표에서 체크한 분 중 방이 없는 분을 내 PC 의 카톡에서 찾습니다 — 메시지는 보내지 않습니다">
+              title="{% if room_sender %}표에서 체크한 분 중 이 계정({{ user.name }}) 카톡 기준 제목이 없는 분을 내 PC 의 카톡에서 찾습니다 — 찾은 제목은 이 계정 전용으로 담깁니다 · 메시지는 보내지 않습니다{% else %}표에서 체크한 분 중 방이 없는 분을 내 PC 의 카톡에서 찾습니다 — 메시지는 보내지 않습니다{% endif %}">
         방 후보 찾기 (선택 0명)</button>
     </form>
     <span class="hint" id="sourcing-room-hint" data-testid="sourcing-room-hint">찾을 분을 먼저 고르세요</span>
@@ -159,9 +163,20 @@
     <a class="primary-btn inline" id="sourcing-share-btn" data-testid="sourcing-share-btn"
        aria-disabled="true"
        data-base="/deals?mode=sourcing&amp;topic={{ share_topic }}"
-       title="표에서 체크한 참여 분을 받는 사람으로 골라 딜 제안 관리에서 엽니다 — 거기서 Series A 이상 딜 소싱 기업을 고르고 미리보기 뒤 보냅니다">Series A 딜 소개 (선택 0명)</a>
+       title="표에서 체크한 참여 분을 받는 사람으로 골라 딜 제안 관리에서 엽니다 — 거기서 Series A 이상 딜 소싱 기업을 고르고 미리보기 뒤 보냅니다">참여 심사역 딜 발송 요청 (선택 0명)</a>
     <span class="hint" id="sourcing-share-hint" data-testid="sourcing-share-hint">왼쪽 체크박스로 받을 분을 고르세요</span>
     {% endif %}
+    {# **[검토 가능 심사역 참여 안내]**(11/11) — 위 단추와 같은 체크박스로 고른 분께 참여
+       안내를 연다. 딜 제안 관리 › 딜 소싱 제안이 [보낼 문구 › 검토 가능 심사역 참여 안내]로
+       열리고 체크한 분이 받는 사람으로 미리 골라져 있다(`?contacts=…`). 체크한 분 중
+       **참여 안내를 받는 분**(제안 대기중 · 물어보는 중 — `data-invite`)만 싣고, 참여 ·
+       불참여 · 직접 문구는 몇 명 뺐는지 옆에 적는다. 아무도 없으면 잠긴다. **모든 탭에
+       선다** — 갈래가 섞여도 딜 제안 관리가 사람마다 제 갈래 문구를 짓는다. #}
+    <a class="primary-btn inline" id="sourcing-invite-btn" data-testid="sourcing-invite-btn"
+       aria-disabled="true"
+       data-base="/deals?mode=sourcing&amp;topic={{ invite_topic }}"
+       title="표에서 체크한 분 중 참여 확인 전(제안 대기중 · 물어보는 중)인 분을 받는 사람으로 골라 딜 제안 관리에서 엽니다 — 거기서 미리보기 뒤 보냅니다">검토 가능 심사역 참여 안내 (선택 0명)</a>
+    <span class="hint" id="sourcing-invite-hint" data-testid="sourcing-invite-hint">왼쪽 체크박스로 받을 분을 고르세요</span>
     {# 전화로 한 명 승낙받고 바로 적을 곳이 없어서, 메모지에 적어 뒀다가
        나중에 시트에 옮겨야 했다. 지금 보고 있는 갈래에 바로 넣는다. #}
     {# 잇는 갈래(`sync_tab`)에 넣으면 투자사 관리 현황에도 선다 — 있던 분과 잇거나, 없으면
@@ -257,6 +272,7 @@
          `sourcing_sync.kind_of`). [Series A 딜 소개]가 이것으로 빼고 센다. #}
       <tr data-id="{{ r.id }}"{% if r.id in no_room %} data-no-room{% endif %}
           data-part-kind="{{ part_kind[r.id] }}"
+          data-invite="{{ '1' if r.id in invite_ok else '0' }}"
           data-s-requested_at="{{ requested_sort[r.id] }}"
           data-search="{{ (r.name ~ ' ' ~ (r.firm or '') ~ ' ' ~ (r.memo or '') ~ ' ' ~ (r.title or ''))|lower }}"
           {% for field, label, width, filterable in columns if filterable %}data-f-{{ field }}="{{ (assignees.get(r.id) if field == 'assignee_name' else requested[r.id] if field == 'requested_at' else r|attr(field)) or '' }}" {% endfor %}{{ cc.attrs(r.id) }}>
@@ -392,7 +408,62 @@
            손으로 옮겨 적으면 한 글자만 달라도 발송이 통째로 skip 된다. #}
         {% set link = linked_rooms.get(r.id) %}
         <td title="{{ r.kakao_room_name or (link and link.room) or '카톡방 제목을 그대로 적어주세요' }}">
-          <div class="cell" data-field="kakao_room_name">{{ r.kakao_room_name or '' }}</div>
+          {# **자동화를 보내는 계정으로 열었으면**(`room_sender`) 그 계정 카톡 기준 제목
+             (`sender_rooms.sourcing_view`)이 먼저 선다 — 그 계정의 [방 후보 찾기] 결과는
+             그 표에만 담긴다. 고르고 거두는 것도 그 표다(`confirm_room` · `clear_room`).
+             아래 `카톡방 이름` 칸(명단의 방 이름)은 손으로 보내는 팀원 카톡의 제목이고,
+             이 계정 제목이 없으면 그 이름으로 보낸다(`sender_rooms.sourcing_rooms_for`). #}
+          {% if room_sender %}
+          {% set mine = sender_rooms.get(r.id) %}
+          {% set mine_state = mine.state if mine else 'never' %}
+          <div class="cell-sub sourcing-room js-sender-room" data-testid="sourcing-sender-room"
+               data-state="{{ mine_state }}">
+            <span class="tag soft" style="margin-left:0"
+                  title="{{ user.name }} 님 카톡 기준 방 제목 — 이 계정이 보낼 때 씁니다">{{ user.name }} 전용</span>
+            {% if mine_state == 'confirmed' %}
+            <b title="{{ mine.room }}">💬 {{ mine.room }}</b>
+            <span class="room-badge ok">확인됨</span>
+            <form method="post" action="/sourcing/{{ r.id }}/room-clear" class="inline-form">
+              <input type="hidden" name="tab" value="{{ selected or 'all' }}">
+              <button type="submit" class="linkbtn"
+                      title="이 계정 전용 제목의 확정을 거둡니다 — 명단의 방 이름은 그대로입니다">확정 거두기</button>
+            </form>
+            {% else %}
+            {# 이 계정 제목도 명단 이름도 없다 — 보낼 방이 없다(발송이 뺀다). #}
+            {% if not r.kakao_room_name %}<span class="room-badge warn">방 없음</span>{% endif %}
+            {% if mine_state == 'not_found' %}
+            <span class="room-badge warn">이 계정 카톡에서 못 찾음</span>
+            {% else %}
+            <span class="muted">{{ mine.state_label if mine else '아직 안 찾아봄' }}</span>
+            {% endif %}
+            {% if r.id in no_room %}
+            <form method="post" action="/sourcing/rooms/search" class="inline-form js-room-search" data-send="proxy">
+              <input type="hidden" name="tab" value="{{ selected or 'all' }}">
+              <input type="hidden" name="ids" value="{{ r.id }}">
+              <button type="submit" class="linkbtn"
+                      title="이 분의 방을 내 PC 의 카톡에서 찾습니다 — 찾은 제목은 이 계정 전용으로 담깁니다 · 메시지는 보내지 않습니다">방 후보 찾기</button>
+            </form>
+            {% endif %}
+            {% if r.kakao_room_name %}<div class="muted">이 계정 제목이 없으면 명단 이름으로 보냅니다</div>{% endif %}
+            {% endif %}
+          </div>
+          {% if mine_state == 'picks' and mine.choose %}
+          <div class="cell-sub sourcing-room js-sender-room" data-testid="sourcing-sender-room-picks">
+            {% for p in mine.picks %}
+            <form method="post" action="/sourcing/{{ r.id }}/room-confirm" class="inline-form js-room-confirm">
+              <input type="hidden" name="tab" value="{{ selected or 'all' }}">
+              <input type="hidden" name="room" value="{{ p.room }}">
+              <button type="submit" class="linkbtn"
+                      {% if p.same %}disabled title="이 계정 카톡에 같은 제목의 방이 여럿입니다 — 방 이름을 고유하게 바꾼 뒤 다시 찾으세요"
+                      {% else %}title="이 방으로 확정 — 이 계정이 보낼 때 이 제목을 씁니다(명단의 방 이름은 그대로)"{% endif %}>
+                💬 {{ p.room }} — 이 방으로 확정</button>
+            </form>
+            {% endfor %}
+          </div>
+          {% endif %}
+          {% if r.kakao_room_name %}<div class="cell-sub muted" data-testid="sourcing-shared-room">명단 이름:</div>{% endif %}
+          {% endif %}
+          <div class="cell{% if room_sender %} muted{% endif %}" data-field="kakao_room_name">{{ r.kakao_room_name or '' }}</div>
           {% if link and not r.kakao_room_name %}
           <div class="cell-sub muted" title="{{ link.room }}">
             🔗 {{ link.room[:22] }}{% if link.room|length > 22 %}…{% endif %}
@@ -403,7 +474,7 @@
              이유를 띄운다). 어느 갈래도 투자사 딜소개 방을 이어받지 않는다 —
              보내는 분 카톡의 딜 소싱 방을 찾아 확정해야 한다(`sourcing_rooms`). #}
           {% set pick = room_picks.get(r.id) %}
-          {% if r.id in no_room %}
+          {% if r.id in no_room and not room_sender %}
           <div class="cell-sub sourcing-room" data-testid="sourcing-no-room">
             <span class="room-badge warn">방 없음</span>
             <span class="muted">{{ pick.state_label }}</span>
@@ -420,7 +491,7 @@
           {% endif %}
           {# 고르는 단추는 **후보가 둘 이상일 때만** — 하나뿐이면 찾을 때 확정된다
              (사용자 결정 2026-11-10 · `sourcing_rooms._confirm_single`). #}
-          {% if pick and pick.rooms|length > 1 and pick.state != 'confirmed' %}
+          {% if pick and pick.rooms|length > 1 and pick.state != 'confirmed' and not room_sender %}
           <div class="cell-sub sourcing-room" data-testid="sourcing-room-picks">
             {% for p in pick.rooms %}
             <form method="post" action="/sourcing/{{ r.id }}/room-confirm" class="inline-form js-room-confirm">
@@ -556,6 +627,7 @@
         }
         d.row.setAttribute("data-f-participation", d.data.participation);
         d.row.setAttribute("data-part-kind", kind);
+        d.row.setAttribute("data-invite", d.data.invite_ok ? "1" : "0");
         syncShareLink();
       }
       // 세울 값(`참여 요청일` — 서버가 날짜로 읽은 것)을 다시 적고 한 박자 뒤에 다시 읽는다.
@@ -670,10 +742,11 @@
     function syncShareLink() {
       syncCheckAll();
       syncRoomBtn();
+      syncInviteBtn();
       if (!shareBtn) return;
       var got = picked();
       var base = shareBtn.getAttribute("data-base") || "/deals";
-      shareBtn.textContent = "Series A 딜 소개 (선택 " + got.ids.length + "명" +
+      shareBtn.textContent = "참여 심사역 딜 발송 요청 (선택 " + got.ids.length + "명" +
         (got.hidden ? " · 일부 숨김" : "") + ")";
       if (got.ids.length) {
         shareBtn.setAttribute("href", base + "&contacts=" + got.ids.join(","));
@@ -697,6 +770,60 @@
       if (shareBtn.getAttribute("aria-disabled") === "true") e.preventDefault();
     });
 
+    // [검토 가능 심사역 참여 안내] — 같은 체크로, 그중 **참여 안내를 받는 분**
+    // (`data-invite="1"` — 서버의 `can_get_invite`)만 싣는다. 나머지는 `data-part-kind`
+    // 로 참여 · 불참여 · 직접 문구를 나눠 몇 명 뺐는지 적는다(딜 제안 관리의
+    // `sourcing-held` 와 같은 말). 숨은 줄 · 잠그기는 위 단추와 같다.
+    var inviteBtn = document.getElementById("sourcing-invite-btn");
+    var inviteHint = document.getElementById("sourcing-invite-hint");
+    function invitePicked() {
+      var ids = [], joined = 0, out = 0, custom = 0, hidden = 0;
+      pickBoxes().forEach(function (cb) {
+        if (!cb.checked) return;
+        var tr = cb.closest("tr");
+        if (!tr) return;
+        if (tr.getAttribute("data-invite") !== "1") {
+          var kind = tr.getAttribute("data-part-kind") || "joined";
+          if (kind === "left") out += 1;
+          else if (kind === "pending") custom += 1;
+          else joined += 1;
+          return;
+        }
+        var id = tr.getAttribute("data-id");
+        if (!id) return;
+        ids.push(id);
+        if (tr.hidden) hidden += 1;
+      });
+      return { ids: ids, joined: joined, out: out, custom: custom, hidden: hidden };
+    }
+    function syncInviteBtn() {
+      if (!inviteBtn) return;
+      var got = invitePicked();
+      var base = inviteBtn.getAttribute("data-base") || "/deals";
+      inviteBtn.textContent = "검토 가능 심사역 참여 안내 (선택 " + got.ids.length + "명" +
+        (got.hidden ? " · 일부 숨김" : "") + ")";
+      if (got.ids.length) {
+        inviteBtn.setAttribute("href", base + "&contacts=" + got.ids.join(","));
+        inviteBtn.removeAttribute("aria-disabled");
+      } else {
+        inviteBtn.removeAttribute("href");
+        inviteBtn.setAttribute("aria-disabled", "true");
+      }
+      if (!inviteHint) return;
+      var notes = [], held = [];
+      if (!got.ids.length) notes.push("왼쪽 체크박스로 받을 분을 고르세요");
+      if (got.hidden) notes.push("체크한 " + got.hidden + "명은 지금 검색 · 필터에 가려 있습니다 — 함께 엽니다");
+      if (got.joined) held.push("참여 중 " + got.joined + "명");
+      if (got.out) held.push("불참여 " + got.out + "명");
+      if (got.custom) held.push("직접 문구 " + got.custom + "명");
+      if (held.length) notes.push("체크한 " + held.join(" · ") + "은 참여 안내 대상이 아니라 빼고 엽니다");
+      inviteHint.textContent = notes.join(" · ");
+      inviteHint.hidden = !notes.length;
+    }
+    if (inviteBtn) inviteBtn.addEventListener("click", function (e) {
+      if (inviteBtn.getAttribute("aria-disabled") === "true") e.preventDefault();
+    });
+
     // [방 후보 찾기] — **체크한 분 중 `방 없음`(`data-no-room`) 인 분**만 찾는다
     // (`ids`). 아무도 안 골랐으면 단추를 잠근다 — 예전처럼 이 갈래 전부로 대신하면
     // 고른 줄 알고 누른 사람 PC 가 갈래 전원을 찾는다. 방이 이미 있는(또는 불참여)
@@ -705,6 +832,8 @@
     var roomForm = document.getElementById("sourcing-room-search");
     var roomBtn = document.getElementById("sourcing-room-btn");
     var roomHint = document.getElementById("sourcing-room-hint");
+    // 보내는 계정이면 `방 없음` 이 아니라 그 계정 제목이 확인된 분을 뺀다(`data-skip`).
+    var roomSkip = (roomForm && roomForm.getAttribute("data-skip")) || "'방 없음' 이 아닌";
     function roomPicked() {
       var rows = [], skip = 0, hidden = 0;
       pickBoxes().forEach(function (cb) {
@@ -726,7 +855,7 @@
       if (!roomHint) return;
       var notes = [];
       if (!got.rows.length) notes.push("찾을 분을 먼저 고르세요");
-      if (got.skip) notes.push("체크한 분 중 '방 없음' 이 아닌 " + got.skip + "명은 빼고 찾습니다");
+      if (got.skip) notes.push("체크한 분 중 " + roomSkip + " " + got.skip + "명은 빼고 찾습니다");
       roomHint.textContent = notes.join(" · ");
       roomHint.hidden = !notes.length;
     }

@@ -101,19 +101,27 @@ def needs_room(db: Session, rows: Iterable[SourcingContact]) -> List[SourcingCon
 
 
 def targets(db: Session, bucket: str = "",
-            ids: Optional[Iterable[int]] = None) -> List[SourcingContact]:
+            ids: Optional[Iterable[int]] = None,
+            sender_id: Optional[int] = None) -> List[SourcingContact]:
     """[방 후보 찾기] 가 찾을 줄 — 그 갈래(빈 값이면 전체)에서 방이 없는 줄.
-    띄어쓰기만 다른 글자의 줄도 그 갈래다(`sourcing_buckets.variants`)."""
+    띄어쓰기만 다른 글자의 줄도 그 갈래다(`sourcing_buckets.variants`).
+
+    **보내는 계정**(`sender_id`)이면 방이 없는 줄 대신 **그 계정 카톡 제목이 확인 안
+    된 줄**이다(`sender_rooms.sourcing_needs`) — 명단의 방 이름이 있어도 찾는다."""
     stmt = select(SourcingContact).order_by(SourcingContact.position,
                                             SourcingContact.id)
     if bucket:
         stmt = stmt.where(
             SourcingContact.bucket.in_(sourcing_buckets.variants(db, bucket)))
-    rows = needs_room(db, db.execute(stmt).scalars().all())
-    if ids is None:
-        return rows
-    wanted = set(ids)
-    return [r for r in rows if r.id in wanted]
+    rows = db.execute(stmt).scalars().all()
+    if ids is not None:
+        wanted = set(ids)
+        rows = [r for r in rows if r.id in wanted]
+    if sender_id is not None:
+        from . import sender_rooms   # 그쪽이 이 모듈을 부른다(`query_of`)
+
+        return sender_rooms.sourcing_needs(db, sender_id, rows)
+    return needs_room(db, rows)
 
 
 def queue_search(db: Session, user: User, rows: List[SourcingContact]
