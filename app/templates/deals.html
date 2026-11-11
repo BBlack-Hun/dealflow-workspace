@@ -877,7 +877,20 @@
                data-noreact="{{ 1 if c.id in no_reaction_ids else 0 }}">
         <div class="pick-body">
           <div class="pick-name">{{ c.name }} <span class="muted">{{ c.title or '' }}</span>
-            {% if c.id in no_reaction_ids %}<span class="tag warn">반응 없음</span>{% endif %}
+            {% if c.id in no_reaction_ids or c.id in no_reaction_cleared %}
+            {# `반응 없음` 딱지와 손으로 빼기 · 되돌리기(11/11 — `services/no_reaction` 머리말).
+               두 모양을 다 그려 두고 `deals.js` 가 숨김만 바꾼다 — 글자를 두 곳에 적지 않는다.
+               카드 전체가 고르는 `<label>` 이라 단추 누름이 체크로 번지지 않게 막는다(`deals.js`). #}
+            {% set cleared = c.id in no_reaction_cleared %}
+            <span class="noreact-mark" data-cleared="{{ 1 if cleared else 0 }}">
+              <span class="noreact-on"{% if cleared %} hidden{% endif %}><span class="tag warn">반응 없음</span>
+                <button type="button" class="linkbtn noreact-toggle"
+                        title="전화 · 다른 길로 반응이 있었던 분을 반응 없음 목록에서 뺍니다">반응 없음에서 빼기</button></span>
+              <span class="noreact-off"{% if not cleared %} hidden{% endif %}><span class="tag soft">반응 없음에서 뺌</span>
+                <button type="button" class="linkbtn noreact-toggle"
+                        title="다시 반응 없음 목록에 넣습니다">되돌리기</button></span>
+            </span>
+            {% endif %}
           </div>
           <div class="pick-sub muted">{{ c.firm or '' }}{% if c.department %} · {{ c.department }}{% endif %}</div>
           {% if c.group_name or c.stages or c.sectors or c.round_size %}

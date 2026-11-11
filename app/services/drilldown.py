@@ -49,8 +49,11 @@ _MONEY = {"pre_value", "funding_total", "raise_target", "revenue_recent",
           *revenue_years.FIELDS}
 
 
-def columns(year: Optional[int] = None) -> List[tuple]:
+def columns(year: Optional[int] = None, meeting: bool = False) -> List[tuple]:
     """목록 칸 `[(열쇠, 머리글)]` — 화면이 이 차례 그대로 그린다.
+
+    첫 칸(`day`)은 미팅 카드 목록이면 **미팅 날**(`Meeting.scheduled_at` — 카드가 그 날로 달을
+    가른다)이라 `미팅 일자`, 반응 목록이면 반응이 일어난 날이라 `날짜` 다(`meeting=`).
 
     연도 매출은 지난 두 해 · 올해(`revenue_recent`) · 내년 예상(`revenue_years.forecast`) —
     2026년이면 `24년 매출` ~ `27년 예상매출`. 이름은 IR 기업 현황 탭과 같은 글자다.
@@ -59,10 +62,10 @@ def columns(year: Optional[int] = None) -> List[tuple]:
     years = ([(f, f"{yy}년 매출") for f, yy in revenue_years.shown(year)[-2:]]
              + [("revenue_recent", revenue_years.recent_label(year))]
              + ([ahead] if ahead else []))
-    return ([("day", "날짜"), ("vc_name", "심사역 이름"), ("firm", "투자사명"),
-             ("phone", "연락처"), ("address", "회사주소"), ("company", "스타트업명"),
-             ("ceo_name", "기업 담당자"), ("ceo_phone", "기업 담당자 연락처"),
-             ("pre_value", "Pre Value")]
+    return ([("day", "미팅 일자" if meeting else "날짜"), ("vc_name", "심사역 이름"),
+             ("firm", "투자사명"), ("phone", "연락처"), ("address", "회사주소"),
+             ("company", "스타트업명"), ("ceo_name", "기업 담당자"),
+             ("ceo_phone", "기업 담당자 연락처"), ("pre_value", "Pre Value")]
             + years
             + [("funding_total", "누적투자금액"), ("raise_target", "투자유치희망금액"),
                ("meeting_at", "미팅 일시"), ("outcome", "미팅 결과")])
@@ -186,7 +189,7 @@ def build(db: Session, user: User, key: str, month: str = "", year: str = "",
     else:
         raise LookupError("모르는 칸입니다")
 
-    cols = columns()
+    cols = columns(meeting=key in MEETING_LABELS)
     rows, count = lines(db, hits, [c[0] for c in cols])
     whose = ("팀 전체" if team_wide else
              "내 것" if owner.id == user.id else f"{owner.name} 님")
