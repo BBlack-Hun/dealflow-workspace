@@ -2144,6 +2144,8 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     // `?mode=sourcing&topic=sourcing_remind` — 월간 리마인드로 바로 연다.
     // `?mode=sourcing&topic=sourcing_deal_share` — Series A 딜 공유(딜 소싱 화면의
     // [Series A 딜 소개]가 여는 주소다).
+    // `?mode=sourcing&topic=sourcing_intro` — 딜 소싱 화면의 [검토 가능 심사역 참여
+    // 안내]가 여는 주소. 이 탭의 처음 글이라 따로 고르지 않는다(`sourcingTopic`).
     var topicParam = params.get("topic");
     if (toSourcing && (topicParam === REMIND || topicParam === SHARE)) pickTopic(topicParam);
     // 딜 소싱 명단 · Series A 이상 딜 소싱 기업을 미리 켠다(`contacts` · `series_a`).

@@ -277,10 +277,11 @@ OUT_NOTE = "딜 소싱 불참여"
 #: 따로 말한다 — 동의하시면 딜 소싱 화면에서 `참여` 로 바꾸면 된다. `{value}` 는 적힌 값.
 PENDING_NOTE = "딜 소싱 참여 확인 전({value}) — 동의하시면 딜 소싱 화면에서 '참여' 로 바꾼 뒤 보내세요"
 #: 참여 안내(처음)에서 빠지는 **사람이 적은 문구** — 뜻을 몰라 안 보낸다(`sourcing_sync.can_get_invite`).
-CUSTOM_NOTE = ("딜 소싱 참여 칸이 직접 적은 문구({value}) — 참여 안내는 제안 대기중 · "
-               "물어보는 중인 분께만 나갑니다")
+CUSTOM_NOTE = ("딜 소싱 참여 칸이 직접 적은 문구({value}) — 검토 가능 심사역 참여 안내는 "
+               "제안 대기중 · 물어보는 중인 분께만 나갑니다")
 #: 참여 안내(처음)에서 빠지는 **이미 참여 중인** 분 — 청할 일이 없다.
-JOINED_NOTE = "이미 딜 소싱 참여 중 — 참여 안내는 제안 대기중 · 물어보는 중인 분께만 나갑니다"
+JOINED_NOTE = ("이미 딜 소싱 참여 중 — 검토 가능 심사역 참여 안내는 제안 대기중 · "
+               "물어보는 중인 분께만 나갑니다")
 
 
 def _not_taking_part(contact, topic: str = "") -> str:
@@ -326,7 +327,7 @@ def _sourcing_topic(mode: str, raw: Optional[str]) -> str:
     topic = sourcing_msg.topic_of(raw)
     if topic is None:
         raise HTTPException(status_code=400,
-                            detail="보낼 문구를 고르세요 — 참여 안내(처음) · "
+                            detail="보낼 문구를 고르세요 — 검토 가능 심사역 참여 안내 · "
                                    f"{sourcing_msg.REMIND_LABEL} · "
                                    f"{series_a_share.LABEL}")
     return topic

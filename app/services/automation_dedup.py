@@ -304,7 +304,7 @@ def manual_sourcing_invite(db: Session, sourcing_contact_id: Optional[int]) -> s
                SendItem.id.notin_(auto_items()))
     ).scalar()
     if sent:
-        return f"{PREFIX} — {_md(sent)} 에 손으로 보낸 참여 안내가 있습니다(보내는 중 포함)"
+        return f"{PREFIX} — {_md(sent)} 에 손으로 보낸 검토 가능 심사역 참여 안내가 있습니다(보내는 중 포함)"
     return ""
 
 
