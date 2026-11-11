@@ -362,6 +362,9 @@ def test_the_meeting_company_column_is_named_the_same_everywhere(logged, db, use
     assert at is not None, "엑셀 미팅 시트에 `기업명` 머리글이 있어야 한다"
     head = [str(c) for c in grid[at]]
     assert "기업" not in head, "화면과 다른 이름을 쓰면 안 된다"
+    # 첫 칸은 미팅 날(`scheduled_at`)이라 `미팅 일자`(11/11) — 화면 표와 같은 말.
+    assert head[0] == "미팅 일자" and "날짜" not in head
+    assert str(grid[at + 1][0]) == "2026-08-24"
     # 차례도 화면과 같다 — 심사역 · 회사 다음이 기업명이고, 그다음이 구분이다.
     assert head.index("기업명") == head.index("회사") + 1
     assert head.index("기업명") < head.index("구분")

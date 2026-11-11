@@ -97,6 +97,25 @@ def test_meeting_card_lists_match_the_report_cards(db, users, data):
         assert len(got["rows"]) == got["count"], "미팅 카드는 한 건이 한 줄"
 
 
+def test_meeting_card_lists_call_the_first_column_meeting_date(client, db, users, data):
+    """미팅 카드 넷의 첫 칸은 미팅 날(`scheduled_at`)이라 `미팅 일자`(11/11 사용자 요청) —
+    반응 목록의 첫 칸은 반응이 일어난 날이라 `날짜` 그대로다. `미팅 일시` 칸은 그대로 둔다."""
+    from app.models import Meeting
+    from app.services import dashboard, drilldown, report
+
+    for key, _label in report.MEETING_CARDS:
+        got = drilldown.build(db, users["u1"], key, month="2026-09")
+        assert got["headers"][0] == "미팅 일자", key
+        assert "날짜" not in got["headers"] and "미팅 일시" in got["headers"], key
+        by_id = {m.id: m.scheduled_at for m in db.query(Meeting)}
+        days = {r["cells"][0] for r in got["rows"]}
+        assert days <= set(by_id.values()), (key, days)
+    for key in dashboard.REACTION_KEYS:
+        assert drilldown.build(db, users["u1"], key)["headers"][0] == "날짜", key
+    page = _login(client).get("/reactions/list?key=done&month=2026-09").text
+    assert "<th>미팅 일자</th>" in page and "<th>날짜</th>" not in page
+
+
 def test_columns_read_the_source_rows(db, users, data):
     """값은 투자사 명단 · IR 기업 현황 · 미팅 기록에서 그대로 읽는다(베껴 두지 않는다)."""
     from app.services import drilldown, pipeline
