@@ -242,6 +242,7 @@ IR 기업 현황 메뉴의 셋째 탭. 칸 전체의 뜻은 `app/models.py` 의 
 | due_days | INTEGER | 기한 D+N (기본 3) |
 | status | TEXT | 상태전이 §3.3 |
 | delivered_at | TEXT NULL | |
+| delivered_time | TEXT NULL | 전달한 시각 `HH:MM`(0137~, 옛 줄은 빈 칸) — 업무 보고 상태 칸 `IR 자료 전달 완료 · 날짜 시각` |
 | delivery_note | TEXT NULL | 전달 문구(수정본 스냅샷) |
 
 ### 2.12 meetings — 미팅

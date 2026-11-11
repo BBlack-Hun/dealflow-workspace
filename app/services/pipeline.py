@@ -19,6 +19,7 @@ from typing import Dict, List, Optional, Tuple
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from .. import clock
 from ..models import (ContactActivity, IrCompany, IrRequest, Meeting, SendItem,
                       SendJob, SeriesACompany, User, VcContact)
 from . import amount, cadence, calendar_link, deal_numbers
@@ -1021,8 +1022,16 @@ def today_items(db: Session, user: User, today: Optional[date] = None) -> dict:
 # --- 상태 바꾸기 ------------------------------------------------------------
 
 def deliver(db: Session, request: IrRequest, when: Optional[date] = None) -> IrRequest:
+    """요청을 `IR 자료 전달 완료` 로 닫고 **언제**를 적는다 — 날짜와 시각(`HH:MM`, 0137).
+
+    시각은 적는 지금이 그 날짜일 때만 적는다. 지난 날짜를 넘겨받은 길은 그날 몇
+    시였는지 모른다 — `00:00` 이나 지금 시각을 붙이면 업무 보고에서 진짜처럼 읽힌다.
+    """
+    now = clock.now()
+    day = (when or date.today()).isoformat()
     request.status = "delivered"
-    request.delivered_at = (when or date.today()).isoformat()
+    request.delivered_at = day
+    request.delivered_time = now.strftime("%H:%M") if now.date().isoformat() == day else None
     db.flush()
     return request
 
