@@ -319,6 +319,11 @@ class VcContact(TimestampMixin, Base):
         ForeignKey("ir_companies.id"), nullable=True)
     # 이름으로 **저절로**(또는 일괄 연결로) 이어졌는가 — 화면의 `자동 연결` 표시(0117).
     ir_link_auto: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # 딜 제안 관리의 `반응 없음` 에서 **사람이 손으로 뺀 시각**(0136). 비어 있으면
+    # 앱이 판정한 그대로다. 전화 · 다른 길로 반응이 있었던 분을 빼는 자리이고,
+    # `반응 없음` 목록(딱지 · [반응 없는 담당자만] · 대시보드 수)에서만 빠진다 —
+    # 다른 곳의 반응으로는 치지 않는다(`services/no_reaction` 머리말).
+    no_reaction_cleared_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
 
 class ContactActivity(TimestampMixin, Base):

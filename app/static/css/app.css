@@ -198,6 +198,8 @@ a:hover { text-decoration: underline; }
 }
 .pick-body { min-width: 0; }
 .pick-name { font-weight: 700; }
+/* 딜 제안 관리 카드의 [반응 없음에서 빼기] · [되돌리기] — 딱지 옆에 작게(`deals.js`). */
+.noreact-mark .linkbtn { padding: 0 2px; font-size: 11px; font-weight: 500; }
 .pick-sub { font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
 .pick-room { margin-top: 4px; }
 .tag { font-size: 11px; background: #eef2ff; color: var(--brand); border-radius: 6px; padding: 1px 7px; margin-left: 4px; }
