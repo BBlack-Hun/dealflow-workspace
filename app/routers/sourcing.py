@@ -30,7 +30,7 @@ from ..services import (sender_rooms, series_a_share, sheet_owner, sourcing_buck
                         sourcing_link,
                         sourcing_mail, sourcing_receipts, sourcing_rooms,
                         sourcing_sync, spreadsheet)
-from ..services import custom_columns, sourcing_remind_log, taxonomy
+from ..services import custom_columns, sourcing_msg, sourcing_remind_log, taxonomy
 from ..services.pipeline import current_assignee
 from ..ui import base_ctx
 # 방 확인 잡의 종류는 **한 곳에만 적는다**(`agent_api.VERIFY_KIND`).
@@ -390,7 +390,14 @@ def sourcing_page(request: Request, db: Session = Depends(get_db),
     # (`services/sourcing_receipts.py` · `services/sourcing_mail.py`).
     month = sourcing_receipts.month_of()
     receipts = sourcing_receipts.receipts(db, month)
+    # 자동화를 보내는 계정으로 열었나 — 그러면 카톡방 칸에 **이 계정 카톡 기준 제목**이
+    # 먼저 서고(`sender_rooms.sourcing_view`), `방 없음`(찾을 줄)도 그 제목 기준이다
+    # (`sender_rooms.sourcing_needs`). 찾기 결과가 그 표에만 담겨 이 화면에 안
+    # 보였다(사용자 2026-11-11: "결과가 화면에 안 보임").
+    room_sender = sender_rooms.is_sender(db, user)
     ctx.update({
+        "room_sender": room_sender,
+        "sender_rooms": sender_rooms.sourcing_view(db, user.id) if room_sender else {},
         "month": month,
         "month_label": f"{int(month[5:])}월",
         "received": set(receipts),
@@ -419,8 +426,10 @@ def sourcing_page(request: Request, db: Session = Depends(get_db),
         # **보낼 방이 없는 줄** — 자기 방 이름도 이어받을 방도 없다
         # (`sourcing_rooms.needs_room` — 발송이 방을 고르는 규칙과 같다).
         # 그 줄에 `방 없음` 과 [방 후보 찾기] 가 서고, 툴바 [방 후보 찾기]는 체크한
-        # 줄 중 이 줄만 싣는다(`data-no-room`).
-        "no_room": {r.id for r in sourcing_rooms.needs_room(db, rows)},
+        # 줄 중 이 줄만 싣는다(`data-no-room`). 보내는 계정이면 **그 계정 제목이
+        # 확인 안 된 줄**이다 — 명단의 방 이름이 있어도 찾는다(`sourcing_rooms.targets`).
+        "no_room": {r.id for r in (sender_rooms.sourcing_needs(db, user.id, rows)
+                                   if room_sender else sourcing_rooms.needs_room(db, rows))},
         # `참여` 칸의 갈래 — `joined` · `left` · `pending`(물어보는 중 · 사람이 적은
         # 문구). 칸 색과 [Series A 딜 소개]가 빼는 수를 이것으로 정한다
         # (`sourcing_sync.kind_of` — 규칙은 서버 한 곳).
@@ -449,6 +458,11 @@ def sourcing_page(request: Request, db: Session = Depends(get_db),
         "share_bucket": series_a_share.BUCKET,
         "share_topic": series_a_share.KIND,
         "share_tab": series_a_share.is_share_bucket(selected),
+        # [검토 가능 심사역 참여 안내] 단추 — 모든 탭에 선다(갈래가 섞여도 딜 제안 관리가
+        # 사람마다 제 갈래 문구를 짓는다). 같은 체크박스로 고르고, 그중 참여 안내를 받는
+        # 줄(`data-invite` — `sourcing_sync.can_get_invite`)만 싣는다(`sourcing.html`).
+        "invite_topic": sourcing_msg.KIND,
+        "invite_ok": {r.id for r in rows if sourcing_sync.can_get_invite(r)},
         # 그 탭 위 칩 두 줄 — 검토가능 · 참여 · 불참여 · 담당별(`split_chips`).
         "split": split_chips(rows, selected) if series_a_share.is_share_bucket(selected) else None,
         # 투자사 관리 현황과 잇는 갈래 탭인가 — [저절로 잇기] 단추가 선다.
@@ -769,6 +783,8 @@ def update_row(row_id: int, body: SourcingIn, db: Session = Depends(get_db),
     out = {"ok": True, "assignee": assignee_of(row),
            "participation": sourcing_sync.participation_of(row),
            "participation_kind": sourcing_sync.kind_of(row),
+           # [검토 가능 심사역 참여 안내] 단추가 이 줄을 싣는지(`data-invite`)도 서버가 정한다.
+           "invite_ok": sourcing_sync.can_get_invite(row),
            # `참여 요청일` 을 고치면 세울 값도 바뀐다(`sourcing.html` 이 줄에 다시 적는다).
            "requested_sort": requested_sort(row)}
     if contact is not None:
@@ -1079,24 +1095,33 @@ def search_rooms(request: Request, tab: str = Form(""), ids: str = Form(""),
     다를 수 있다. 그 계정이 누르면 같은 방 확인 잡을 **보내는 계정 기준 방 제목**
     으로 세운다(`sender_rooms.queue_sourcing`) — 찾은 제목은 그 표에만 담기고, 이
     명단의 후보 · 방 이름 · 확인 표시는 그대로다. 하나면 그 표에서 바로 확정되고,
-    둘 이상이면 팀 현황 › 보내는 계정 기준 방 제목에서 고른다.
+    둘 이상이면 이 화면 카톡방 칸(그 계정으로 열면 그 표가 선다 — `sourcing_page`)
+    이나 팀 현황 › 보내는 계정 기준 방 제목에서 고른다.
+
+    그 계정이 찾는 줄은 방이 없는 줄이 아니라 **그 계정 제목이 확인 안 된 줄**이다
+    (`sourcing_rooms.targets` 의 `sender_id` → `sender_rooms.sourcing_needs`) — 명단의
+    방 이름은 팀원 카톡의 제목이라, 팀원이 먼저 찾아 둔 분도 이 계정은 다시 찾아야
+    한다. 불참여인 분 · 다른 갈래 줄은 똑같이 빠진다.
     """
     picked = _ids(ids)
     if not picked:
         return _answer(request, tab, "찾을 분을 먼저 고르세요 — 표 왼쪽 체크박스로 고릅니다", 400)
     bucket = "" if tab in ("", "all") else tab
-    rows = sourcing_rooms.targets(db, bucket, picked)
     sender = sender_rooms.is_sender(db, user)
+    rows = sourcing_rooms.targets(db, bucket, picked, user.id if sender else None)
     job = (sender_rooms.queue_sourcing if sender else sourcing_rooms.queue_search)(
         db, user, rows)
     if job is None:
+        if sender:
+            return _answer(request, tab, f"찾을 줄이 없습니다 — 고른 분은 {user.name} 님 "
+                           "카톡 기준 방 제목이 다 확인돼 있습니다(불참여인 분은 안 찾습니다)", 400)
         return _answer(request, tab, "찾을 줄이 없습니다 — 고른 분은 방 이름이 다 있습니다", 400)
     db.commit()
     if sender:
         note = (f"{user.name} 님 PC 의 카톡에서 {job.total}명의 방을 찾습니다(회차 #{job.id}) — "
-                "자동화를 보내는 계정이라 찾은 제목은 이 계정 전용으로 담깁니다(딜 소싱 "
-                "명단의 방 이름은 그대로). 하나면 바로 확정되고, 둘 이상이면 팀 현황 › "
-                "보내는 계정 기준 방 제목에서 고르세요")
+                "자동화를 보내는 계정이라 찾은 제목은 이 계정 전용(보내는 계정 기준 방 제목)"
+                "으로 담깁니다(딜 소싱 명단의 방 이름은 그대로). 끝나면 새로고침하세요 — "
+                "하나면 바로 확정되고, 둘 이상이면 이 칸에서 고릅니다")
         return _answer(request, tab, note, job_id=job.id, ids=[r.id for r in rows],
                        note=note)
     return _answer(request, tab,
@@ -1111,10 +1136,23 @@ def search_rooms(request: Request, tab: str = Form(""), ids: str = Form(""),
 def confirm_room(request: Request, row_id: int, room: str = Form(""), tab: str = Form(""),
                  db: Session = Depends(get_db),
                  user: User = Depends(get_current_user)):
-    """[이 방으로 확정] — 카톡에서 찾은 후보를 이 줄의 방 이름으로(`확인됨`)."""
+    """[이 방으로 확정] — 카톡에서 찾은 후보를 이 줄의 방 이름으로(`확인됨`).
+
+    **보내는 계정**이 누르면 그 계정 카톡 기준 제목만 확정한다(`sender_rooms.confirm`
+    — 그 화면의 후보가 그 표의 후보다, `sourcing_page`). 명단의 방 이름은 그대로다.
+    """
     row = db.get(SourcingContact, row_id)
     if row is None:
         raise HTTPException(status_code=404, detail="찾을 수 없습니다")
+    if sender_rooms.is_sender(db, user):
+        try:
+            mine = sender_rooms.confirm(db, user.id, row_id, room, sourcing=True)
+        except sender_rooms.NotPickable as exc:
+            db.rollback()
+            return _answer(request, tab, str(exc), 400)
+        note = f"✓ {mine.room_name} — {user.name} 님 계정 전용 제목으로 확정했습니다"
+        return _answer(request, tab, f"{row.name} — {note}", room=mine.room_name,
+                       sender=True, note=note)
     try:
         sourcing_rooms.confirm(row, room)
     except sourcing_rooms.NotPickable as exc:
@@ -1123,3 +1161,23 @@ def confirm_room(request: Request, row_id: int, room: str = Form(""), tab: str =
     db.commit()
     return _answer(request, tab, f"{row.name} — 방을 확정했습니다: {row.kakao_room_name}",
                    room=row.kakao_room_name)
+
+
+@router.post("/sourcing/{row_id}/room-clear", include_in_schema=False)
+def clear_room(request: Request, row_id: int, tab: str = Form(""),
+               db: Session = Depends(get_db),
+               user: User = Depends(get_current_user)):
+    """[확정 거두기] — **보내는 계정 전용 제목**의 확정을 거둔다(`sender_rooms.clear`).
+
+    그 계정은 다시 명단의 방 이름으로 보낸다. 명단의 방 이름은 안 건드린다 — 그쪽은
+    `카톡방 이름` 칸을 고친다(그래서 보내는 계정이 아니면 이 길이 없다).
+    """
+    row = db.get(SourcingContact, row_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="찾을 수 없습니다")
+    if not sender_rooms.is_sender(db, user):
+        return _answer(request, tab, "자동화를 보내는 계정 전용 제목만 거둘 수 있습니다 — "
+                       "명단의 방 이름은 `카톡방 이름` 칸에서 고치세요", 400)
+    sender_rooms.clear(db, user.id, row_id, sourcing=True)
+    return _answer(request, tab, f"{row.name} — {user.name} 님 계정 전용 방 제목의 확정을 "
+                   "거뒀습니다(명단의 방 이름으로 보냅니다)")

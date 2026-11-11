@@ -94,8 +94,8 @@ def test_timeline_shows_linked_sourcing_sends_with_source_and_sender(logged_in, 
 
     remind = rows["sourcing_remind"]
     assert remind["state"] == "실패"
-    assert remind["content"] == "딜 소싱(딜 발송 요청) 실패 — 방 없음"
-    assert rows["sourcing_intro"]["content"] == "딜 소싱(참여 안내)"
+    assert remind["content"] == "딜 소싱(참여 심사역 딜 발송 요청) 실패 — 방 없음"
+    assert rows["sourcing_intro"]["content"] == "딜 소싱(검토 가능 심사역 참여 안내)"
     assert rows["sourcing_intro"]["companies"] == []
 
 

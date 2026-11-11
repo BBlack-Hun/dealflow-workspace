@@ -1427,7 +1427,7 @@ _SEND_STATES = {"failed": "실패", "pending": "대기", "canceled": "취소"}
 #: 이력 줄의 갈래 이름. 딜 소싱은 `topic` 으로 가른다(비면 참여 안내). 화면의 같은 이름은
 #: `static/js/contacts.js` 의 `KIND_KO`.
 _SEND_LABELS = {"deal_intro": "딜소개", "ir_delivery": "IR 전달",
-                sourcing_msg.KIND: "딜 소싱(참여 안내)",
+                sourcing_msg.KIND: "딜 소싱(검토 가능 심사역 참여 안내)",
                 sourcing_msg.REMIND_KIND: f"딜 소싱({sourcing_msg.REMIND_LABEL})",
                 sourcing_msg.SHARE_KIND: f"딜 소싱({series_a_share.LABEL})"}
 

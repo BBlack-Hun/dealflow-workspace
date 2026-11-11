@@ -468,7 +468,7 @@ def test_the_sourcing_screen_has_the_button_and_the_row_note(world, client, db):
     assert btn, "시리즈 A 탭에 [Series A 딜 소개] 단추가 없다"
     assert f'data-base="/deals?mode=sourcing&amp;topic={SHARE}"' in btn.group(0)
     # 처음에는 아무도 안 골랐다 — 잠긴 채, 주소 없이(보이는 줄 전부로 대신하지 않는다).
-    assert btn.group(1) == "Series A 딜 소개 (선택 0명)"
+    assert btn.group(1) == "참여 심사역 딜 발송 요청 (선택 0명)"
     assert 'aria-disabled="true"' in btn.group(0) and " href=" not in btn.group(0)
     assert "왼쪽 체크박스로 받을 분을 고르세요" in page
     # 체크한 참여 분을 `contacts=` 로 싣는다(불참여는 빼고 몇 명인지 말한다)
