@@ -95,7 +95,7 @@ function locked(btn) { return btn.getAttribute("aria-disabled") === "true"; }
 {
   const rows = [row(11, "참여"), row(12, "불참여"), row(13, "참여", true), row(14, "참여")];
   const t = setup(rows);
-  assert.strictEqual(t.btn.textContent, "Series A 딜 소개 (선택 0명)",
+  assert.strictEqual(t.btn.textContent, "참여 심사역 딜 발송 요청 (선택 0명)",
                      "보이는 줄 수가 아니라 고른 수를 적어야 한다");
   assert.ok(locked(t.btn), "아무도 안 골랐는데 단추가 눌린다");
   assert.strictEqual(t.btn.getAttribute("href"), null,
@@ -116,7 +116,7 @@ function locked(btn) { return btn.getAttribute("aria-disabled") === "true"; }
   pick(rows[0]);
   assert.strictEqual(t.btn.getAttribute("href"), BASE + "&contacts=11,13",
                      "체크한 줄만 표 차례대로 실어야 한다");
-  assert.strictEqual(t.btn.textContent, "Series A 딜 소개 (선택 2명)");
+  assert.strictEqual(t.btn.textContent, "참여 심사역 딜 발송 요청 (선택 2명)");
   assert.ok(!locked(t.btn), "골랐는데 잠겨 있다");
   assert.strictEqual(t.hint.hidden, true);
   let blocked = false;
@@ -126,7 +126,7 @@ function locked(btn) { return btn.getAttribute("aria-disabled") === "true"; }
   pick(rows[1]);                                       // 불참여
   assert.strictEqual(t.btn.getAttribute("href"), BASE + "&contacts=11,13",
                      "불참여 분이 실렸다 — 딜 제안 관리에도 안 뜨고 발송도 막힌다");
-  assert.strictEqual(t.btn.textContent, "Series A 딜 소개 (선택 2명)");
+  assert.strictEqual(t.btn.textContent, "참여 심사역 딜 발송 요청 (선택 2명)");
   assert.strictEqual(t.hint.hidden, false, "불참여를 뺐다고 말하지 않는다");
   assert.strictEqual(t.hint.textContent, "체크한 불참여 1명은 빼고 엽니다");
 
@@ -147,7 +147,7 @@ function locked(btn) { return btn.getAttribute("aria-disabled") === "true"; }
   assert.strictEqual(rows[2].querySelector(".js-sourcing-pick").checked, false,
                      "걸러진(안 보이는) 줄까지 켰다");
   assert.strictEqual(t.btn.getAttribute("href"), BASE + "&contacts=11,14");
-  assert.strictEqual(t.btn.textContent, "Series A 딜 소개 (선택 2명)");
+  assert.strictEqual(t.btn.textContent, "참여 심사역 딜 발송 요청 (선택 2명)");
   assert.strictEqual(t.all.checked, true);
   assert.strictEqual(t.all.indeterminate, false);
 
@@ -160,7 +160,7 @@ function locked(btn) { return btn.getAttribute("aria-disabled") === "true"; }
   clickAll(t, false);
   assert.ok(rows.every(function (r) { return !r.querySelector(".js-sourcing-pick").checked; }));
   assert.ok(locked(t.btn));
-  assert.strictEqual(t.btn.textContent, "Series A 딜 소개 (선택 0명)");
+  assert.strictEqual(t.btn.textContent, "참여 심사역 딜 발송 요청 (선택 0명)");
 }
 
 // --- ⑤ 검색 · 필터로 숨은 줄의 체크는 남는다 ------------------------------------
@@ -177,7 +177,7 @@ function locked(btn) { return btn.getAttribute("aria-disabled") === "true"; }
   pick(rows[1]);
   assert.strictEqual(t.btn.getAttribute("href"), BASE + "&contacts=11,12",
                      "숨은 줄에서 고른 분이 빠졌다");
-  assert.strictEqual(t.btn.textContent, "Series A 딜 소개 (선택 2명 · 일부 숨김)");
+  assert.strictEqual(t.btn.textContent, "참여 심사역 딜 발송 요청 (선택 2명 · 일부 숨김)");
   assert.strictEqual(t.hint.hidden, false);
   assert.ok(/체크한 1명은 지금 검색 · 필터에 가려 있습니다/.test(t.hint.textContent),
             t.hint.textContent);
@@ -193,7 +193,7 @@ function locked(btn) { return btn.getAttribute("aria-disabled") === "true"; }
   // 다 보이게 되면 `일부 숨김` 이 사라진다
   rows.forEach(function (r) { r.hidden = false; });
   t.refilter();
-  assert.strictEqual(t.btn.textContent, "Series A 딜 소개 (선택 1명)");
+  assert.strictEqual(t.btn.textContent, "참여 심사역 딜 발송 요청 (선택 1명)");
   assert.strictEqual(t.hint.hidden, true);
   assert.strictEqual(t.all.indeterminate, true);
 }
@@ -206,7 +206,7 @@ function locked(btn) { return btn.getAttribute("aria-disabled") === "true"; }
   rows.forEach(function (r) { pick(r, true); });
   assert.strictEqual(t.btn.getAttribute("href"), BASE + "&contacts=11",
                      "아직 동의 전인 분이 받는 사람으로 실렸다");
-  assert.strictEqual(t.btn.textContent, "Series A 딜 소개 (선택 1명)");
+  assert.strictEqual(t.btn.textContent, "참여 심사역 딜 발송 요청 (선택 1명)");
   assert.strictEqual(t.hint.textContent,
                      "체크한 불참여 1명은 빼고 엽니다 · " +
                      "체크한 참여 확인 전(제안 대기·물어보는 중 등) 2명은 빼고 엽니다");
@@ -235,7 +235,7 @@ function locked(btn) { return btn.getAttribute("aria-disabled") === "true"; }
   assert.strictEqual(rows[1].querySelector(".js-sourcing-pick").checked, false,
                      "담당자 필터 밖(나담당) 줄이 전체선택에 남았다");
   assert.strictEqual(t.btn.getAttribute("href"), BASE + "&contacts=11,14");
-  assert.strictEqual(t.btn.textContent, "Series A 딜 소개 (선택 2명)");
+  assert.strictEqual(t.btn.textContent, "참여 심사역 딜 발송 요청 (선택 2명)");
   assert.strictEqual(t.all.checked, true);
   assert.strictEqual(t.all.indeterminate, false);
 }
