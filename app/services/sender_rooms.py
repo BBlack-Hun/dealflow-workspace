@@ -36,6 +36,12 @@
 - **보내는 계정이 딜 소싱 화면에서 [방 후보 찾기]를 눌러도** 찾은 제목은 이 표에만
   담는다(`queue_sourcing` — `routers/sourcing.search_rooms`). 딜 소싱 명단의 방
   이름 · 후보 · 확인 표시는 그대로다 — 그 칸은 손으로 보내는 팀원 카톡의 제목이다.
+  그 계정이 찾는 줄은 **그 계정 제목이 확인 안 된 줄**이다(`sourcing_needs` —
+  명단의 방 이름이 있어도 찾는다).
+- 그 계정으로 딜 소싱 화면을 열면 카톡방 칸에 **이 표의 상태**가 먼저 선다
+  (`sourcing_view` — 확정된 제목 · 고를 후보 · 못 찾음). 거기서 고르고 거두는 것도
+  이 표다(`routers/sourcing.confirm_room` · `clear_room` → `confirm` · `clear`).
+  사용자 원문(2026-11-11): 백업팀으로 찾았는데 "결과가 화면에 안 보임".
 - 딜 소싱 분은 **찾은 방(같은 제목을 하나로 친)이 하나뿐이면 그 방으로 확정한다**
   (사용자 결정 2026-11-10 — `sourcing_rooms` 머리말). 사람이 [이 방으로 확정] 을
   누른 것과 같은 길(`confirm`)이다. 둘 이상일 때만 사람이 고른다. 투자사 담당자
@@ -210,6 +216,22 @@ def targets(db: Session, sender: User) -> List[VcContact]:
             continue
         out.append(contact)
     return out
+
+
+def sourcing_needs(db: Session, sender_id: int,
+                   rows: Iterable[SourcingContact]) -> List[SourcingContact]:
+    """이 계정이 딜 소싱 [방 후보 찾기]로 찾을 줄 — **이 계정 카톡 제목이 확인 안 된 줄**.
+
+    명단의 방 이름이 있어도 찾는다 — 그 이름은 손으로 보내는 팀원 카톡의 제목이다
+    (`sourcing_rooms.needs_room` 은 그런 줄을 빼서 팀원이 먼저 찾은 분을 이 계정이
+    못 찾았다). 이름 없는 줄 · 불참여인 분은 [전체 방 확인](`sourcing_targets`)처럼
+    뺀다. 확인된 제목은 질의 한 번으로 읽는다(`sourcing_rooms_for`).
+    """
+    from . import sourcing_sync
+
+    rows = [r for r in rows if (r.name or "").strip() and not sourcing_sync.is_left(r)]
+    done = sourcing_rooms_for(db, sender_id, rows)
+    return [r for r in rows if r.id not in done]
 
 
 def sourcing_targets(db: Session) -> List[SourcingContact]:
@@ -441,6 +463,43 @@ def state_of(row: Optional[SenderRoom]) -> str:
     return PICKS if candidates(row) else NOT_FOUND
 
 
+def _view(row: Optional[SenderRoom], sourcing: bool) -> dict:
+    """한 줄의 상태 · 후보 — 팀 현황 판(`board`)과 딜 소싱 화면(`sourcing_view`)이 같이 쓴다."""
+    state = state_of(row)
+    picks = candidates(row)
+    # 딜 소싱 분은 **둘 이상일 때만 고른다** — 하나뿐이면 찾을 때 확정된다
+    # (`apply_result`). 하나뿐인데 확정 안 된 줄(같은 제목이 여럿 · 확정을 거둠 ·
+    # 이 결정 전에 담긴 후보)에는 고르는 단추 · `골라 주세요` 를 안 세운다.
+    choose = not sourcing or len(set(picks)) > 1
+    label = STATE_LABELS[state].format(n=len(picks))
+    if state == PICKS and not choose:
+        label = ("같은 제목의 방이 여럿 — 확정 불가" if len(picks) > 1
+                 else "후보 1개 — 다시 확인하면 확정됩니다")
+    return {
+        "room": (row.room_name or "") if row else "",
+        "state": state,
+        "state_label": label,
+        "choose": choose,
+        "picks": [{"room": p, "same": picks.count(p) > 1,
+                   "current": bool(row and row.verified and row.room_name == p)}
+                  for p in dict.fromkeys(picks)],
+        "checked_at": (row.checked_at or "")[:16].replace("T", " ") if row else "",
+    }
+
+
+def sourcing_view(db: Session, sender_id: int) -> Dict[int, dict]:
+    """딜 소싱 화면의 카톡방 칸 — **이 계정 카톡 기준 제목**의 상태, {줄 번호: `_view`}.
+
+    그 계정으로 딜 소싱 화면을 열 때 선다(`routers/sourcing.sourcing_page`). 이 계정의
+    딜 소싱 줄을 질의 한 번으로 읽는다. 없는 줄은 아직 안 찾아본 줄이다.
+    """
+    rows = db.execute(
+        select(SenderRoom).where(SenderRoom.sender_user_id == sender_id,
+                                 SenderRoom.sourcing_contact_id.isnot(None))
+    ).scalars().all()
+    return {r.sourcing_contact_id: _view(r, sourcing=True) for r in rows}
+
+
 def board(db: Session, sender: User) -> dict:
     """`/team/sender-rooms` 가 읽는 한 판 — 고를 것이 있는 줄이 위로.
 
@@ -459,16 +518,6 @@ def board(db: Session, sender: User) -> dict:
                 for p in sourcing_targets(db)])
     out = []
     for kind, contact, row, owner in lines:
-        state = state_of(row)
-        picks = candidates(row)
-        # 딜 소싱 분은 **둘 이상일 때만 고른다** — 하나뿐이면 찾을 때 확정된다
-        # (`apply_result`). 하나뿐인데 확정 안 된 줄(같은 제목이 여럿 · 확정을 거둠 ·
-        # 이 결정 전에 담긴 후보)에는 고르는 단추 · `골라 주세요` 를 안 세운다.
-        choose = kind == "vc" or len(set(picks)) > 1
-        label = STATE_LABELS[state].format(n=len(picks))
-        if state == PICKS and not choose:
-            label = ("같은 제목의 방이 여럿 — 확정 불가" if len(picks) > 1
-                     else "후보 1개 — 다시 확인하면 확정됩니다")
         out.append({
             "kind": kind,
             "contact_id": contact.id,
@@ -476,14 +525,7 @@ def board(db: Session, sender: User) -> dict:
             "name": contact.name,
             "firm": contact.firm or "",
             "own_room": (contact.kakao_room_name or "").strip(),
-            "room": (row.room_name or "") if row else "",
-            "state": state,
-            "state_label": label,
-            "choose": choose,
-            "picks": [{"room": p, "same": picks.count(p) > 1,
-                       "current": bool(row and row.verified and row.room_name == p)}
-                      for p in dict.fromkeys(picks)],
-            "checked_at": (row.checked_at or "")[:16].replace("T", " ") if row else "",
+            **_view(row, sourcing=kind == "sourcing"),
         })
     order = {PICKS: 0, NOT_FOUND: 1, NEVER: 2, CONFIRMED: 3}
     out.sort(key=lambda r: (order[r["state"]], r["owner"], r["name"]))
