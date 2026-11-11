@@ -47,8 +47,9 @@ def test_the_column_is_gone(logged_in, companies):
     # 이 딜을 **우리에게** 넘겨 준 분 칸은 그대로다 — 남는 쪽이다.
     assert "공유 심사역" in heads
     # #87 — 옆 두 탭과 같은 이름(`수신일`). 그 앞은 #142 의 메모 · 수정한 팀원 · 수정한 날짜,
-    # 수정한 팀원 바로 오른쪽은 #209 의 담당자.
-    assert heads[:7] == ["NO", "기업명", "메모", "수정한 팀원", "담당자", "수정한 날짜", "수신일"], heads
+    # 수정한 팀원 바로 오른쪽은 #209 의 담당자. `기업명` 바로 뒤는 i234 의 계약 칸 셋.
+    assert heads[:10] == ["NO", "기업명", "계약년월", "계약여부", "계약서 수신 여부",
+                          "메모", "수정한 팀원", "담당자", "수정한 날짜", "수신일"], heads
     assert 'class="sa-shared"' not in table and 'data-testid="sa-shared"' not in table
 
 

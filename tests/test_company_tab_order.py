@@ -157,16 +157,17 @@ def test_서버는_sort_를_모른다(logged_in, rows):
 def test_IR_기업_현황에도_수신일_칸이_선다(logged_in, rows):
     """예전 까닭("이 탭에는 `수신일` 칸이 없다")을 **없앤다.**
 
-    자리는 `기업명` 바로 오른쪽 — 고정된 두 칸 바로 뒤라 표를 열자마자
-    이름과 날짜가 나란히 보인다(`companies.html` 의 그 머리글 주석).
+    자리는 고정된 두 칸 바로 뒤 — 표를 열자마자 이름과 날짜가 함께 보인다
+    (`companies.html` 의 그 머리글 주석). i231(11/12)부터 그 사이에 계약 칸 넷
+    (`견적서 첨부 여부` · `계약여부` · `계약서 수신 여부` · `성공보수율`)이 먼저 선다.
     (머리와 칸 수가 함께 늘었는지는 tests/test_company_updated_at.py 의
     `test_머리와_칸이_같은_수만큼_늘었다` 가 빈 표 안내줄까지 센다.)
     """
     html = logged_in.get("/companies").text
     names = _head_names(html)
     assert "수신일" in names, f"IR 기업 현황에 `수신일` 머리글이 없습니다: {names}"
-    assert names.index("수신일") == names.index("기업명") + 1, (
-        f"`수신일` 이 `기업명` 바로 뒤가 아닙니다 — 지금 차례: {names}")
+    assert names.index("수신일") == names.index("기업명") + 5, (
+        f"`수신일` 이 `기업명` · 계약 칸 넷 바로 뒤가 아닙니다 — 지금 차례: {names}")
 
 
 def test_수신일_칸에_값이_그대로_보인다(logged_in, rows):

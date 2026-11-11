@@ -89,12 +89,14 @@ PHONEISH = re.compile(r"^[0-9][0-9\s().+-]*$")
 #: #105 · #106). `소분류` 뒤의 매출 · 금액 칸은 해마다 이름이 바뀌어 `view_headers` 가
 #: 끼운다(#75 · `revenue_years.columns`). 화면과 같은지는 tests/test_ir_tab_merge.py 가 본다
 #: (`컨설팅 상태`·`컨설팅 미팅일` 은 볼 수 있는 계정에만 서서 `view_headers` 가 끼운다).
+#: 계약 칸 넷(`견적서 첨부 여부` … `성공보수율`)은 `기업명` 바로 뒤다(i231 · 11/12 — 화면과 같은 자리).
 VIEW_HEADERS = [
-    "NO", "기업명", "수신일", "수정한 날짜", "수정한 팀원", "담당자", "대표자명", "연락처", "이메일",
+    "NO", "기업명", "견적서 첨부 여부", "계약여부", "계약서 수신 여부", "성공보수율",
+    "수신일", "수정한 날짜", "수정한 팀원", "담당자", "대표자명", "연락처", "이메일",
     "기업 한줄 소개", "딜 소개 문구", "대분류", "소분류", "투자라운드",
     "특이사항 (장점)", "설립년도", "지역", "정책자금",
-    "총 소개 횟수", "소개 발송(명)", "담당별 소개", "견적서 첨부 여부",
-    "미팅제공일자", "계약년월", "계약여부", "계약서 수신 여부", "성공보수율", "카톡 연결 여부", "홍보메일삭제",
+    "총 소개 횟수", "소개 발송(명)", "담당별 소개",
+    "미팅제공일자", "계약년월", "카톡 연결 여부", "홍보메일삭제",
     "핵심/TOP Deal", "메모", "IR 자료",
 ]
 
@@ -288,7 +290,10 @@ def to_cells(rows: List[dict], cols, consulting=None) -> List[list]:
     for no, r in enumerate(rows, start=1):
         cv = None if consulting is None else consulting.get(r["id"], {})
         out.append([
-            no, r["name"], r["received_at"], r["updated_at"], r["updated_by"],
+            no, r["name"],
+            # 계약 칸 넷은 `기업명` 바로 뒤(i231) — 화면과 같은 자리.
+            r["quote_attached"], r["contract_label"], r["contract_received"], r["success_fee"],
+            r["received_at"], r["updated_at"], r["updated_by"],
             # 담당자는 `수정한 팀원` 바로 뒤(#209) — 화면과 같은 자리.
             r["assignee"],
             r["contact_name"], r["contact_phone"], r["contact_email"], r["business_desc"],
@@ -300,9 +305,7 @@ def to_cells(rows: List[dict], cols, consulting=None) -> List[list]:
             r["series"], r["competitiveness"], r["founded_year"], r["region"], r["guarantee"],
             # 한 번도 안 나간 기업은 화면이 `–` 로 보인다 — 파일에서는 수 0 이다.
             r["intro_total"], r["sent_total"], owner_times_text(r["intro_by_owner"]),
-            r["quote_attached"],
-            r["meeting_offered_at"], r["contract_ym"], r["contract_label"], r["contract_received"],
-            r["success_fee"], r["kakao_joined"], r["contract_month"],
+            r["meeting_offered_at"], r["contract_ym"], r["kakao_joined"], r["contract_month"],
             r["top_deal_kind"] or "",
             *([] if cv is None else [cv.get("status", ""), cv.get("meeting", "")]),
             r["note"], r["ir_file_name"] if r["has_ir"] else "없음",

@@ -71,13 +71,15 @@ def test_화면에_칸과_필터가_선다(logged_in, db, company):
     assert 'data-filters="joined:카톡 연결 여부"' in html
     assert 'data-f-quote="O"' in html and 'data-f-joined="X"' in html
     assert 'data-field="kakao_joined"' in html and 'id="f-kakao_joined"' in html
-    # 견적서 → 미팅제공일자 → 계약년월(0129 · #122) → 계약여부 → 계약서 수신 여부 → 성공보수율(0119)
-    # → 카톡 연결 여부
+    # 견적서 → 계약여부 → 계약서 수신 여부 → 성공보수율(0119) 은 `기업명` 바로 뒤(i231 · 11/12),
+    # 미팅제공일자 → 계약년월(0129 · #122) → 카톡 연결 여부 는 제자리.
     heads = [re.sub(r"<[^>]+>", "", h).strip() for h in re.findall(
         r"<th\b[^>]*>(.*?)</th>", re.search(r"<thead>(.*?)</thead>", html, re.S).group(1), re.S)]
-    at = heads.index("견적서 첨부 여부")
-    assert heads[at:at + 7] == ["견적서 첨부 여부", "미팅제공일자", "계약년월", "계약여부",
-                                "계약서 수신 여부", "성공보수율", "카톡 연결 여부"], heads
+    at = heads.index("기업명")
+    assert heads[at:at + 5] == ["기업명", "견적서 첨부 여부", "계약여부",
+                                "계약서 수신 여부", "성공보수율"], heads
+    at = heads.index("미팅제공일자")
+    assert heads[at:at + 3] == ["미팅제공일자", "계약년월", "카톡 연결 여부"], heads
     db_tab = logged_in.get("/companies?tab=db").text
     assert ">지역</th>" in db_tab and 'data-field="region">부산<' in db_tab
     assert 'id="f-region"' in db_tab

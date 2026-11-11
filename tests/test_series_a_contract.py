@@ -52,7 +52,9 @@ def _patch(client, row, **body):
 
 # ── 1. 화면 ────────────────────────────────────────────────────────────────
 
-def test_이메일_바로_오른쪽에_두_칸이_서고_보기와_필터가_IR_표와_같다(logged_in, db):
+def test_기업명_바로_오른쪽에_계약_칸이_서고_보기와_필터가_IR_표와_같다(logged_in, db):
+    """처음 자리는 `이메일` 오른쪽이었다(0125 · 10/28 요청). i234(11/12 팀원 요청)로
+    `계약년월` 과 함께 `기업명` 바로 오른쪽으로 옮겼다 — 보기 · 필터 · 저장 길은 그대로다."""
     from app.routers.companies import CONTRACT_LABELS
 
     _deal(db, name="샘플없음", received_at="2026-10-01")
@@ -60,15 +62,15 @@ def test_이메일_바로_오른쪽에_두_칸이_서고_보기와_필터가_IR_
     thead = re.search(r'id="sa-table".*?</thead>', html, re.S).group(0)
     labels = [re.sub(r"<[^>]+>", "", t).strip()
               for t in re.findall(r"<th\b[^>]*>(.*?)</th>", thead, re.S)]
-    at = labels.index("이메일")
-    # 사이에 `계약년월`(0129 · #122 — 계약여부 왼쪽)이 선다.
+    at = labels.index("기업명")
+    # `계약년월`(0129 · #122 — 계약여부 왼쪽)이 첫째다.
     assert labels[at + 1:at + 4] == ["계약년월", "계약여부", "계약서 수신 여부"], labels
     assert 'data-filters="contract:계약여부"' in thead
     assert 'data-filters="received:계약서 수신 여부"' in thead
 
     row = re.search(r"<tr data-id=.*?</tr>", html, re.S).group(0)
     fields = re.findall(r'data-field="([^"]+)"', row)
-    at = fields.index("ceo_email")
+    at = fields.index("name")
     assert fields[at + 1:at + 4] == ["contract_ym", "contract_status", "contract_received"], fields
     # 비어 있으면 IR 표처럼 `미계약` — 보기는 늘 다 선다(`data-choices`).
     assert ('data-choices="' + ", ".join(CONTRACT_LABELS.values()) + '">미계약</td>') in row
