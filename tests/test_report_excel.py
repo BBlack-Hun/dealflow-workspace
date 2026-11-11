@@ -377,6 +377,39 @@ def test_the_meeting_company_column_is_named_the_same_everywhere(logged, db, use
         "화면 머리글도 `기업명` 이다"
 
 
+def test_the_meeting_sheet_is_one_month_table_like_the_screen(logged, db, users):
+    """사용자 요청(11/11) "엑셀 미팅 시트도 한달표로" — 화면(#521)과 같이 그 달 미팅이
+    **표 하나**에 미팅 일자 순으로 서고, 완료 수는 시트 맨 위 제목 줄에 한 번만 선다
+    (주차 머리 · 주차 소계 없음)."""
+    from app.services import report
+
+    from .test_report import _meeting
+
+    # 서로 다른 주 셋을 일부러 뒤섞어 넣는다 — 넣은 차례가 아니라 미팅 일자 순이어야 한다.
+    _meeting(db, users, date(2026, 6, 25), who="가심사역", company="가나테크")
+    _meeting(db, users, date(2026, 6, 3), who="나심사역", company="다라테크")
+    _meeting(db, users, date(2026, 6, 16), who="다심사역", company="마바테크",
+             status="scheduled")
+
+    grid = _grid(_book(_download(logged, month="2026-06"))["2026-06 미팅"])
+    heads = [i for i, row in enumerate(grid) if str(row[0]) == "미팅 일자"]
+    assert len(heads) == 1, f"주차마다 표가 갈렸다: 머리글 {len(heads)}줄"
+    at = heads[0]
+    assert [str(grid[at + k][0]) for k in (1, 2, 3)] == \
+        ["2026-06-03", "2026-06-16", "2026-06-25"], "그 달 미팅 일자 순"
+    assert str(grid[at + 4][0]) == "", "표 바로 아래는 빈 줄이다(주차 소계 없음)"
+
+    flat = [str(c) for row in grid for c in row]
+    for label in report.WEEK_NAMES:
+        assert not any(f"6월 {label}" in c for c in flat), f"주차 머리가 남았다: {label}"
+    # 완료 수는 맨 위 제목 줄에 한 번만 — 화면 머리(`rep.done`)와 같은 수.
+    assert sum(c.count("개사 완료") for c in flat) == 1, "완료 수는 제목 줄에 한 번만"
+    title = str(grid[0][0])
+    assert title.startswith("2026년 6월 미팅  총 3개사") and "2개사 완료" in title, title
+    assert "<b>2</b>개사 완료" in logged.get("/report?month=2026-06").text, \
+        "화면과 같은 수"
+
+
 # --- 5. 조용한 달에도 열린다 -----------------------------------------------------
 
 def test_a_month_with_no_sends_still_opens(logged, db, users):

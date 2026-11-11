@@ -169,7 +169,8 @@
   {# 달 하나 = 표 하나(11/11 팀 요청 "월로 통합해서 보여지게, 주별로 쪼개지 말구요"). 완료 수도
      머리에 한 번만 — 그 달 진행한 미팅(`rep.done`, 미팅 카드와 같은 수). 줄은 `rep.weeks` 를
      차례대로 이어 읽는다 — 주차 안이 날짜 순이라 이어 붙이면 그 달 날짜 순이다. 자료 모양
-     (`weeks`)은 그대로 둔다 — 엑셀 미팅 시트(`routers/data_io._meetings_sheet`)가 아직 주차로 묶는다. #}
+     (`weeks`)은 그대로 둔다 — 엑셀 미팅 시트(`routers/data_io._meetings_sheet`)도 같은 식으로
+     이어 읽어 한 표로 적고, 완료 수는 시트 제목 줄에 한 번 싣는다(11/11). #}
   <h2 class="panel-title"><span>{{ rep.month }}월 미팅 총 {{ rep.total }}개사
     <span class="count-pill {% if rep.done %}on{% endif %}"><b>{{ rep.done }}</b>개사 완료</span></span></h2>
   {% if rep.weeks %}
