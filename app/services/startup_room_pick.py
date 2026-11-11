@@ -25,6 +25,23 @@
    `확인 안 됨` 이고 [방 연결 확인] 을 거쳐야 보낸다. 적는 길은 수정창과
    **같은 길**이다(`PATCH /api/contacts/{id}` → `room_joined.after_edit`).
 
+## 단추는 하나다 — [카톡방 찾기·확인] (11/11)
+
+명단 툴바에 [방 연결 확인] · [방 후보 찾기] · [방 매칭] 셋이 나란히 서 있었다.
+사용자 말: *"같은 기능 같은데 하나로 통합해 줘."* 셋이 하는 일은 결국 「이 줄의
+방을 맞춘다」 하나라서, **한 번 누르면 잡 하나**가 줄마다 할 일을 고른다(`plan`).
+
+  · 방 이름이 **적혀 있고 아직 확인 전**(`확인 안 됨`) — 그 이름 **그대로** 카톡에서
+    대조한다([방 연결 확인] 이 하던 일 — 글자까지 같은 제목만 `확인됨`).
+  · 방 이름이 **없거나**, 적어 둔 이름으로 이미 못 찾았다(`카톡에서 못 찾음` ·
+    `같은 이름이 여럿`) — **회사명으로** 찾아 후보로만 담는다([방 후보 찾기]).
+  · 이미 확인된 줄 · 제외 줄은 싣지 않는다.
+
+잡은 지금까지의 후보 찾기 잡 그대로다(`verify_room` + `ROOM_SEARCH_TOPIC`) — 두
+갈래를 가르는 것은 **건에 실린 방 이름**이다(`routers/agent_api._company_row`).
+발송기는 줄마다 실린 `exact` · `query` · `target` 만 보고 움직이므로 **판을 안
+올린다.** 후보를 고르는 자리 · 직접 적기 · 확정은 [방 매칭] 화면 **한 곳**이다.
+
 ## 판정을 새로 적지 않는다  ★
 
   · 내 줄 — `startup_outreach.my_rows` (안내 카톡이 고르는 그 명단)
@@ -71,20 +88,40 @@ class NotPickable(ValueError):
 
 # ── 누구를 찾나 ─────────────────────────────────────────────────────────────
 
-def searchable(contact: VcContact) -> bool:
-    """[방 후보 찾기] 를 걸 줄인가.
+#: [카톡방 찾기·확인] 이 줄마다 고르는 일 — 적어 둔 이름 그대로 대조 / 회사명으로 찾기.
+EXACT = "exact"
+SEARCH = "search"
 
-    방이 아직 확인 안 됐고(안내 카톡의 `방 확인 전`) 회사명이 있다. 회사명이
-    빈 줄은 무엇으로 찾을지가 없다 — 성함으로 찾으면 그 이름이 든 다른 방이
-    걸린다(`room_match.company_name`).
+
+def task_of(contact: VcContact) -> str:
+    """[카톡방 찾기·확인] 이 이 줄에서 할 일 — `exact` · `search` · 빈 글자(할 일 없음).
+
+    방이 아직 확인 안 된 줄(안내 카톡의 `방 확인 전`)만 본다. 그중
+
+      · 방 이름이 적혀 있고 **아직 확인 전**이면 그 이름 그대로 대조한다(`exact`).
+      · 그 밖(이름이 없다 · 적어 둔 이름으로 못 찾았다 · 여럿이다)은 **회사명으로**
+        찾는다(`search`). 회사명이 빈 줄은 무엇으로 찾을지가 없다 — 성함으로 찾으면
+        그 이름이 든 다른 방이 걸린다(`room_match.company_name`).
+
+    못 찾은 이름을 한 번 더 대조해도 같은 답이 나온다. 그 줄은 진짜 제목을 알아야
+    하므로 찾기로 간다 — 적어 둔 이름은 그대로 둔다(후보만 담는다).
     """
-    return (startup_outreach.group_of(contact) == startup_outreach.NO_ROOM
-            and bool(room_match.search_query(contact)))
+    if startup_outreach.group_of(contact) != startup_outreach.NO_ROOM:
+        return ""
+    if (contact.kakao_room_name or "").strip() and \
+            startup_outreach.room_state(contact) == room_joined.UNVERIFIED:
+        return EXACT
+    return SEARCH if room_match.search_query(contact) else ""
+
+
+def searchable(contact: VcContact) -> bool:
+    """[카톡방 찾기·확인] 을 걸 줄인가 — 할 일이 있다(`task_of`)."""
+    return bool(task_of(contact))
 
 
 def targets(db: Session, user: User,
             ids: Optional[Iterable[int]] = None) -> List[VcContact]:
-    """찾을 줄 — **내 스타트업 줄**(`startup_outreach.my_rows`) 중 `searchable`.
+    """걸 줄 — **내 스타트업 줄**(`startup_outreach.my_rows`) 중 `searchable`.
 
     `ids` 를 주면 그 안에서만 고른다(스타트업 화면에 보이는 줄 · 수정창의 한
     줄). 남의 줄 · 감춘 줄 · 투자사 줄 · 이미 확인된 줄은 **id 로 찔러도**
@@ -95,6 +132,75 @@ def targets(db: Session, user: User,
         return rows
     wanted = set(ids)
     return [c for c in rows if c.id in wanted]
+
+
+def plan(db: Session, user: User, ids: Optional[Iterable[int]] = None):
+    """`(대조할 줄, 회사명으로 찾을 줄, 동명이인이라 못 싣는 줄)` — 잡 하나에 실을 것.
+
+    대조할 줄은 [방 연결 확인] 과 같은 막이를 지난다: 같은 성함의 다른 줄과 방
+    이름까지 같으면 글자로는 어느 방인지 못 가른다(`room_name.ambiguous_contacts` —
+    `routers/contacts.verify_rooms` 와 같은 판정, 견주는 것도 내 줄 전부).
+    """
+    from sqlalchemy import select
+
+    from .room_name import ambiguous_contacts
+
+    picked = targets(db, user, ids)
+    exact = [c for c in picked if task_of(c) == EXACT]
+    search = [c for c in picked if task_of(c) == SEARCH]
+    if not exact:
+        return exact, search, []
+    everyone = db.execute(
+        select(VcContact).where(VcContact.user_id == user.id)).scalars().all()
+    unclear = {c.id for c in ambiguous_contacts(everyone)}
+    return ([c for c in exact if c.id not in unclear], search,
+            [c for c in exact if c.id in unclear])
+
+
+def queue(db: Session, user: User, ids: Optional[Iterable[int]] = None) -> dict:
+    """[카톡방 찾기·확인] — 잡 **하나**를 세운다. 커밋까지 한다.
+
+    잡은 후보 찾기 잡 그대로다(`verify_room` + `ROOM_SEARCH_TOPIC`, `queued` —
+    아무것도 안 나가고 읽기만 한다). 대조할 건에는 적어 둔 방 이름을 싣고, 찾을
+    건은 **빈 글자**다(모르는 값을 지어 넣지 않는다). 그 한 칸이 발송기에 무엇을
+    줄지와 결과를 어디에 적을지를 가른다(`routers/agent_api._company_row`).
+    문구는 늘 비운다 — 아주 낡은 발송기가 이 잡을 발송으로 오해해도 보낼 것이 없다.
+
+    동명이인이라 못 싣는 줄은 `같은 이름이 여럿` 으로 적는다([방 연결 확인] 과
+    같다 — 다음에 누르면 회사명으로 찾는다). 실을 줄이 없으면 `job` 이 `None` 이다.
+    """
+    from ..models import ROOM_SEARCH_TOPIC, SendItem, SendJob
+    from ..routers.agent_api import VERIFY_KIND
+
+    exact, search, unclear = plan(db, user, ids)
+    for contact in unclear:
+        room_joined.set_verdict(contact, room_joined.AMBIGUOUS)
+    out = {"job": None, "exact": len(exact), "search": len(search),
+           "conflicts": [startup_outreach.who(c) for c in unclear]}
+    if not exact and not search:
+        db.commit()
+        return out
+    job = SendJob(user_id=user.id, kind=VERIFY_KIND, topic=ROOM_SEARCH_TOPIC,
+                  status="queued", total=len(exact) + len(search), sent=0, failed=0)
+    db.add(job)
+    db.flush()
+    named = {c.id for c in exact}
+    for contact in exact + search:
+        db.add(SendItem(job_id=job.id, contact_id=contact.id,
+                        room_name=(contact.kakao_room_name or "") if contact.id in named else "",
+                        message="", status="pending"))
+    db.commit()
+    out["job"] = job
+    return out
+
+
+def pick_counts(db: Session, contacts: Iterable[VcContact]) -> dict:
+    """`{contact_id: 고를 수 있는 후보 수}` — 화면이 줄마다 `후보 N개 — 고르기` 를 적는다.
+
+    세는 것은 고르는 화면과 **같은 함수**다(`picks` — 투자사 방은 뺀다).
+    """
+    known = room_match.investor_rooms(db)
+    return {c.id: len(picks(c, known)[0]) for c in contacts}
 
 
 # ── 후보 ────────────────────────────────────────────────────────────────────
@@ -172,12 +278,9 @@ def rows(db: Session, user: User) -> dict:
         "with_picks": sum(1 for r in out if r["state"] == PICKS),
         "no_picks": sum(1 for r in out if r["state"] == NO_PICKS),
         "never": sum(1 for r in out if r["state"] == NEVER),
-        # [방 후보 찾기] 가 찾을 줄 수 — 누르면 세우는 잡의 크기와 **같은 함수**다.
+        # [카톡방 찾기·확인] 이 실을 줄 수 — 누르면 세우는 잡의 크기와 **같은 함수**다
+        # (`task_of` — 대조할 줄 + 회사명으로 찾을 줄).
         "search_count": sum(1 for r in out if r["searchable"]),
-        # 방 이름은 적혀 있는데 확인 전 — [방 연결 확인] 을 걸 줄
-        # (안내 카톡 화면의 `verify_ids` 와 같은 줄).
-        "verify_ids": [r["id"] for r in out
-                       if r["room"] and r["state"] != CONFIRMED],
     }
 
 

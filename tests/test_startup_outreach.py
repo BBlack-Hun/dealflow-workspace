@@ -535,18 +535,20 @@ def test_화면이_고를_수_있는_줄과_까닭을_세운다(db, seeded, clie
         assert seeded[key].firm in page, key
     for key in ("hidden", "investor"):
         assert seeded[key].firm not in page, key
-    assert "msg-verify-btn" in page
+    # 방 확인 전 칸의 방 단추는 하나다(11/11 — [카톡방 찾기·확인]).
+    assert "msg-room-check-btn" in page and "msg-verify-btn" not in page
     assert "startup_msg.js" in page
     # 문구 셋이 다 고를 거리로 선다.
     for key in ("startup_msg_progress", "startup_msg_quote", "startup_msg_free"):
         assert f"topic={key}" in page
 
 
-def test_스타트업_화면에서_안내_카톡과_방_연결_확인으로_간다(db, seeded, client):
+def test_스타트업_화면에서_안내_카톡과_카톡방_찾기_확인으로_간다(db, seeded, client):
     page = _login(client).get(f"/startup?sheet={MINE}").text
     assert 'href="/startup/msg"' in page
-    assert 'id="verify-btn"' in page
-    assert 'id="verify-one-btn"' in page
+    # 방을 맞추는 단추는 [카톡방 찾기·확인] 하나다(11/11 — 대조도 그 단추가 한다).
+    assert 'id="room-check-btn"' in page and 'id="verify-btn"' not in page
+    assert 'id="room-check-one-btn"' in page and 'id="verify-one-btn"' not in page
     # 수정창에서 방 이름을 적을 수 있다(그동안 이 배치엔 자리가 없었다).
     assert 'id="f-kakao_room_name"' in page
 

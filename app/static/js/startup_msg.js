@@ -169,65 +169,28 @@
     });
   }
 
-  // ── 방 확인 전 줄 — 방 제목 저장 · [방 연결 확인] ─────────────────────
+  // ── 방 확인 전 줄 — [카톡방 찾기·확인] 하나 ────────────────────────────
   //
-  // 저장은 표에서 칸을 고칠 때와 **같은 길**이다(`PATCH /api/contacts/{id}`) —
-  // 글자가 바뀌면 확인이 풀리는 규칙이 거기 있다(`services/room_joined`).
-  var noroom = document.getElementById("msg-noroom");
-  if (noroom) {
-    noroom.addEventListener("click", function (e) {
-      var btn = e.target && e.target.closest ? e.target.closest(".room-save") : null;
-      if (!btn) return;
-      e.preventDefault();
-      var row = btn.closest("tr");
-      var input = row ? row.querySelector(".room-input") : null;
-      if (!input) return;
-      fetch("/api/contacts/" + btn.getAttribute("data-id"), {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kakao_room_name: input.value })
-      })
-        .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
-        .then(function (res) {
-          if (!res.ok) { setError(res.d.detail || "방 제목 저장 실패"); return; }
-          window.location.reload();
-        })
-        .catch(function () { setError("방 제목 저장 오류"); });
-    });
-  }
-  // [방 후보 찾기] — 방 제목을 모르는 줄을 회사명으로 찾는다. 어느 줄을 찾을지는
-  // **서버가 고른다**(`startup_room_pick.targets` — 이 칸에 접힌 줄들이다).
-  var roomSearchBtn = document.getElementById("msg-room-search-btn");
-  if (roomSearchBtn) {
-    roomSearchBtn.addEventListener("click", function () {
-      var n = parseInt(roomSearchBtn.getAttribute("data-count") || "0", 10) || 0;
+  // 예전에는 이 칸에 [방 후보 찾기] · [방 연결 확인] · 줄마다의 방 이름 칸이 함께
+  // 있었다(11/11 에 합쳤다). 줄마다 대조할지 찾을지는 **서버가 고른다**
+  // (`startup_room_pick.task_of`). 후보 고르기 · 직접 적기는 [방 매칭] 화면 한 곳이라
+  // 줄마다 그 줄로 가는 링크만 있다.
+  var roomCheckBtn = document.getElementById("msg-room-check-btn");
+  if (roomCheckBtn) {
+    roomCheckBtn.addEventListener("click", function () {
+      var n = parseInt(roomCheckBtn.getAttribute("data-count") || "0", 10) || 0;
       if (!n) return;
-      if (!window.confirm(n + "곳을 회사명으로 카톡에서 찾습니다.\n" +
+      if (!window.confirm(n + "곳의 카톡방을 찾고 확인합니다.\n" +
+          "· 방 이름이 적힌 곳 — 그 이름 그대로 카톡에서 확인\n" +
+          "· 방 이름이 없는 곳 — 회사명으로 찾아 후보만 모음([방 매칭] 에서 골라 확정)\n" +
           "카카오톡이 켜져 있어야 하며, 찾는 중에는 PC 조작을 멈춰주세요.\n" +
-          "(문구는 전송하지 않습니다 · 찾은 방은 [방 매칭] 에서 골라 확정합니다)")) return;
+          "(문구는 전송하지 않습니다)")) return;
       post("/api/startup-rooms/search", {})
         .then(function (res) {
           if (!res.ok) { setError(res.d.detail || "찾기 요청 실패"); return; }
           window.location.href = res.d.href || ("/jobs/" + res.d.job_id);
         })
         .catch(function () { setError("찾기 요청 오류"); });
-    });
-  }
-  var verifyBtn = document.getElementById("msg-verify-btn");
-  if (verifyBtn) {
-    verifyBtn.addEventListener("click", function () {
-      var ids = (verifyBtn.getAttribute("data-ids") || "").split(",")
-        .filter(Boolean).map(function (v) { return parseInt(v, 10); });
-      if (!ids.length) return;
-      if (!window.confirm(ids.length + "곳의 카톡방을 확인합니다.\n" +
-          "카카오톡이 켜져 있어야 하며, 확인 중에는 PC 조작을 멈춰주세요.\n" +
-          "(문구는 전송하지 않습니다)")) return;
-      post("/api/contacts/verify-rooms", { contact_ids: ids })
-        .then(function (res) {
-          if (!res.ok) { setError(res.d.detail || "확인 요청 실패"); return; }
-          window.location.href = "/jobs/" + res.d.job_id;
-        })
-        .catch(function () { setError("확인 요청 오류"); });
     });
   }
 

@@ -107,6 +107,8 @@
     } else {
       note.hidden = true;
     }
+    // 고른 기업(안내 카톡 · 카톡방 찾기·확인) — 감춘 줄의 체크를 푼다(`ir_msg.js`).
+    if (window.DealflowIrMsg) window.DealflowIrMsg.refresh();
   }
 
   // 행 번호는 '보이는 것' 기준으로 매긴다 — 걸러낸 뒤 몇 개인지 세기 위해서다.

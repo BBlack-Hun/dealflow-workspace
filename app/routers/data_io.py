@@ -651,8 +651,11 @@ JOB_HEADERS = ["담당자", "직함", "회사", "카톡방", "상태", "발송�
 def export_job(job_id: int, db: Session = Depends(get_db),
                user: User = Depends(get_current_user)):
     """발송 회차 결과 → 엑셀. 어디로 무엇이 나갔는지 그대로 남긴다."""
+    from ..services import ir_outreach
+
     job = db.get(SendJob, job_id)
-    if job is None or job.user_id != user.id:
+    # IR 기업현황 탭의 안내 카톡은 세운 사람도 받는다(`ir_outreach.made_by` — 진행 화면과 같다).
+    if job is None or (job.user_id != user.id and not ir_outreach.made_by(db, job, user)):
         raise HTTPException(status_code=404, detail="발송 회차를 찾을 수 없습니다")
 
     items = db.execute(

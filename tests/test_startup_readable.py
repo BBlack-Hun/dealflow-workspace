@@ -224,11 +224,15 @@ def test_퍼센트_칸의_왼쪽_자리는_앞_칸_폭_하나로_낸다():
     가 같은 값을 읽어야, 폭을 고친 날 고정 칸이 반 칸씩 어긋나지 않는다.
     """
     assert "{% set no_w = 36 %}" in COMPANIES, "`NO` 폭을 적는 자리가 없습니다"
-    assert "--stick-b:{{ no_w }}px" in COMPANIES, \
+    # 고르는 칸(11/11 — 안내 카톡)이 서면 그 폭만큼 둘 다 민다. 그 폭도 한 곳이다.
+    assert "{% set stick_lead = 32 if" in COMPANIES, "고르는 칸 폭을 적는 자리가 없습니다"
+    assert "--stick-b:{{ stick_lead + no_w }}px" in COMPANIES, \
         "왼쪽 자리에 px 을 손으로 적었습니다 — 폭과 두 군데가 됩니다"
     assert 'style="width:{{ no_w }}px"' in COMPANIES, \
         "머리글 폭이 `--stick-b` 와 다른 값을 읽습니다"
-    assert "--stick-a:0px" in COMPANIES, "첫 칸의 왼쪽 자리가 없습니다"
+    assert 'style="width:{{ stick_lead }}px"' in COMPANIES, \
+        "고르는 칸 머리글 폭이 `--stick-a` 와 다른 값을 읽습니다"
+    assert "--stick-a:{{ stick_lead }}px" in COMPANIES, "첫 칸의 왼쪽 자리가 없습니다"
 
 
 def test_딜소개_불가_줄의_색이_고정_칸에서_안_끊긴다():

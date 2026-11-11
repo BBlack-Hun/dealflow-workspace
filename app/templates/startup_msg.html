@@ -75,7 +75,7 @@
         <input type="number" name="days" value="{{ days }}" min="0" max="365" class="days-input">
         일 안에 받은 곳 빼기</label>
       <button class="secondary-btn" type="submit">적용</button>
-      <span class="hint" title="같은 대표가 같은 문구를 두 번 받지 않게 — 다른 팀원 명단의 같은 기업이 받은 것도 셉니다. 0 이면 빼지 않습니다.">ⓘ 0 이면 빼지 않음</span>
+      <span class="hint" title="같은 대표가 같은 문구를 두 번 받지 않게 — 다른 팀원 명단의 같은 기업이 받은 것도 셉니다. 0 이면 이미 받은 곳을 빼지 않습니다(아직 안 나간 회차에 든 곳은 늘 뺍니다).">ⓘ 0 이면 받은 곳도 보냄 · 대기 중 회차는 늘 뺌</span>
     </form>
     <select id="msg-contract" class="chip-select" aria-label="계약여부">
       <option value="">계약여부 전체</option>
@@ -118,7 +118,7 @@
         <td>{{ r.contract }}</td>
         <td>{{ r.room }} <span class="room-badge ok">{{ r.room_label }}</span></td>
         <td class="tabular">
-          {% if r.last_date %}{{ r.last_date }}{% if r.last_by %} <span class="muted">({{ r.last_by }} 님 명단)</span>{% endif %}{% endif %}
+          {% if r.last_date %}{{ r.last_date }}{% if r.last_from %} <span class="muted">({{ r.last_from }})</span>{% endif %}{% endif %}
           {% if r.reason %}<span class="status-badge warn">{{ r.reason }}</span>{% endif %}
           {# 아직 안 나간 회차에 들어 있으면 **그 회차로 가는 길**을 둔다 — 거기서
              보내거나 빼는 것이 할 일이다. #}
@@ -173,42 +173,43 @@
   ── 방 확인 전 ──────────────────────────────────────────────────────────
 
   **조용히 빠지지 않는다.** 방 이름이 없거나 카톡에서 아직 확인 안 된 줄을
-  여기 세우고, 고치는 길(방 이름 적기 → [방 연결 확인])을 바로 옆에 둔다.
-  확인은 투자사 화면과 **같은 길**이다(`/api/contacts/verify-rooms` — 발송기가
-  카톡을 검색만 하고 아무것도 보내지 않는다).
+  여기 세우고, 고치는 길을 바로 옆에 둔다 — **단추 하나 + 고르는 화면 하나**다
+  (11/11 — 예전 [방 후보 찾기] · [방 연결 확인] · 줄마다의 방 이름 칸을 합쳤다).
+  [카톡방 찾기·확인] 이 적어 둔 이름은 그대로 대조하고 없는 곳은 회사명으로
+  후보를 찾는다(`startup_room_pick.task_of`). 후보 고르기 · 직접 적기 · 확정은
+  [방 매칭] 화면 한 곳이고, 줄마다 그 줄로 가는 링크를 단다.
 #}
 <details class="sheet-fold" id="msg-noroom"{% if not counts.ready and counts.no_room %} open{% endif %}>
   <summary>방 확인 전 {{ counts.no_room }}곳 — 카톡에서 확인된 방에만 보냅니다</summary>
   <div class="sheet-fold-body">
     <p class="hint">
-      방 제목을 모르면 <b>[방 후보 찾기]</b> — 발송 프로그램이 <b>회사명으로</b> 카톡을
-      뒤져 방 제목을 가져오고, <a href="{{ rooms_href }}">방 매칭</a> 화면에서 맞는 방을
-      눌러 확정하면 <b>확인됨</b> 이 되어 위 표로 올라옵니다.
-      방 제목을 알면 <b>카톡에 보이는 그대로</b> 적고 [저장] → <b>[방 연결 확인]</b>.
-      (둘 다 문구는 보내지 않습니다)
+      <b>[카톡방 찾기·확인]</b> — 방 이름이 적힌 곳은 <b>그 이름 그대로</b> 카톡에서 확인하고,
+      없는 곳은 발송 프로그램이 <b>회사명으로</b> 카톡을 뒤져 방 제목을 가져옵니다.
+      가져온 후보는 <a href="{{ rooms_href }}">방 매칭</a> 화면에서 맞는 방을 눌러
+      확정하면 <b>확인됨</b> 이 되어 위 표로 올라옵니다(후보가 없으면 거기서 직접 적기).
+      (문구는 보내지 않습니다)
     </p>
-    {# 찾을 곳 수는 **누르면 세우는 잡의 크기와 같은 함수**로 센다
+    {# 실을 곳 수는 **누르면 세우는 잡의 크기와 같은 함수**로 센다
        (`startup_room_pick.targets` — `routers/startup_outreach.outreach_page`). #}
-    <button type="button" class="secondary-btn" id="msg-room-search-btn" data-send="proxy"
+    <button type="button" class="secondary-btn" id="msg-room-check-btn" data-send="proxy"
             data-count="{{ search_count }}"{% if not search_count %} disabled{% endif %}>
-      방 후보 찾기 ({{ search_count }}곳)</button>
-    <a class="linkbtn" href="{{ rooms_href }}">방 매칭 화면</a>
-    <button type="button" class="secondary-btn" id="msg-verify-btn" data-send="proxy"
-            data-ids="{{ verify_ids|join(',') }}"{% if not verify_ids %} disabled{% endif %}>
-      방 연결 확인 ({{ verify_ids|length }}곳)</button>
+      카톡방 찾기·확인 ({{ search_count }}곳)</button>
     <div class="table-wrap">
       <table class="grid-table" id="msg-noroom-table">
         <thead><tr><th>기업명</th><th>대표자명</th><th>카톡 연결 여부</th><th>카톡방 제목</th><th>상태</th></tr></thead>
         <tbody>
           {% for r in no_room_rows %}
+          {% set n_picks = pick_counts.get(r.id, 0) %}
           <tr data-id="{{ r.id }}">
             <td>{{ r.firm }}</td>
             <td>{{ r.name or '—' }}</td>
             <td>{{ r.joined }}</td>
             <td>
-              <input type="text" class="room-input" data-id="{{ r.id }}" value="{{ r.room }}"
-                     placeholder="카톡 방 제목 그대로" aria-label="카톡방 제목">
-              <button type="button" class="linkbtn room-save" data-id="{{ r.id }}">저장</button>
+              {% if r.room %}{{ r.room }}{% else %}<span class="muted">—</span>{% endif %}
+              {# 고르는 자리는 [방 매칭] 한 곳 — 그 줄로 데려간다. #}
+              <a class="linkbtn room-pick-link" href="{{ rooms_href }}#room-{{ r.id }}">
+                {%- if n_picks %}후보 {{ n_picks }}개 — 고르기{% else %}방 매칭에서 맞추기{% endif -%}
+              </a>
             </td>
             <td><span class="status-badge warn">{{ r.reason }}</span></td>
           </tr>

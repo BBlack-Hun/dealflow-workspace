@@ -6,8 +6,10 @@
 
 ## 여기서 못박는 것
 
-1. **찾는 줄** — 내 스타트업 줄 중 방이 확인 안 된 곳만. 남의 줄 · 감춘 줄 ·
+1. **싣는 줄** — 내 스타트업 줄 중 방이 확인 안 된 곳만. 남의 줄 · 감춘 줄 ·
    투자사 줄 · 이미 확인된 줄 · 딜소개 불가 · 검토중단은 id 로 찔러도 안 들어간다.
+   **단추는 하나다**([카톡방 찾기·확인], 11/11) — 한 잡에 두 갈래가 섞인다: 적어 둔
+   이름이 확인 전이면 그 이름 그대로 대조, 없거나 못 찾은 줄은 회사명으로 찾기.
 2. **발송기를 안 고쳤다** — 이미 있는 방 확인 잡(`verify_room`)에 `topic` 만
    달았다. 줄은 **회사명으로** 내주고 `target: company` 를 붙인다(발송기가 맨 위
    방 열기에서 투자사 방을 버린다). `firm` 은 안 보낸다.
@@ -172,9 +174,15 @@ def test_찾기는_내_스타트업_줄_중_확인_안_된_곳만_싣는다(db, 
 
     assert {i.contact_id for i in job.items} == {
         seeded["noroom"].id, seeded["typed"].id, seeded["notfound"].id}
+    rooms = {i.contact_id: i.room_name for i in job.items}
+    # 적어 둔 이름이 확인 전 — 그 이름 그대로 대조한다(예전 [방 연결 확인]).
+    assert rooms[seeded["typed"].id] == "김철수 대표님 라마바"
+    # 이름이 없다 · 적어 둔 이름으로 못 찾았다 — 회사명으로 찾는다(이름을 지어 넣지 않는다).
+    assert rooms[seeded["noroom"].id] == ""
+    assert rooms[seeded["notfound"].id] == "", "못 찾은 이름을 또 대조한다 — 같은 답이다"
+    assert (res.json()["exact"], res.json()["search"]) == (1, 2)
     for item in job.items:
         assert item.message == "", "확인 잡에 보낼 문구가 실렸다"
-        assert item.room_name == "", "모르는 방 이름을 지어 넣었다"
         assert item.ir_company_id is None
 
 
@@ -224,7 +232,7 @@ def test_방_이름_없는_스타트업_줄의_연결_확인은_후보_찾기로
     res = me.post("/api/contacts/verify-rooms",
                   json={"contact_ids": [seeded["noroom"].id, seeded["nofirm"].id]})
     assert res.status_code == 400
-    assert "[방 후보 찾기]" in res.json()["detail"]
+    assert "[카톡방 찾기·확인]" in res.json()["detail"]
     assert "[방 매칭]" in res.json()["detail"]
     assert not _jobs(db)
 
@@ -352,7 +360,9 @@ def test_하나뿐이고_확인됨이어도_방_이름에_넣지_않는다(db, s
     assert item.status == "sent"
 
 
-def test_적어_둔_이름이_있는_줄도_후보만_담는다(db, seeded, client):
+def test_적어_둔_이름은_그_이름_그대로_대조하고_다른_제목은_넣지_않는다(db, seeded, client):
+    """[카톡방 찾기·확인] 의 대조 갈래는 [방 연결 확인] 그대로다 — 비슷한 남의 제목
+    하나가 걸려도 그 제목으로 바꾸지 않고 확인됨도 아니다. 후보 칸도 안 쓴다."""
     from app.services import room_match
 
     me = _login(client)
@@ -360,8 +370,67 @@ def test_적어_둔_이름이_있는_줄도_후보만_담는다(db, seeded, clie
            found_room="김철수 대표님 라마바랩스")
     row = seeded["typed"]
     assert row.kakao_room_name == "김철수 대표님 라마바"
-    assert row.room_verified == "unverified"
-    assert room_match.candidates(row)["rooms"] == ["김철수 대표님 라마바랩스"]
+    assert row.room_verified == "not_found"
+    assert room_match.candidates(row)["rooms"] == []
+
+    # 다음에 누르면 그 줄은 **회사명으로 찾는다** — 못 찾은 이름을 또 대조하지 않는다.
+    from app.routers import agent_api
+
+    _search(me, [row.id])
+    job = _jobs(db)[-1]
+    again = _item(db, job, row.id)
+    assert again.room_name == ""
+    item = agent_api._verify_search(job, again)     # 폴링이 싣는 그 값
+    assert item["query"] == "라마바랩스" and item["target"] == "company"
+
+
+def test_대조한_이름이_투자사_방이면_확인됨이_안_된다(db, seeded, client):
+    """#522 리뷰 — 스타트업 줄에 투자사 담당자 방 제목이 적혀 있으면, 카톡에서 글자까지
+    같은 방을 찾아도 확인됨으로 안 올린다(올리면 안내 카톡이 투자사 방으로 간다)."""
+    room = seeded["investor"].kakao_room_name
+    seeded["typed"].kakao_room_name = room
+    db.commit()
+    me = _login(client)
+    _search(me, [seeded["typed"].id])
+    item = _item(db, _jobs(db)[0], seeded["typed"].id)
+    assert item.room_name == room
+    _report(me, item.id, verdict="verified", found_room=room, candidates=[room])
+    db.expire_all()
+    assert seeded["typed"].room_verified == "not_found"
+    assert "투자사" in (item.error or "")
+
+
+def test_한_잡에_대조와_찾기가_섞여도_발송기에_갈래대로_간다(db, seeded, client):
+    """**잡 하나**(11/11). 대조 건은 적어 둔 이름 그대로 · `exact` · 회사 표시 없음,
+    찾기 건은 회사명 · `target: company` — 건에 실린 방 이름 하나로 갈린다."""
+    me = _login(client)
+    _search(me)
+    job = _jobs(db)[0]
+    by_id = {i["id"]: i for i in _poll(me)["items"]}
+    exact = by_id[_item(db, job, seeded["typed"].id).id]
+    assert exact["query"] == "김철수 대표님 라마바" and exact["exact"] is True
+    assert "target" not in exact and "name" not in exact and "firm" not in exact
+    search = by_id[_item(db, job, seeded["noroom"].id).id]
+    assert search["query"] == "가나다랩스" and search["target"] == "company"
+    assert "exact" not in search
+
+
+def test_대조가_글자까지_같으면_확인됨이고_안내_카톡에서_고를_수_있다(db, seeded, client):
+    from app.models import User
+    from app.services import room_match, startup_outreach
+
+    me = _login(client)
+    _search(me)
+    item = _item(db, _jobs(db)[0], seeded["typed"].id)
+    _report(me, item.id, verdict="verified", found_room="김철수 대표님 라마바",
+            candidates=["김철수 대표님 라마바"])
+    db.expire_all()
+    row = seeded["typed"]
+    assert (row.kakao_room_name, row.room_verified, row.kakao_joined) == (
+        "김철수 대표님 라마바", "verified", "O")
+    assert room_match.candidates(row)["rooms"] == [], "대조 결과가 후보 칸에 들어갔다"
+    view = startup_outreach.rows(db, db.get(User, 1), startup_outreach.TOPICS[0], 30)
+    assert row.id in {r["id"] for r in view["ready_rows"]}
 
 
 def test_후보의_가운데_공백은_그대로_담는다(db, seeded, client):
@@ -577,8 +646,11 @@ def test_방_매칭_화면이_내_줄과_상태를_세운다(db, seeded, client)
     assert "후보 없음" in page and "아직 안 찾아봄" in page
     # 후보마다 [이 방으로 확정].
     assert f'data-room="{ROOM_A}"' in page and "이 방으로 확정" in page
-    # 찾을 곳 수는 잡을 세우는 함수와 같은 수다(확인 안 된 내 줄 셋).
-    assert "방 후보 찾기 (3곳)" in page
+    # 실을 곳 수는 잡을 세우는 함수와 같은 수다(확인 안 된 내 줄 셋).
+    assert "카톡방 찾기·확인 (3곳)" in page
+    # 단추는 **하나**다 — 옛 [방 연결 확인] · [방 후보 찾기] 는 없다.
+    assert 'id="room-check-btn"' in page
+    assert 'id="room-verify-btn"' not in page and 'id="room-search-btn"' not in page
     assert "딜소개 불가 · 검토중단 <b>2곳</b>" in page
     assert 'class="room-input room-direct"' in page
 
@@ -586,36 +658,53 @@ def test_방_매칭_화면이_내_줄과_상태를_세운다(db, seeded, client)
 def test_남의_화면에는_내_줄이_없다(db, seeded, client):
     page = _login(client, phone="01000000002").get("/startup/rooms").text
     assert "라마바랩스" not in page
-    assert "방 후보 찾기 (1곳)" in page
+    assert "카톡방 찾기·확인 (1곳)" in page
 
 
-def test_스타트업_화면에_단추가_서고_투자사_화면에는_없다(db, seeded, client):
+def test_스타트업_화면에는_방_단추가_하나만_서고_투자사_화면은_그대로다(db, seeded, client):
+    """사용자: *"방 연결 확인, 방 후보 찾기, 방 매칭 같은 기능 같은데 하나로 통합해 줘"*
+    (11/11). 스타트업 툴바에는 [카톡방 찾기·확인] 하나, 수정창에는 그 한 줄짜리 하나."""
     from urllib.parse import quote
 
     me = _login(client)
     page = me.get(f"/startup?sheet={quote(MINE)}").text
-    assert 'id="room-search-btn"' in page
-    assert 'href="/startup/rooms"' in page
-    assert 'id="room-search-one-btn"' in page
+    assert page.count('id="room-check-btn"') == 1
+    assert "카톡방 찾기·확인</button>" in page
+    assert 'id="room-check-one-btn"' in page
+    for old in ('id="verify-btn"', 'id="room-search-btn"', 'id="room-match-link"',
+                'id="verify-one-btn"', 'id="room-search-one-btn"'):
+        assert old not in page, f"옛 방 단추({old})가 남았다"
 
+    # 투자사 화면은 그대로 [방 연결 확인] 이다.
     contacts = me.get("/contacts").text
-    assert 'id="room-search-btn"' not in contacts
-    assert 'id="room-search-one-btn"' not in contacts
+    assert 'id="verify-btn"' in contacts and 'id="verify-one-btn"' in contacts
+    assert 'id="room-check-btn"' not in contacts
+    assert 'id="room-check-one-btn"' not in contacts
 
 
 def test_안내_카톡의_방_확인_전_칸에서_찾기로_이어진다(db, seeded, client):
-    page = _login(client).get("/startup/msg").text
-    assert 'id="msg-room-search-btn"' in page
+    me = _login(client)
+    _found(db, me, seeded["noroom"], [ROOM_A, ROOM_B])
+    page = me.get("/startup/msg").text
+    assert 'id="msg-room-check-btn"' in page
     assert 'data-count="3"' in page
     assert 'href="/startup/rooms"' in page
+    # 옛 단추 둘 · 줄마다의 방 이름 칸은 없다 — 고르기 · 직접 적기는 [방 매칭] 한 곳.
+    for old in ('msg-room-search-btn', 'msg-verify-btn', 'room-save'):
+        assert old not in page, old
+    # 줄마다 그 줄로 가는 링크 — 후보가 있으면 수를 적는다.
+    assert f'href="/startup/rooms#room-{seeded["noroom"].id}">후보 2개 — 고르기</a>' in page
+    assert f'href="/startup/rooms#room-{seeded["typed"].id}">방 매칭에서 맞추기</a>' in page
+    assert f'id="room-{seeded["noroom"].id}"' in me.get("/startup/rooms").text
 
 
-def test_진행_화면이_후보_찾기라고_말하고_매칭으로_이어진다(db, seeded, client):
+def test_진행_화면이_찾기_확인이라고_말하고_매칭으로_이어진다(db, seeded, client):
     me = _login(client)
     _search(me)
     job = _jobs(db)[0]
     page = me.get(f"/jobs/{job.id}").text
-    assert "카톡방 후보 찾기" in page
+    assert "카톡방 찾기·확인" in page
+    assert "그 이름 그대로" in page
     assert 'href="/startup/rooms"' in page
     assert "내 투자사로" not in page
 
@@ -627,7 +716,7 @@ def test_투자사_방_확인_진행_화면은_그대로다(db, seeded, client):
     me = _login(client)
     me.post("/api/contacts/verify-rooms", json={"contact_ids": [seeded["investor"].id]})
     page = me.get(f"/jobs/{_jobs(db)[0].id}").text
-    assert "카톡방 후보 찾기" not in page
+    assert "카톡방 찾기·확인" not in page
     assert "내 투자사로" in page
 
 
@@ -685,8 +774,8 @@ def test_가짜_화면이_실제_화면과_같은_이름을_쓴다(db, seeded, c
     js = (Path(__file__).resolve().parent / "js" / "startup_room_pick_test.js"
           ).read_text(encoding="utf-8")
     for token in ("room-pick-table", "room-confirm", "data-room", "room-direct",
-                  "room-direct-save", "room-search-btn", "data-count",
-                  "room-verify-btn", "data-ids", "room-pick-error"):
+                  "room-direct-save", "room-check-btn", "data-count",
+                  "room-pick-error"):
         assert token in page, f"템플릿에서 {token} 가 사라졌다"
         assert token in js, f"가짜 화면이 {token} 를 안 쓴다"
     assert "startup_room_pick.js" in page

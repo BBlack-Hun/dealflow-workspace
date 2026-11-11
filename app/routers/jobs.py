@@ -8,16 +8,19 @@ from sqlalchemy.orm import Session
 from ..clock import now_iso
 from ..db import get_db
 from ..deps import agent_status, get_current_user, no_send_as_member
-from ..models import STARTUP_SEND_KIND, SendItem, SendJob, SourcingContact, User
-from ..services import (automation_runner, mail_sender, scheduled_send, send_guard,
-                        sourcing_msg, sourcing_sync, startup_monthly)
+from ..models import (STARTUP_MSG_KIND, STARTUP_SEND_KIND, SendItem, SendJob,
+                      SourcingContact, User)
+from ..services import (automation_runner, ir_outreach, mail_sender, scheduled_send,
+                        send_guard, sourcing_msg, sourcing_sync, startup_monthly)
 
 router = APIRouter(prefix="/api", tags=["jobs"])
 
 
 def _job_or_404(db: Session, job_id: int, user: User) -> SendJob:
     job = db.get(SendJob, job_id)
-    if job is None or job.user_id != user.id:
+    # 다루는 사람은 보통 회차 주인뿐이다. IR 기업현황 탭의 안내 카톡만 회차가 **보내는
+    # 계정** 것이라 **세운 사람 + 관리자**다(`ir_outreach.may_operate` — 판정은 거기 하나).
+    if job is None or not ir_outreach.may_operate(db, job, user):
         raise HTTPException(status_code=404, detail="발송 잡 없음")
     return job
 
@@ -38,7 +41,8 @@ def _viewable_job_or_404(db: Session, job_id: int, user: User) -> SendJob:
     """조회는 관리자에게도 열어 둔다. 재시도·취소 같은 **조작**은
     `_job_or_404` 를 그대로 쓴다 — 관리자가 실수로 남의 회차를 건드리면 안 된다."""
     job = db.get(SendJob, job_id)
-    if job is None or (job.user_id != user.id and user.role != "admin"):
+    if job is None or (job.user_id != user.id and user.role != "admin"
+                       and not ir_outreach.made_by(db, job, user)):
         raise HTTPException(status_code=404, detail="발송 잡 없음")
     return job
 
@@ -128,12 +132,14 @@ def _requeue(db: Session, job: SendJob, items: list[SendItem],
     **어떤 건을 되살릴지는 부르는 쪽이 정한다.** 여기서는 받은 것만 손댄다.
     단 딜 소싱 글 회차는 나가는 순간 참여를 다시 보고(`_drop_not_taking_part`),
     스타트업 월간 발송은 회차를 세운 뒤 그 달 글을 받은 기업을 뺀다(`_drop_already_received`).
+    스타트업 안내 카톡은 막는 규칙과 방 이름을 다시 본다(`_drop_outreach_unsendable`).
     """
     for item in items:
         item.status = "pending"
         item.error = None
     _drop_not_taking_part(db, job)
     _drop_already_received(db, job)
+    _drop_outreach_unsendable(db, job)
     items = [i for i in items if i.status == "pending"]
     if not any(i.status == "pending" for i in job.items):
         # 다시 본 판정으로 전부 빠졌다 — 큐에 세우지 않는다. 예약으로 서 있던
@@ -179,6 +185,25 @@ def _drop_not_taking_part(db: Session, job: SendJob) -> None:
                if item.sourcing_contact_id else None)
         why = ("딜 소싱 명단에 없는 분" if row is None
                else _not_taking_part(row, topic))
+        if why:
+            item.status = "canceled"
+            item.error = f"{why} — 나가기 전에 다시 보고 뺐습니다"
+
+
+def _drop_outreach_unsendable(db: Session, job: SendJob) -> None:
+    """스타트업 안내 카톡(스타트업 화면 · IR 기업현황 탭) — **나가는 순간** 다시 본다.
+
+    회차를 세운 뒤 [발송 시작] · 예약까지 사이에 그 줄이 `딜소개 불가` · `검토중단` 이
+    됐거나 방 확인이 풀렸거나 **방 이름이 바뀌었으면**(건에 굳힌 방이 지금의 방이 아니다)
+    그 대기 건은 취소한다 — 판정은 세울 때와 같은 함수다(`ir_outreach.recheck`).
+    다른 종류의 회차는 그대로.
+    """
+    if job.kind != STARTUP_MSG_KIND:
+        return
+    for item in job.items:
+        if item.status != "pending":
+            continue
+        why = ir_outreach.recheck(db, item)
         if why:
             item.status = "canceled"
             item.error = f"{why} — 나가기 전에 다시 보고 뺐습니다"

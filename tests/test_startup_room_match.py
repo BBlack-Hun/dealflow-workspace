@@ -20,7 +20,9 @@
    (`room_match.set_room`) [수정] 창으로 고쳐도 같다.
 6. **발송 판정은 그대로다.** 확인 안 된 방도 보낼 수 있다 — 막으면 찾기가
    한 번 실패한 달에 월간 발송이 통째로 선다.
-7. **정해진 한 계정만.** 보내는 자리와 **같은 판정**을 지난다.
+7. **정해진 한 계정만.** 보내는 자리 · [카톡에서 방 찾기] 는 보내는 자리와 **같은
+   판정**을 지난다. 맞추기 화면의 보기 · 저장만은 메뉴가 켜져 있으면 누구나다(11/11 —
+   IR 기업현황 탭에서 찾아 온 후보를 고를 자리다. 그 칸은 [수정] 창에서도 누구나 고친다).
 
 이름·회사명은 **전부 지어낸 값**이다 — 저장소가 공개다.
 """
@@ -474,18 +476,33 @@ def test_보내는_표가_맞추기_표를_가리킨다(db, seeded, client):
 
 # ── 7. 정해진 한 계정만 ────────────────────────────────────────────────────
 
-def test_지정되지_않은_계정에는_없는_자리다(db, seeded, client):
-    """보내는 자리와 **같은 판정**(`startup_send.may_send`)을 지난다. 403 이
-    아니라 404 다 — 403 은 쓸 수 없는 기능의 존재를 알려 준다."""
+def test_지정되지_않은_계정에는_찾기가_없는_자리다(db, seeded, client):
+    """[카톡에서 방 찾기] 는 보내는 자리와 **같은 판정**(`startup_send.may_send`)을
+    지난다. 403 이 아니라 404 다 — 403 은 쓸 수 없는 기능의 존재를 알려 준다."""
     _turn_on(db, user_id=1)
     other = _login(client, phone="01000000002")
 
-    assert other.get("/deals/startup-ir/rooms").status_code == 404
-    assert _save(other, [(seeded["plain"].id, "아무 방")]).status_code == 404
     assert _search(other).status_code == 404
+    assert other.get("/deals/startup-ir").status_code == 404
     assert not _jobs(db)
+
+
+def test_맞추기_화면의_보기_저장은_메뉴가_켜져_있으면_누구나다(db, seeded, client):
+    """11/11 — IR 기업현황 탭의 [카톡방 찾기·확인] 이 찾아 온 후보를 고를 자리가 이
+    화면이다. 그 칸(`IrCompany.kakao_room_name`)은 IR 기업 현황의 [수정] 창에서
+    누구나 고치는 칸이라, 이 화면만 그 계정에 묶을 까닭이 없다. 그 계정만의 것
+    (월간 발송 표로 가는 길 · [카톡에서 방 찾기])은 화면에 안 선다."""
+    _turn_on(db, user_id=1)
+    other = _login(client, phone="01000000002")
+
+    page = other.get("/deals/startup-ir/rooms")
+    assert page.status_code == 200
+    assert 'action="/deals/startup-ir/rooms/search"' not in page.text
+    assert 'href="/deals/startup-ir">' not in page.text
+    assert "강민준 계정 PC" in page.text
+    assert _save(other, [(seeded["plain"].id, "아무 방")]).status_code == 303
     db.expire_all()
-    assert seeded["plain"].kakao_room_name is None
+    assert seeded["plain"].kakao_room_name == "아무 방"
 
 
 def test_꺼져_있으면_아무에게도_없다(db, seeded, logged_in):

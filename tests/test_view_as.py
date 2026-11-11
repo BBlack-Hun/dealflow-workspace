@@ -39,6 +39,9 @@ SEND_ROUTES = {
     ("POST", "/api/contacts/verify-rooms"),
     ("POST", "/api/startup-msg/send"),
     ("POST", "/api/startup-rooms/search"),
+    # IR 기업현황 탭의 안내 카톡 · [카톡방 찾기·확인](11/11) — 보내는 계정 PC 로 선다.
+    ("POST", "/api/ir-msg/send"),
+    ("POST", "/api/ir-rooms/check"),
     ("POST", "/deals/startup-ir/send"),
     ("POST", "/deals/startup-ir/rooms/search"),
     ("POST", "/sourcing/rooms/search"),
@@ -540,8 +543,8 @@ def test_startup_room_search_while_viewing_is_the_members_job(client, db, users,
     db.commit()
     _viewing(client, users)
     page = client.get(f"/startup?sheet={quote('스타트업 · 강민준')}").text
-    assert 'id="room-search-btn" data-send="proxy"' in page
-    assert 'id="room-search-one-btn" data-send="proxy"' in page
+    assert 'id="room-check-btn" data-send="proxy"' in page
+    assert 'id="room-check-one-btn" data-send="proxy"' in page
     r = client.post("/api/startup-rooms/search", json={"contact_ids": [row.id]})
     assert r.status_code == 200, r.text
     db.expire_all()

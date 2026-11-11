@@ -16,7 +16,7 @@ from ..deps import get_current_user, may_manage_team_contacts, proxy_job, templa
 from ..models import ROOM_SEARCH_TOPIC, STARTUP_MSG_KIND, IrCompany, SendJob, User
 from ..services import (cadence, contact_columns, custom_columns, deal_history, deal_queue,
                         deal_stage, email_domains, group_name, investor_firms, ir_attach,
-                        ir_readonly, llm_brief, mailer, manual_send, memo_intro, no_reaction,
+                        ir_outreach, ir_readonly, llm_brief, mailer, manual_send, memo_intro, no_reaction,
                         ref_panel, send_window, series_a_share, sheet_import,
                         sheet_owner, sourcing_link, sourcing_receipts,
                         sourcing_sync, startup_send, taxonomy)
@@ -381,8 +381,9 @@ class ListPage:
     msg_href: str = ""
     msg_label: str = ""
     # 이 화면의 줄을 **회사명으로 카톡에서 찾아 후보를 고르는 자리**
-    # (`routers/startup_outreach.py` 의 방 매칭). 있으면 툴바에 [방 후보 찾기] ·
-    # [방 매칭] 이, 수정창에 [이 방 후보 찾기] 가 선다. 투자사 화면에는 없다 —
+    # (`routers/startup_outreach.py` 의 방 매칭). 있으면 툴바에 [카톡방 찾기·확인]
+    # **하나**가, 수정창에 [이 줄 카톡방 찾기·확인] 이 선다 — [방 연결 확인] 대신
+    # 이다(11/11 — 적어 둔 이름 대조도 그 단추가 한다). 투자사 화면에는 없다 —
     # 그쪽 방 이름은 규칙으로 짓고 [방 연결 확인] 으로 대조한다.
     rooms_href: str = ""
     # 이 화면의 줄을 **IR 기업 현황의 기업에 잇는 자리**(`routers/ir_link.py`).
@@ -829,23 +830,43 @@ def job_page(
     # 관리자는 팀 현황에서 넘어와 **누구에게 보냈는지** 조회한다 — 본인 것이
     # 아니어도 읽기는 되어야 한다. 재시도·취소 같은 조작은 API 쪽에서
     # 여전히 본인 것만 허용한다(jobs.py 의 _job_or_404).
-    can_view = job is not None and (job.user_id == user.id or user.role == "admin")
+    # IR 기업현황 탭의 안내 카톡은 **세운 사람**도 본다 — 회차는 보내는 계정 것이다
+    # (`ir_outreach.made_by` · `routers/jobs._job_or_404` 와 같은 판정).
+    made = job is not None and ir_outreach.made_by(db, job, user)
+    can_view = job is not None and (job.user_id == user.id or user.role == "admin" or made)
     verify = can_view and job.kind == "verify_room"
     # 스타트업 안내 카톡 회차는 [스타트업] 안에서 세운 것이다 — 메뉴도 거기
     # 켜지고, `새 발송` 도 그 화면으로 돌아간다(딜 제안 관리가 아니다).
     outreach = can_view and job.kind == STARTUP_MSG_KIND
-    # 스타트업 명단 줄의 카톡방 **후보 찾기**도 [스타트업] 안에서 세운 것이다.
-    # 찾은 제목은 후보로만 담기므로, 끝나면 갈 곳은 [방 매칭] 화면이다.
-    room_search = verify and job.topic == ROOM_SEARCH_TOPIC
+    # IR 기업 줄의 안내 카톡 · 카톡방 찾기·확인 — IR 기업 현황에서 세운 것이다(11/11).
+    # 월간 발송(`startup_ir`)은 그대로 딜 제안 관리다.
+    ir_job = (can_view and (verify or outreach)
+              and any(i.ir_company_id for i in job.items))
+    # 스타트업 명단 줄의 [카톡방 찾기·확인] 도 [스타트업] 안에서 세운 것이다.
+    # 찾은 제목은 후보로만 담기므로, 끝나면 갈 곳은 [방 매칭] 화면이다 — IR 기업
+    # 줄이면 「대표 카톡방 맞추기」다.
+    room_search = verify and (job.topic == ROOM_SEARCH_TOPIC or ir_job)
     ctx = _base_ctx(request, db, user,
-                    STARTUP_PAGE.key if (outreach or room_search)
+                    "su" if ir_job
+                    else STARTUP_PAGE.key if (outreach or room_search)
                     else "vc" if verify else "deal")
     ctx.update({"job_id": job_id, "job_exists": can_view, "verify": verify,
                 "room_search": room_search,
-                "rooms_href": STARTUP_PAGE.rooms_href,
-                "again_href": (f"{STARTUP_PAGE.msg_href}?topic={job.topic or ''}"
+                # IR 기업 줄이면 **이 회차의 기업들**로 연다(계약 안 한 기업도 선다).
+                "rooms_href": (f"{ir_outreach.ROOMS_HREF}?ids="
+                               + ",".join(str(i.ir_company_id) for i in job.items
+                                          if i.ir_company_id)
+                               if ir_job else STARTUP_PAGE.rooms_href),
+                # 회차 주인이 아닌 사람이 다루는 회차(IR 기업현황 탭의 안내 카톡) —
+                # **어느 계정 PC 에서 나가는지** 적는다.
+                "pc_note": (f"{db.get(User, job.user_id).name} 계정 PC 의 카톡에서 나갑니다"
+                            if can_view and job.user_id != user.id and ir_job
+                            and db.get(User, job.user_id) is not None else ""),
+                "again_href": ("/companies" if ir_job and outreach
+                               else f"{STARTUP_PAGE.msg_href}?topic={job.topic or ''}"
                                if outreach else "/deals"),
-                "readonly": can_view and job.user_id != user.id,
+                # 다루는 사람(`ir_outreach.may_operate` — 단추를 받는 자리와 같은 판정)이 아니면 보기만.
+                "readonly": can_view and not ir_outreach.may_operate(db, job, user),
                 # 팀원 화면으로 보는 중에도 단추를 여는 회차(`deps.proxy_job`).
                 "proxy_job": can_view and proxy_job(db, job)})
     if can_view:

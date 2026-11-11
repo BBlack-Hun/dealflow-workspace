@@ -4,10 +4,11 @@
 // 지킬 것:
 //  1. [이 방으로 확정] 은 **그 줄의 번호**로, **누른 제목 글자 그대로** 보낸다.
 //  2. 확정 전에 묻고, 아니라고 하면 아무것도 안 보낸다.
-//  3. [방 후보 찾기] 는 줄 번호 없이 보낸다 — 찾을 줄은 서버가 고른다.
+//  3. [카톡방 찾기·확인] 은 **하나**이고 줄 번호 없이 보낸다 — 줄마다 대조할지
+//     찾을지는 서버가 고른다(11/11 — 예전 [방 후보 찾기] · [방 연결 확인] 을 합쳤다).
 //  4. 직접 적기 [저장] 은 수정창과 같은 길(`PATCH /api/contacts/{id}`)로 그 줄의
 //     칸 글자를 보낸다.
-//  5. [방 연결 확인] 은 적어 둔 줄 번호들을 투자사 화면과 같은 길로 보낸다.
+//  5. 예전 [방 연결 확인] 단추는 없다 — 남아 있어도 아무 일이 없어야 한다.
 //  6. 서버가 거절하면 그 까닭을 그대로 적는다.
 //
 // 아이디·클래스가 실제 화면과 같은지는 파이썬 쪽이 본다
@@ -47,7 +48,8 @@ function build(opts) {
     el("tbody", {}, [row(11, [ROOM_A, ROOM_B]), row(12, [ROOM_B], "김철수 대표님 라마바")])
   ]);
   const root = el("div", { class: "layout" }, [
-    el("button", { id: "room-search-btn", "data-count": String(opts.count == null ? 3 : opts.count) }),
+    el("button", { id: "room-check-btn", "data-count": String(opts.count == null ? 3 : opts.count) }),
+    // 옛 단추가 화면에 남아 있어도 이 파일은 그것을 안 건다(5).
     el("button", { id: "room-verify-btn", "data-ids": "12,13" }),
     el("p", { id: "room-pick-error" }),
     table
@@ -116,24 +118,26 @@ function flush() { return new Promise(function (r) { setImmediate(r); }); }
   {
     const s = build({ answer: false });
     click(s.confirmBtn(11, ROOM_A));
-    click(s.byId("room-search-btn"));
+    click(s.byId("room-check-btn"));
     await flush();
     assert.strictEqual(s.calls.length, 0, "묻고 아니라는데 보냈다");
   }
 
-  // ── 3. 찾기는 줄 번호 없이 — 서버가 고른다 ──────────────────────────────
+  // ── 3. [카톡방 찾기·확인] 은 줄 번호 없이 — 서버가 고른다 ────────────────────
   {
     const s = build();
-    click(s.byId("room-search-btn"));
+    click(s.byId("room-check-btn"));
     await flush(); await flush();
     assert.strictEqual(s.calls.length, 1);
     assert.strictEqual(s.calls[0].url, "/api/startup-rooms/search");
     assert.deepStrictEqual(s.calls[0].body, {});
+    assert.ok(s.asked[0].indexOf("그 이름 그대로") >= 0 && s.asked[0].indexOf("회사명으로") >= 0,
+      "한 번에 무엇을 하는지(대조 · 찾기) 묻지 않았다");
     assert.strictEqual(s.win.location.href, "/jobs/7", "진행 화면으로 가지 않았다");
   }
   {
     const s = build({ count: 0 });
-    click(s.byId("room-search-btn"));
+    click(s.byId("room-check-btn"));
     await flush();
     assert.strictEqual(s.calls.length, 0, "찾을 곳이 0곳인데 보냈다");
   }
@@ -151,13 +155,12 @@ function flush() { return new Promise(function (r) { setImmediate(r); }); }
     assert.strictEqual(s.asked.length, 0, "직접 적기는 묻지 않는다(되돌릴 수 있다)");
   }
 
-  // ── 5. 방 연결 확인 — 투자사 화면과 같은 길 ─────────────────────────────
+  // ── 5. 옛 [방 연결 확인] 은 이 화면의 단추가 아니다 ─────────────────────────
   {
     const s = build();
     click(s.byId("room-verify-btn"));
     await flush(); await flush();
-    assert.strictEqual(s.calls[0].url, "/api/contacts/verify-rooms");
-    assert.deepStrictEqual(s.calls[0].body, { contact_ids: [12, 13] });
+    assert.strictEqual(s.calls.length, 0, "옛 [방 연결 확인] 이 아직 따로 돈다");
   }
 
   // ── 6. 서버가 거절하면 그 까닭 그대로 ───────────────────────────────────

@@ -44,10 +44,15 @@
 주소를 직접 쳐도 **없는 자리**다(404). 403 이 아닌 까닭은, 403 이 "그런 자리가
 있는데 너는 안 된다" 라서 이 계정으로는 쓸 수 없는 기능의 존재를 알려 주기
 때문이다.
+
+**대표 카톡방 맞추기의 보기 · 저장만은 예외다**(11/11 — `_rooms_guard`). 그 화면이
+고치는 칸은 IR 기업 현황의 [수정] 창에서 누구나 고치는 칸이고, IR 기업현황 탭의
+[카톡방 찾기·확인] 을 누른 사람이 후보를 고를 자리가 그 화면이다. 메뉴가 켜져
+있어야 열린다.
 """
 from __future__ import annotations
 
-from typing import List
+from typing import List, Optional
 from urllib.parse import quote
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Request
@@ -71,6 +76,26 @@ router = APIRouter(tags=["startup-send"])
 
 #: 좌측 메뉴에서 켜져 보일 자리. 이 화면은 **딜 제안 관리 안**이다.
 ACTIVE = "deal"
+
+
+def _ids(value: str) -> Optional[List[int]]:
+    """`?ids=1,2,3` — IR 기업현황 탭에서 고른 기업. 비었거나 못 읽으면 `None`(기본 화면)."""
+    out = [int(v) for v in (value or "").split(",") if v.strip().isdigit()]
+    return out or None
+
+
+def _rooms_guard(db: Session) -> None:
+    """맞추기 화면(보기 · 저장)은 **메뉴가 켜져 있으면 누구나**다(11/11).
+
+    방 제목을 고르는 것은 `IrCompany.kakao_room_name` 을 고치는 일이고, 그 칸은 IR 기업
+    현황의 [수정] 창에서 누구나 고친다(팀 공용 표 — 적는 자리는 `room_match.set_room`
+    하나). 이 화면만 그 계정에 묶어 두면 IR 기업현황 탭에서 [카톡방 찾기·확인] 을 누른
+    사람이 찾아 온 후보를 고를 데가 없다. **보내는 자리 · 이 화면의 [카톡에서 방 찾기]
+    는 그대로 그 계정만**이다(`_guard`). 메뉴가 꺼져 있으면 이 화면도 없다 — 그 칸의
+    제목이 어느 계정 카톡의 것인지 정할 계정이 없다.
+    """
+    if startup_send.sender_id(db) is None:
+        raise HTTPException(status_code=404, detail="없는 자리입니다")
 
 
 def _guard(db: Session, user: User) -> None:
@@ -256,6 +281,7 @@ def rooms_page(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
     msg: str = "",
+    ids: str = "",
 ):
     """[대표 카톡방 맞추기] — 계약 기업 **전부**가 한 판에 서는 표.
 
@@ -265,14 +291,25 @@ def rooms_page(
 
     **고르는 것은 사람이다.** 서버는 후보를 세워 주기만 한다 — 왜 하나뿐인
     후보도 서버가 집어넣지 않는지는 `services/room_match.py` 머리말에 있다.
+
+    `?ids=` 가 있으면 IR 기업현황 탭에서 고른 기업들이 선다(11/11 — 계약과 상관없이).
+    없으면 지금까지 그대로 계약 기업 전부다. 누가 열 수 있는지는 `_rooms_guard`.
     """
-    _guard(db, user)
-    ctx = base_ctx(request, db, user, ACTIVE)
-    ctx.update(room_match.rows(db))
+    _rooms_guard(db)
+    picked = _ids(ids)
+    sender = db.get(User, startup_send.sender_id(db))
+    ctx = base_ctx(request, db, user, "su" if picked else ACTIVE)
+    ctx.update(room_match.rows(db, picked))
     ctx.update({
         "label": startup_send.LABEL,
         "msg": msg,
         "no_room_label": startup_send.NO_ROOM,
+        # IR 기업현황 탭에서 고른 기업으로 열었나 — 머리말 · 저장이 그 값을 싣는다.
+        "ids": ",".join(str(i) for i in picked) if picked else "",
+        # 이 화면의 방 제목은 **이 계정 카톡**의 제목이다(화면이 그 이름을 말한다).
+        "sender_name": sender.name if sender else "",
+        # 월간 발송 표 · [카톡에서 방 찾기] 는 그 계정만이다(`_guard`).
+        "may_send": startup_send.may_send(db, user),
     })
     return templates.TemplateResponse(request, "startup_room.html", ctx)
 
@@ -281,6 +318,7 @@ def rooms_page(
 def save_rooms(
     company_ids: List[int] = Form(default=[]),
     rooms: List[str] = Form(default=[]),
+    ids: str = Form(""),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -310,15 +348,17 @@ def save_rooms(
 
     화면에 선 줄과 여기서 받는 줄이 **같은 함수**로 갈린다
     (`room_match.company_ids`). 갈리면 화면에 없는 기업이 주소로는 들어간다 —
-    `startup_send.sendable_ids` 가 보내는 쪽에서 하는 일과 같은 짝이다.
+    `startup_send.sendable_ids` 가 보내는 쪽에서 하는 일과 같은 짝이다. IR 기업현황
+    탭에서 고른 기업으로 연 화면이면(`ids`) 그 기업들이 받는 줄이다.
     """
-    _guard(db, user)
+    _rooms_guard(db)
+    picked = _ids(ids)
     if len(company_ids) != len(rooms):
-        return _back_rooms("보낸 줄이 어긋났습니다 — 화면을 새로 열고 다시 저장하세요")
+        return _back_rooms("보낸 줄이 어긋났습니다 — 화면을 새로 열고 다시 저장하세요", picked)
     if not company_ids:
-        return _back_rooms("저장할 줄이 없습니다")
+        return _back_rooms("저장할 줄이 없습니다", picked)
 
-    allowed = set(room_match.company_ids(db))
+    allowed = set(room_match.company_ids(db, picked))
     known = room_match.investor_rooms(db)
     changed, unknown = 0, 0
     for company_id, value in zip(company_ids, rooms):
@@ -334,8 +374,9 @@ def save_rooms(
 
     parts = [f"{changed}곳의 방 제목을 넣었습니다" if changed else "바뀐 줄이 없습니다"]
     if unknown:
-        parts.append(f"계약 기업이 아닌 {unknown}줄은 넣지 않았습니다")
-    return _back_rooms(" · ".join(parts))
+        parts.append(f"{'이 화면에 없던' if picked else '계약 기업이 아닌'} "
+                     f"{unknown}줄은 넣지 않았습니다")
+    return _back_rooms(" · ".join(parts), picked)
 
 
 @router.post("/deals/startup-ir/rooms/search", include_in_schema=False,
@@ -401,8 +442,9 @@ def search_rooms(
     return RedirectResponse(f"/jobs/{job.id}", status_code=303)
 
 
-def _back_rooms(why: str) -> RedirectResponse:
+def _back_rooms(why: str, picked: Optional[List[int]] = None) -> RedirectResponse:
     """맞추는 표로 되돌리며 **무엇이 됐는지 적는다.** 조용히 돌아가면 저장이
-    된 것인지 알 수 없다."""
-    return RedirectResponse(f"/deals/startup-ir/rooms?msg={quote(why)}",
+    된 것인지 알 수 없다. 고른 기업으로 열었던 화면이면 그 화면으로 돌아간다."""
+    keep = f"&ids={','.join(str(i) for i in picked)}" if picked else ""
+    return RedirectResponse(f"/deals/startup-ir/rooms?msg={quote(why)}{keep}",
                             status_code=303)

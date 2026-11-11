@@ -34,11 +34,12 @@
 `startup_outreach.my_rows`(내 줄만) 하나를 지난다. 관리자도 자기 줄만이다 —
 회차는 그 사람의 것으로 서고 그 사람 PC 의 발송기만 집어간다.
 
-## 보낼 방 맞추기 — [방 후보 찾기] · [방 매칭] (`/startup/rooms`)
+## 보낼 방 맞추기 — [카톡방 찾기·확인] 하나 + [방 매칭] 화면 (`/startup/rooms`)
 
 안내 카톡은 **확인된 방**에만 나가는데 명단 줄에는 방 이름이 거의 없다.
-회사명으로 카톡을 뒤져 후보를 모으고(방 확인 잡 그대로 — 발송기를 안
-고친다), 사람이 골라 확정한다. 무엇을 왜 그렇게 하는지는
+[카톡방 찾기·확인] 한 번이 적어 둔 이름은 그대로 대조하고, 없는 곳은 회사명으로
+카톡을 뒤져 후보를 모은다(방 확인 잡 그대로 — 발송기를 안 고친다). 후보 고르기 ·
+직접 적기 · 확정은 [방 매칭] 화면 한 곳이다. 무엇을 왜 그렇게 하는지는
 `services/startup_room_pick.py` 머리말에 있다.
 """
 from __future__ import annotations
@@ -52,14 +53,15 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import get_current_user, no_send_as_member, templates
-from ..models import ROOM_SEARCH_TOPIC, SendItem, SendJob, User, VcContact
+from ..models import User, VcContact
 from ..services import (cadence, send_window, startup_outreach,
                         startup_room_pick)
 from ..ui import base_ctx
 from ..version import VERSION
-# 방 확인 잡의 종류는 **한 곳에만 적는다**(`agent_api.VERIFY_KIND`) — 월간
-# 발송의 맞추기(`routers/startup_send.py`)가 같은 이유로 거기서 가져온다.
-from .agent_api import VERIFY_KIND
+# 방 확인 잡의 종류는 **한 곳에만 적는다**(`agent_api.VERIFY_KIND`) — 잡을 세우는
+# 자리(`startup_room_pick.queue`)도 월간 발송의 맞추기(`routers/startup_send.py`)도
+# 거기서 가져온다.
+from .agent_api import VERIFY_KIND  # noqa: F401  (tests/test_startup_room_pick.py 가 짝을 본다)
 from .pages import STARTUP_PAGE
 
 router = APIRouter(tags=["startup-outreach"])
@@ -116,10 +118,13 @@ def outreach_page(
         # 밝혀 잡이 큐에 서서 기다린다(`agent/main.py: STARTUP_MSG_KIND`).
         "agent_needs": VERSION,
         "startup_href": STARTUP_PAGE.href,
-        # `방 확인 전` 칸의 [방 후보 찾기] — 누르면 세우는 잡의 크기와 **같은
+        # `방 확인 전` 칸의 [카톡방 찾기·확인] — 누르면 세우는 잡의 크기와 **같은
         # 함수**로 센다(`startup_room_pick.targets`).
         "rooms_href": ROOMS_HREF,
         "search_count": len(startup_room_pick.targets(db, user)),
+        # 그 칸의 줄마다 `후보 N개 — 고르기` — 고르는 화면과 같은 셈이다.
+        "pick_counts": startup_room_pick.pick_counts(
+            db, [r["contact"] for r in ctx["no_room_rows"]]),
     })
     return templates.TemplateResponse(request, "startup_msg.html", ctx)
 
@@ -262,23 +267,29 @@ class RoomSearchIn(BaseModel):
 @router.post("/api/startup-rooms/search", dependencies=[Depends(no_send_as_member)])
 def search_rooms(body: RoomSearchIn, db: Session = Depends(get_db),
                  user: User = Depends(get_current_user)):
-    """[방 후보 찾기] — 회사명으로 카톡을 뒤져 후보를 모아 오는 잡을 세운다.
+    """[카톡방 찾기·확인] — **한 번 누르면 잡 하나**가 줄마다 할 일을 고른다(11/11).
+
+    전에는 [방 연결 확인] · [방 후보 찾기] · [방 매칭] 이 따로 서 있었다(사용자:
+    *"같은 기능 같은데 하나로 통합해 줘"*). 이제 이 자리 하나다 — 방 이름이 적혀
+    있고 확인 전인 줄은 그 이름 **그대로 대조**하고, 이름이 없거나 못 찾은 줄은
+    **회사명으로 찾아 후보로만** 담는다(`startup_room_pick.task_of`). 주소는 예전
+    [방 후보 찾기] 의 것을 그대로 쓴다 — 팀원 화면으로 보는 중에도 여는 길
+    (`deps.VIEW_AS_OPEN_PATHS`)이 이 주소를 안다.
 
     ## 새 잡 종류를 만들지 않는다  ★★
 
     이미 있는 **방 확인 잡**(`verify_room`)이다. 발송기가 이미 집어가는
     종류라 판을 올리지 않아도 팀원 PC 의 발송기가 그대로 처리한다. 다른 것은
-    `topic` 하나다(`ROOM_SEARCH_TOPIC`) — 서버가 그것을 보고 이 잡의 줄을
-    **회사명으로** 내주고(`target: company` — 발송기가 맨 위 방 열기에서 투자사
-    방을 버린다), 결과를 **후보로만** 담는다(`agent_api._company_row`).
+    `topic` 하나다(`ROOM_SEARCH_TOPIC`) — 서버가 그것을 보고 방 이름이 빈 건은
+    **회사명으로** 내주고(`target: company`), 결과를 **후보로만** 담는다
+    (`agent_api._company_row`). 방 이름이 실린 건은 [방 연결 확인] 과 같은 대조다
+    (`exact` — 글자까지 같은 제목만 `확인됨`).
 
-    ## 한 통도 나가지 않는다 · 방 이름도 안 바뀐다
+    ## 한 통도 나가지 않는다
 
     발송기는 이 잡에서 검색만 한다. `message=""` 는 아주 낡은 발송기가 이 잡을
     발송으로 오해해도 보낼 것이 없게 하는 안전장치다(`contacts.verify_rooms`
-    와 같다). `room_name=""` 은 **모르는 값을 지어 넣지 않는** 것이다 — 적어
-    둔 이름을 넣으면 발송기가 후보를 못 찾았을 때 그 이름으로 대조해 보고,
-    결과가 이 길에서는 버려진다(대조는 [방 연결 확인] 의 일이다).
+    와 같다). 찾는 건의 `room_name=""` 은 **모르는 값을 지어 넣지 않는** 것이다.
 
     ## `queued` 로 세운다
 
@@ -286,33 +297,30 @@ def search_rooms(body: RoomSearchIn, db: Session = Depends(get_db),
     맞추기의 [카톡에서 방 찾기] 와 같다).
     """
     ids = None if body.contact_ids is None else list(dict.fromkeys(body.contact_ids))
-    targets = startup_room_pick.targets(db, user, ids)
-    if not targets and ids and not set(ids) & {
-            c.id for c in startup_outreach.my_rows(db, user)}:
+    if ids and not set(ids) & {c.id for c in startup_outreach.my_rows(db, user)}:
         raise HTTPException(
             status_code=400,
             detail=("본인 줄만 찾을 수 있습니다 — 다른 팀원 탭의 줄은 관리자가 "
                     "'팀원 화면으로 보기'로 그 팀원 화면에서 찾으세요"))
-    if not targets:
-        raise HTTPException(
-            status_code=400,
-            detail=("찾을 곳이 없습니다 — 내 스타트업 줄 중 카톡방이 확인 안 된 곳만 "
-                    "회사명으로 찾습니다(이미 확정된 곳 · 남의 줄 · 딜소개 불가 · "
-                    "검토중단 · 회사명이 빈 줄은 빠집니다)"))
-
-    job = SendJob(user_id=user.id, kind=VERIFY_KIND, topic=ROOM_SEARCH_TOPIC,
-                  status="queued", total=len(targets), sent=0, failed=0)
-    db.add(job)
-    db.flush()
-    for contact in targets:
-        db.add(SendItem(job_id=job.id, contact_id=contact.id,
-                        room_name="", message="", status="pending"))
-    db.commit()
-    return {"job_id": job.id, "total": len(targets),
+    made = startup_room_pick.queue(db, user, ids)
+    job = made["job"]
+    if job is None:
+        detail = ("찾을 곳이 없습니다 — 내 스타트업 줄 중 카톡방이 확인 안 된 곳만 "
+                  "찾고 확인합니다(이미 확인된 곳 · 남의 줄 · 딜소개 불가 · 검토중단 · "
+                  "회사명이 빈 줄은 빠집니다)")
+        if made["conflicts"]:
+            detail = (f"동명이인인데 방 이름까지 같아 구별되지 않습니다: "
+                      f"{', '.join(made['conflicts'][:5])} — 방 이름을 서로 다르게 "
+                      "넣어 주세요")
+        raise HTTPException(status_code=400, detail=detail)
+    return {"job_id": job.id, "total": job.total,
+            # 이 잡이 **무엇을 하는지** — 화면이 한 줄로 알린다(대조 N곳 · 찾기 M곳).
+            "exact": made["exact"], "search": made["search"],
+            "conflicts": made["conflicts"],
             # 고른 줄 중 **빠진 수**. 세어 주지 않으면 몇 곳이 왜 안 들어갔는지
             # 모른다(이미 확정된 줄이 대부분이다).
-            "skipped": (len(ids) - len(targets)) if ids is not None else 0,
-            "href": f"/jobs/{job.id}"}
+            "skipped": (len(ids) - job.total) if ids is not None else 0,
+            "href": f"/jobs/{job.id}", "rooms_href": ROOMS_HREF}
 
 
 class ConfirmIn(BaseModel):

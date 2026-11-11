@@ -1,4 +1,4 @@
-/* 스타트업 카톡방 매칭 — 찾기 · 확정 · 직접 적기 · 방 연결 확인.
+/* 스타트업 카톡방 매칭 — [카톡방 찾기·확인] · 확정 · 직접 적기.
  * (node tests/js/startup_room_pick_test.js)
  *
  * ## 여기서 판단하지 않는다  ★
@@ -42,37 +42,25 @@
     window.location.href = res.d.href || ("/jobs/" + res.d.job_id);
   }
 
-  // ── [방 후보 찾기] — 찾을 줄은 서버가 고른다 ─────────────────────────────
-  var searchBtn = document.getElementById("room-search-btn");
-  if (searchBtn) {
-    searchBtn.addEventListener("click", function () {
-      var n = parseInt(searchBtn.getAttribute("data-count") || "0", 10) || 0;
+  // ── [카톡방 찾기·확인] — 방 단추는 하나다(11/11). 줄마다 할 일은 서버가 고른다 ──
+  //
+  // 적어 둔 이름은 그대로 대조하고, 없는 곳은 회사명으로 찾아 후보만 가져온다
+  // (`startup_room_pick.task_of`). 줄 번호 없이 보내 서버가 고르게 한다.
+  var checkBtn = document.getElementById("room-check-btn");
+  if (checkBtn) {
+    checkBtn.addEventListener("click", function () {
+      var n = parseInt(checkBtn.getAttribute("data-count") || "0", 10) || 0;
       if (!n) return;
-      if (!window.confirm(n + "곳을 회사명으로 카톡에서 찾습니다.\n" +
+      if (!window.confirm(n + "곳의 카톡방을 찾고 확인합니다.\n" +
+          "· 방 이름이 적힌 곳 — 그 이름 그대로 카톡에서 확인\n" +
+          "· 방 이름이 없는 곳 — 회사명으로 찾아 후보만 가져옴(이 화면에서 골라 확정)\n" +
           "카카오톡이 켜져 있어야 하며, 찾는 중에는 PC 조작을 멈춰주세요.\n" +
-          "(문구는 전송하지 않습니다 · 방 이름도 바꾸지 않습니다 — 후보만 가져옵니다)")) return;
-      setError("");
-      searchBtn.disabled = true;
-      send("POST", "/api/startup-rooms/search", {})
-        .then(function (res) { searchBtn.disabled = false; goJob(res, "찾기 요청 실패"); })
-        .catch(function () { searchBtn.disabled = false; setError("찾기 요청 오류"); });
-    });
-  }
-
-  // ── [방 연결 확인] — 적어 둔 이름을 카톡에서 대조한다 ─────────────────────
-  var verifyBtn = document.getElementById("room-verify-btn");
-  if (verifyBtn) {
-    verifyBtn.addEventListener("click", function () {
-      var ids = (verifyBtn.getAttribute("data-ids") || "").split(",")
-        .filter(Boolean).map(function (v) { return parseInt(v, 10); });
-      if (!ids.length) return;
-      if (!window.confirm(ids.length + "곳의 카톡방을 확인합니다.\n" +
-          "카카오톡이 켜져 있어야 하며, 확인 중에는 PC 조작을 멈춰주세요.\n" +
           "(문구는 전송하지 않습니다)")) return;
       setError("");
-      send("POST", "/api/contacts/verify-rooms", { contact_ids: ids })
-        .then(function (res) { goJob(res, "확인 요청 실패"); })
-        .catch(function () { setError("확인 요청 오류"); });
+      checkBtn.disabled = true;
+      send("POST", "/api/startup-rooms/search", {})
+        .then(function (res) { checkBtn.disabled = false; goJob(res, "찾기 요청 실패"); })
+        .catch(function () { checkBtn.disabled = false; setError("찾기 요청 오류"); });
     });
   }
 
