@@ -597,7 +597,10 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
         noreactInView += 1;
       }
       var matched = hit && inBucket && inAssignee && inGroup && inNoReact && !excluded && !covered;
-      var visible = (picked && !excluded) || (matched && !pickedOnly);
+      // [반응 없는 담당자만] 을 켠 채 방금 [반응 없음에서 빼기] 한 분 — 조건에는 안 맞지만
+      // (고르기에 안 딸려 온다) 그 자리에 남겨 [되돌리기] 가 닿게 한다(아래 `noreact-toggle`).
+      var held = noreactOnly && card.hasAttribute("data-noreact-undo") && hit && inGroup && !excluded;
+      var visible = (picked && !excluded) || (matched && !pickedOnly) || (held && !pickedOnly);
       card.setAttribute("data-match", matched ? "1" : "0");
       card.hidden = !visible;
       if (visible) shown += 1;
@@ -2091,6 +2094,62 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     } else if (!noReactOn()) {
       alert("반응이 없는 담당자가 없습니다.");
     }
+  });
+
+  // ── [반응 없음에서 빼기] · [되돌리기](11/11) ──────────────────────────────
+  // 전화 · 다른 길로 반응이 있었던 분을 사람이 `반응 없음` 에서 뺀다. 저장과 판정은 서버다
+  // (`/api/contacts/{id}/no-reaction` · `services/no_reaction`) — 화면은 답을 받은 뒤 카드의
+  // `data-noreact` 만 고쳐, 단추 수 · 거르기 · 안내 줄이 `applyContactFilter` 한 길로 따라온다.
+  //
+  // 카드 전체가 고르는 `<label>` 이다 — 누름이 체크로 번지면 빼려던 분이 발송에 골라진다.
+  // 그래서 기본 동작을 막는다(저장 중에 단추를 `disabled` 로 잠그지 않는 까닭도 같다 —
+  // 잠긴 단추의 누름은 브라우저에 따라 `<label>` 로 넘어간다).
+  //
+  // 고른 것은 한 경우만 건드린다: [반응 없는 담당자만] 이 켜져 있으면 그 단추가 고른
+  // 것이라, 빼면 체크도 끈다(남기면 방금 반응이 있었다고 한 분께 그 글이 나간다). 그
+  // 카드는 [되돌리기] 가 닿게 그 자리에 남고(`data-noreact-undo`), 되돌리면 다시
+  // 골라진다 — 잘못 누른 것이 그대로 원래대로 간다.
+  var noreactList = document.getElementById("contact-list");
+  if (noreactList) noreactList.addEventListener("click", function (e) {
+    var btn = e.target && e.target.closest ? e.target.closest(".noreact-toggle") : null;
+    if (!btn) return;
+    e.preventDefault();
+    var card = btn.closest(".pick-card");
+    var mark = btn.closest(".noreact-mark");
+    var cb = card && card.querySelector(".contact-cb");
+    if (!mark || !cb || mark.hasAttribute("data-busy")) return;   // 저장 중에 또 누름
+    mark.setAttribute("data-busy", "1");
+    fetch("/api/contacts/" + encodeURIComponent(cb.value) + "/no-reaction", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cleared: mark.getAttribute("data-cleared") !== "1" })
+    })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d || {} }; }); })
+      .then(function (res) {
+        mark.removeAttribute("data-busy");
+        if (!res.ok) { alert(res.d.detail || "저장하지 못했습니다"); return; }
+        var cleared = !!res.d.cleared;
+        mark.setAttribute("data-cleared", cleared ? "1" : "0");
+        cb.setAttribute("data-noreact", cleared ? "0" : "1");
+        mark.querySelector(".noreact-on").hidden = cleared;
+        mark.querySelector(".noreact-off").hidden = !cleared;
+        var pick = null;
+        if (cleared) {
+          var unpick = noreactOnly && cb.checked;
+          card.setAttribute("data-noreact-undo", unpick ? "picked" : "1");
+          if (unpick) pick = false;
+        } else {
+          if (noreactOnly && card.getAttribute("data-noreact-undo") === "picked") pick = true;
+          card.removeAttribute("data-noreact-undo");
+        }
+        if (pick !== null) {
+          cb.checked = pick;
+          // 코드로 바꾼 체크는 `change` 가 안 난다 — 알약 · [손으로 보냈다면] 수가 따라오게 알린다.
+          cb.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+        applyContactFilter();
+      })
+      .catch(function () { mark.removeAttribute("data-busy"); alert("요청 오류"); });
   });
 
   // 후속 관리·IR 관리에서 넘어오면 방식·대상·기업을 그대로 받는다.
