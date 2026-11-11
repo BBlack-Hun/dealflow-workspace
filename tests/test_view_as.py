@@ -39,6 +39,9 @@ SEND_ROUTES = {
     ("POST", "/api/contacts/verify-rooms"),
     ("POST", "/api/startup-msg/send"),
     ("POST", "/api/startup-rooms/search"),
+    # IR 기업현황 탭의 안내 카톡 · [카톡방 찾기·확인](11/11) — 보내는 계정 PC 로 선다.
+    ("POST", "/api/ir-msg/send"),
+    ("POST", "/api/ir-rooms/check"),
     ("POST", "/deals/startup-ir/send"),
     ("POST", "/deals/startup-ir/rooms/search"),
     ("POST", "/sourcing/rooms/search"),

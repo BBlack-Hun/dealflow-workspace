@@ -9,15 +9,17 @@ from ..clock import now_iso
 from ..db import get_db
 from ..deps import agent_status, get_current_user, no_send_as_member
 from ..models import STARTUP_SEND_KIND, SendItem, SendJob, SourcingContact, User
-from ..services import (automation_runner, mail_sender, scheduled_send, send_guard,
-                        sourcing_msg, sourcing_sync, startup_monthly)
+from ..services import (automation_runner, ir_outreach, mail_sender, scheduled_send,
+                        send_guard, sourcing_msg, sourcing_sync, startup_monthly)
 
 router = APIRouter(prefix="/api", tags=["jobs"])
 
 
 def _job_or_404(db: Session, job_id: int, user: User) -> SendJob:
     job = db.get(SendJob, job_id)
-    if job is None or job.user_id != user.id:
+    # IR 기업현황 탭의 안내 카톡은 회차가 **보내는 계정** 것이고 세운 사람은 따로다 —
+    # 세운 사람도 다룬다(`ir_outreach.made_by` — 다른 회차는 그대로 주인만).
+    if job is None or (job.user_id != user.id and not ir_outreach.made_by(db, job, user)):
         raise HTTPException(status_code=404, detail="발송 잡 없음")
     return job
 
@@ -38,7 +40,8 @@ def _viewable_job_or_404(db: Session, job_id: int, user: User) -> SendJob:
     """조회는 관리자에게도 열어 둔다. 재시도·취소 같은 **조작**은
     `_job_or_404` 를 그대로 쓴다 — 관리자가 실수로 남의 회차를 건드리면 안 된다."""
     job = db.get(SendJob, job_id)
-    if job is None or (job.user_id != user.id and user.role != "admin"):
+    if job is None or (job.user_id != user.id and user.role != "admin"
+                       and not ir_outreach.made_by(db, job, user)):
         raise HTTPException(status_code=404, detail="발송 잡 없음")
     return job
 

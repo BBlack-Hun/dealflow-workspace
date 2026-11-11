@@ -16,8 +16,8 @@ from .routers import templates_crud
 from .routers import setup as setup_router
 from .routers import automations as automations_router
 from .routers import (agent_api, companies, consulting, contacts, dashboard,
-                      data_io, deals, followups, forecast, ir, jobs, llm_brief,
-                      notices, pages, series_a, sourcing, startup,
+                      data_io, deals, followups, forecast, ir, ir_outreach, jobs,
+                      llm_brief, notices, pages, series_a, sourcing, startup,
                       startup_outreach, startup_send)
 from .routers import ir_link as ir_link_router
 from .routers import taxonomy as taxonomy_router
@@ -140,6 +140,7 @@ def create_app() -> FastAPI:
     app.include_router(sourcing.router)
     app.include_router(startup.router)
     app.include_router(startup_outreach.router)
+    app.include_router(ir_outreach.router)
     app.include_router(startup_send.router)
     # IR 기업 연결(`/ir-link`). `pages.router` 의 `/{placeholder}` 보다 **먼저**
     # 붙어야 한다 — 뒤에 붙으면 그 자리가 `준비 중` 화면으로 가로챈다.

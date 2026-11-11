@@ -489,8 +489,24 @@ def verify_sent(item) -> bool:
 
 # ── 화면이 읽는 것 ──────────────────────────────────────────────────────────
 
-def rows(db: Session) -> dict:
-    """맞추기 화면이 읽는 것 — **계약 기업 전부, 한 판에.**
+def targets(db: Session, ids: Optional[Iterable[int]] = None) -> List[IrCompany]:
+    """맞추기 화면에 설 기업 — 기본은 **계약 기업 전부**(`ir_monthly.contracted`).
+
+    `ids` 를 주면 그 기업들이다(고른 차례 · 있는 기업만) — IR 기업현황 탭에서 고른
+    기업을 이 화면에서 고르게 하는 길이다(11/11 · `services/ir_outreach.py`). 계약을
+    안 한 기업도 선다: 그 탭의 안내 카톡은 계약과 상관없이 나간다. 화면과 저장이
+    **같은 이 함수**로 갈린다(`company_ids`).
+    """
+    if ids is None:
+        return contracted(db)
+    wanted = list(dict.fromkeys(int(i) for i in ids))
+    by_id = {c.id: c for c in db.execute(
+        select(IrCompany).where(IrCompany.id.in_(wanted))).scalars()} if wanted else {}
+    return [by_id[i] for i in wanted if i in by_id]
+
+
+def rows(db: Session, ids: Optional[Iterable[int]] = None) -> dict:
+    """맞추기 화면이 읽는 것 — **계약 기업 전부, 한 판에**(`ids` 를 주면 그 기업들).
 
     ## 달을 안 받는다
 
@@ -513,7 +529,7 @@ def rows(db: Session) -> dict:
     """
     out = []
     known = investor_rooms(db)
-    for company in contracted(db):
+    for company in targets(db, ids):
         found = candidates(company)
         room = (company.kakao_room_name or "").strip()
         # ★ **이미 담겨 있는** 후보도 여기서 한 번 더 거른다. 거르기가 생기기
@@ -553,8 +569,8 @@ def rows(db: Session) -> dict:
     }
 
 
-def company_ids(db: Session) -> List[int]:
+def company_ids(db: Session, ids: Optional[Iterable[int]] = None) -> List[int]:
     """맞출 수 있는 기업 id. **막는 자리가 읽는 것도 이것이다** — 화면이 거른
     것과 라우터가 거른 것이 갈리면 화면에 없는 줄이 주소로는 들어간다
-    (`startup_send.sendable_ids` 와 같은 짝)."""
-    return [c.id for c in contracted(db)]
+    (`startup_send.sendable_ids` 와 같은 짝). `ids` 는 화면이 열린 그 값이다(`targets`)."""
+    return [c.id for c in targets(db, ids)]

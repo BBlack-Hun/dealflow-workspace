@@ -845,6 +845,7 @@ def companies_page(request: Request, db: Session = Depends(get_db),
     # 주소만 같이 쓰고 그리는 것은 그쪽 라우터가 한다. 아래 두 탭의 판단(발송
     # 이력 훑기 · 소개 가능 · 계약)이 그 표에는 하나도 안 맞는다.
     from . import series_a
+    from .ir_outreach import screen as ir_msg_screen
 
     if tab == series_a.TAB:
         return series_a.render_page(request, db, user, msg=msg, q=q)
@@ -922,6 +923,8 @@ def companies_page(request: Request, db: Session = Depends(get_db),
         "consulting_choices": CONSULTING_STATUS_CHOICES,
         # 이어진 줄이 없는 기업에 처음 적으면 줄이 서는 탭(`save_consulting`) — 칸의 안내 말.
         "consulting_new_tab": consulting_new_tab(db) if may_view_consulting(user) else "",
+        # 고른 기업에 안내 카톡 · 카톡방 찾기·확인(11/11 · `routers/ir_outreach.py`).
+        "ir_msg": ir_msg_screen(db, user),
     })
     # 관리자가 붙인 추가 칸(`_custom_cols.html`).
     ctx.update(custom_columns.view(db, "companies", "ir_companies"))

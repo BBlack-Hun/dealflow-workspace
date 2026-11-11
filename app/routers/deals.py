@@ -33,7 +33,8 @@ from ..models import (
 from ..services import mail_sender, mailer, matcher
 from ..services import message_composer as mc
 from ..services import (deal_history, deal_numbers, deal_queue, group_name, ir_attach,
-                        ir_kakao, ir_monthly, manual_send, pipeline, scheduled_send,
+                        ir_kakao, ir_monthly, ir_outreach, manual_send, pipeline,
+                        scheduled_send,
                         sender_rooms, series_a_share,
                         sheet_owner, sourcing_link, sourcing_msg,
                         sourcing_receipts, sourcing_sync,
@@ -139,6 +140,10 @@ MODE_STARTUP = "startup"
 #   · 문구는 화면이 고른 문구틀(`req.topic`)과 사람이 고친 본문(`req.body`)을
 #     `services/startup_outreach.render` 가 줄마다 채운다.
 MODE_STARTUP_MSG = "startup_msg"
+# 같은 안내 카톡을 **IR 기업 현황 › IR 기업현황 탭**에서 기업 줄(`IrCompany`)로 보낸다
+# (11/11 · `services/ir_outreach.py`). 받는 방은 그 기업의 대표 카톡방이고, 그 제목이
+# 스타트업 월간 발송 계정 카톡의 것이라 **회차는 그 계정 것**으로 선다(묶음은 세운 사람).
+MODE_STARTUP_MSG_IR = "startup_msg_ir"
 
 #: IR 자료 검토 요청(#79)의 폴백 — 문구 관리에 팀 문구가 없을 때.
 IR_REVIEW_FALLBACK = ("지난번 전달드린 IR 자료는 검토해 보셨을지요?\n"
@@ -247,6 +252,7 @@ MODE_TITLES = {
     MODE_SOURCING: "딜 소싱 제안",
     MODE_STARTUP: "스타트업 월간 발송",
     MODE_STARTUP_MSG: startup_outreach.LABEL,
+    MODE_STARTUP_MSG_IR: startup_outreach.LABEL,
 }
 MODE_TITLES[MODE_DEAL] = "딜 소개"
 
@@ -808,6 +814,10 @@ def _load_recipients(db: Session, user: User, mode: str, ids: List[int]) -> List
         # **내 스타트업 줄**만. 고르는 규칙은 `startup_outreach.my_rows` 한
         # 곳이다 — 화면이 세우는 줄과 여기서 받는 줄이 같은 함수를 지난다.
         return startup_outreach.load(db, user, ids)
+    if mode == MODE_STARTUP_MSG_IR:
+        # IR 기업 현황의 기업 — 팀 공용 표라 담당으로 거르지 않는다(보낼 수 있는지는
+        # 아래 `ir_outreach.refusal` 이 본다).
+        return ir_outreach.load(db, ids)
     if mode == MODE_STARTUP:
         # 받는 줄이 **기업**이다. 고를 수 있는 기업을 정하는 자리는
         # `ir_monthly.contracted` 하나다 — 문서·보고·카톡 세 화면이 이미 그
@@ -982,7 +992,7 @@ def preview(
                             detail=f"{startup_send.LABEL} 화면에서 보세요")
     # 안내 카톡도 같은 까닭으로 여기서 안 짓는다 — 짓는 자리는
     # `startup_outreach.render` 하나이고, 보는 화면은 `/startup/msg` 다.
-    if req.mode == MODE_STARTUP_MSG:
+    if req.mode in (MODE_STARTUP_MSG, MODE_STARTUP_MSG_IR):
         raise HTTPException(status_code=400,
                             detail=f"{startup_outreach.LABEL} 화면에서 보세요")
     if (not sample and req.mode in MODES_WITH_COMPANIES
@@ -1238,7 +1248,15 @@ def create_send_list(
     # 모르는 문구(`topic`)면 다른 문구로 짐작해 보내지 않는다. 회차에 남는
     # 표시가 틀리면 "이 문구를 언제 받았나" 가 통째로 틀린다.
     msg_body = ""
-    if req.mode == MODE_STARTUP_MSG:
+    # IR 기업현황 탭의 안내 카톡은 **보내는 계정 PC** 에서 나간다 — 그 계정이 없으면
+    # 회차를 세울 자리가 없다(아무것도 만들기 전에 말하고 멈춘다).
+    job_owner = user
+    if req.mode == MODE_STARTUP_MSG_IR:
+        job_owner = ir_outreach.sender(db)
+        if job_owner is None:
+            raise HTTPException(status_code=400, detail=ir_outreach.NO_SENDER)
+    msg_outreach = req.mode in (MODE_STARTUP_MSG, MODE_STARTUP_MSG_IR)
+    if msg_outreach:
         topic = startup_outreach.topic_of(req.topic)
         if topic is None:
             raise HTTPException(status_code=400, detail="보낼 문구를 고르세요")
@@ -1404,9 +1422,10 @@ def create_send_list(
     # 화면이 고를 수 없게 한 것과 **같은 함수**를 지난다(`startup_outreach.
     # refusal`) — 오래된 탭의 체크나 손으로 만든 요청도 여기서 걸린다.
     # 조용히 빼지 않고 말하고 멈춘다(아래 방 이름 확인과 같은 방식).
-    if req.mode == MODE_STARTUP_MSG:
+    if msg_outreach:
         for contact in contacts:
-            why = startup_outreach.refusal(contact)
+            why = (ir_outreach.refusal(db, contact) if req.mode == MODE_STARTUP_MSG_IR
+                   else startup_outreach.refusal(contact))
             if why:
                 raise HTTPException(
                     status_code=400,
@@ -1420,7 +1439,10 @@ def create_send_list(
     # `skipped` 로 돌려준다. **메일은 빼지 않는다** — 방을 나간 것이 메일을
     # 거절한 것은 아니다(`sheet_owner.left_room`).
     skipped_left = []
-    if req.mode not in (MODE_SOURCING, MODE_STARTUP) and not by_email:
+    # 기업 줄(월간 · IR 기업현황 탭 안내 카톡)에는 연결 단계도 멈춤 칸도 없다 —
+    # 멈춤에 해당하는 것은 위 `ir_outreach.refusal` 이 이미 봤다.
+    company_rows = req.mode in (MODE_STARTUP, MODE_STARTUP_MSG_IR)
+    if req.mode != MODE_SOURCING and not company_rows and not by_email:
         why = f"{sheet_owner.left_room_label()} — {sheet_owner.LEFT_ROOM_WHY}"
         skipped_left = [{"contact_id": c.id, "name": c.name,
                          "reason": why + " — 뺐습니다"}
@@ -1445,7 +1467,7 @@ def create_send_list(
     # 멈춤 표시는 **투자사 명단의 칸**이다(`sheet_owner`). 소싱 명단에도
     # 스타트업 기업 줄에도 그 칸이 없다 — 없는 칸을 물으면 늘 거짓이라
     # 아무것도 막지 못하면서 판정만 하나 늘어난다.
-    if req.mode not in (MODE_SOURCING, MODE_STARTUP):
+    if req.mode != MODE_SOURCING and not company_rows:
         held = [c for c in contacts if sheet_owner.is_paused(c)]
         if held:
             raise HTTPException(
@@ -1534,14 +1556,17 @@ def create_send_list(
 
     # Job (queued) + items (pending, snapshotted message + room name)
     job = SendJob(
-        user_id=user.id,
+        # 보통은 세운 사람 — IR 기업현황 탭의 안내 카톡만 **보내는 계정**이다(위 `job_owner`).
+        # 묶음(`batch`)은 세운 사람 것이라 그 사람이 진행 화면에서 다룬다
+        # (`ir_outreach.made_by`).
+        user_id=job_owner.id,
         # IR 자료 전달은 딜소개와 다른 일이다. 종류를 남겨야 후속을 멈추고
         # 요청을 '전달함'으로 닫을 수 있다.
         # 스타트업 월간 발송은 **`SEND_KINDS` 밖의 종류**다 — 받는 쪽이
         # 투자사가 아니라 스타트업 대표라, 딜소개 실적에 섞이면 안 된다
         # (까닭은 `models.STARTUP_SEND_KIND`).
         kind=(STARTUP_SEND_KIND if req.mode == MODE_STARTUP
-              else STARTUP_MSG_KIND if req.mode == MODE_STARTUP_MSG
+              else STARTUP_MSG_KIND if msg_outreach
               else "ir_delivery" if req.mode == MODE_IR
               else "sourcing_intro" if sourcing else "deal_intro"),
         batch_id=batch.id,
@@ -1560,7 +1585,7 @@ def create_send_list(
         # Series A 딜 공유도 같은 자리에 남는다(`sourcing_deal_share`).
         # IR 자료 검토 요청(#79)도 남긴다 — `/ir` 「전달한 자료」 상태가 이 표시로
         # `IR 자료 검토 요청 완료` 를 세운다(`pipeline.meeting_ask_state`).
-        topic=(req.topic.strip() if req.mode == MODE_STARTUP_MSG
+        topic=(req.topic.strip() if msg_outreach
                else pipeline.IR_REVIEW_KIND if req.mode == MODE_IR_REVIEW
                else ASK_TOPIC if req.mode == MODE_ASK
                else sourcing_topic
@@ -1613,7 +1638,7 @@ def create_send_list(
                     detail=(f"'{contact.name}' {req.month} 말까지 요청한 투자사가 "
                             "없습니다 — 발송 대상에서 제외하세요"))
             text, parts = composed.text, list(composed.parts)
-        elif req.mode == MODE_STARTUP_MSG:
+        elif msg_outreach:
             # 채우는 자리는 `startup_outreach.render` **하나다** — 화면의
             # 미리보기가 같은 함수를 지난다. 한 통이다(나눠 보낼 것이 없다).
             text, parts = startup_outreach.render(msg_body, contact, user), []
@@ -1642,7 +1667,7 @@ def create_send_list(
             message = text
             subject = None
 
-        startup = req.mode == MODE_STARTUP
+        startup = company_rows
         item = SendItem(
             job_id=job.id,
             # 받는 줄이 세 표에 나뉜다 — **셋 중 하나만** 채운다.

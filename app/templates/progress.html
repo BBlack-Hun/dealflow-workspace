@@ -6,6 +6,7 @@
   {% if readonly %}
   <p class="hint">👁 <b>조회만 가능합니다</b> — 관리자로서 보고 있는 다른 사람의 회차입니다.</p>
   {% endif %}
+  {% if pc_note %}<p class="hint" data-testid="pc-note">🖥 {{ pc_note }}</p>{% endif %}
   <p class="muted">
     {{ job_id }}회차 · 2초마다 자동 갱신
     {% if room_search %}· <b>문구는 전송하지 않습니다</b> — 적어 둔 방 이름은 그대로 확인하고, 없는 곳은 회사명으로 카톡방 제목만 찾아 옵니다

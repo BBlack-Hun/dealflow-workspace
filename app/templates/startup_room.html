@@ -16,10 +16,23 @@
 
 <header class="page-head">
   <h1>대표 카톡방 맞추기</h1>
+  {% if ids %}
+  {# IR 기업현황 탭에서 고른 기업으로 열었다(11/11 — `room_match.targets`). #}
+  <p class="muted">
+    IR 기업현황 탭에서 고른 <b>{{ total }}곳</b>의 <b>대표 카톡방 제목</b>을 맞춥니다 —
+    확인된 방에만 안내 카톡이 나갑니다. <a href="/deals/startup-ir/rooms">계약 기업 전부 보기</a>
+  </p>
+  {% else %}
   <p class="muted">
     계약을 마친 <b>{{ total }}곳</b>의 <b>대표 카톡방 제목</b>을 한 판에 맞춥니다 —
     이 칸이 비어 있으면 <b>{{ label }}</b>에서 그 기업을 고를 수 없습니다.
   </p>
+  {% endif %}
+  {# 이 칸의 제목은 **보내는 계정 카톡**의 제목이다 — 월간 발송도 IR 기업현황 탭의
+     안내 카톡도 그 계정 PC 에서 나간다(`services/ir_outreach.py`). #}
+  {% if sender_name %}
+  <p class="hint">이 칸의 방 제목은 <b>{{ sender_name }} 계정 PC</b>의 카톡에 보이는 제목입니다 — 그 계정 PC 에서 찾고, 그 계정 PC 에서 나갑니다.</p>
+  {% endif %}
   {#
     **글자까지 같아야 한다**는 말이 화면에 없으면, 사람은 기억해서 적는다.
     기억해 적은 이름은 띄어쓰기가 달라지고, 그러면 발송기가 방을 못 찾는다.
@@ -37,9 +50,12 @@
 
 <div class="toolbar">
   <div class="quick-chips">
-    <a class="chip" href="/deals/startup-ir">← {{ label }}</a>
+    {% if may_send %}<a class="chip" href="/deals/startup-ir">← {{ label }}</a>{% endif %}
     <a class="chip" href="/companies">IR 기업 현황</a>
   </div>
+  {# [카톡에서 방 찾기] 는 그 계정만 · 계약 기업 화면에서만이다(`routers/startup_send._guard`).
+     다른 사람 · 고른 기업 화면은 IR 기업현황 탭의 [카톡방 찾기·확인] 이 같은 일을 한다. #}
+  {% if may_send and not ids %}
   <div class="toolbar-right">
     {#
       **한 통도 나가지 않는다.** 발송기는 이 잡에서 방을 열지도 문구를 보내지도
@@ -51,8 +67,15 @@
       </button>
     </form>
   </div>
+  {% endif %}
 </div>
 
+{% if not may_send or ids %}
+<p class="hint">
+  카톡에서 찾기 · 확인은 <a href="/companies">IR 기업 현황</a> › IR 기업현황 탭에서 기업을 골라
+  <b>[카톡방 찾기·확인]</b> 을 누르세요 — 찾아 온 후보가 이 화면에 섭니다.
+</p>
+{% else %}
 <p class="hint">
   <b>[카톡에서 방 찾기]</b> 는 <b>방 제목이 비어 있는 {{ no_room }}곳</b>만
   회사명으로 검색합니다 — 한 통도 보내지 않고 <b>방 제목만 읽어 옵니다</b>.
@@ -68,6 +91,7 @@
   됩니다). 후보가 0건이면 아래 칸에 <b>카톡에서 복사해</b> 붙여 넣으세요
   (초안은 참고용입니다).
 </p>
+{% endif %}
 
 {#
   **무엇이 모자란지를 머리에 적는다.** 표를 끝까지 훑지 않아도 보이도록.
@@ -78,11 +102,13 @@
 <p class="warn-box">
   ⚠ <b>{{ no_room }}곳</b>이 아직 <b>{{ no_room_label }}</b>입니다.
   {% if never_searched %}그중 <b>{{ never_searched }}곳</b>은 아직 한 번도 찾아보지
-  않았습니다 — 위 <b>[카톡에서 방 찾기]</b> 를 먼저 눌러 보세요.{% endif %}
+  않았습니다 — {% if may_send and not ids %}위 <b>[카톡에서 방 찾기]</b>{% else %}IR 기업현황 탭의 <b>[카톡방 찾기·확인]</b>{% endif %} 를 먼저 눌러 보세요.{% endif %}
 </p>
 {% endif %}
 
 <form method="post" action="/deals/startup-ir/rooms" id="room-match">
+  {# 고른 기업으로 연 화면이면 저장도 **그 기업들**을 받는다(`room_match.company_ids`). #}
+  <input type="hidden" name="ids" value="{{ ids }}">
   <div class="table-wrap">
     <table class="grid-table">
       <thead>
@@ -172,7 +198,7 @@
         </tr>
         {% endfor %}
         {% if not rows %}
-        <tr><td colspan="4" class="muted">계약을 마친 기업이 없습니다.</td></tr>
+        <tr><td colspan="4" class="muted">{% if ids %}고른 기업이 없습니다.{% else %}계약을 마친 기업이 없습니다.{% endif %}</td></tr>
         {% endif %}
       </tbody>
     </table>
@@ -189,7 +215,7 @@
     <b>확인 안 됨</b> 으로 되돌아갑니다 — 확인은 <b>그때 그 글자</b>에 대한
     것이라, 글자를 고치면 확인한 적이 없는 것입니다.
     <br>이 표는 <b>보낼 곳을 정하는 자리가 아닙니다</b> — 회차는
-    <a href="/deals/startup-ir">{{ label }}</a>에서 세웁니다.
+    {% if may_send %}<a href="/deals/startup-ir">{{ label }}</a> · {% endif %}<a href="/companies">IR 기업 현황</a>(안내 카톡)에서 세웁니다.
   </p>
 </form>
 

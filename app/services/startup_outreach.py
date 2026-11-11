@@ -50,7 +50,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import clock
-from ..models import STARTUP_MSG_KIND, SendItem, SendJob, User, VcContact
+from ..models import IrCompany, STARTUP_MSG_KIND, SendItem, SendJob, User, VcContact
 from . import (contact_columns, room_joined, room_match, sheet_owner,
                template_pick, twin_send)
 
@@ -163,13 +163,26 @@ PLACEHOLDERS = [
 _CEO_SUFFIX = re.compile(r"\s*대표\s*님?\s*$")
 
 
-def ceo_name(contact: VcContact) -> str:
-    """`{대표명}` — 명단의 성함. 뒤에 붙은 `대표(님)` 은 뗀다(문구에 이미 있다)."""
-    return _CEO_SUFFIX.sub("", (contact.name or "").strip()).strip()
+def ceo_name(contact) -> str:
+    """`{대표명}` — 명단의 성함. 뒤에 붙은 `대표(님)` 은 뗀다(문구에 이미 있다).
+
+    IR 기업현황 탭에서 보내는 줄(`IrCompany`)이면 그 기업의 `대표자명` 이다
+    (`services/ir_outreach.py` — 채우는 함수는 이 하나다).
+    """
+    raw = contact.contact_name if isinstance(contact, IrCompany) else contact.name
+    return _CEO_SUFFIX.sub("", (raw or "").strip()).strip()
 
 
-def company_name(contact: VcContact) -> str:
-    """`{회사명}` — 명단의 기업명(적힌 그대로)."""
+def company_name(contact) -> str:
+    """`{회사명}` — 명단의 기업명(적힌 그대로).
+
+    IR 기업 줄이면 기업명에서 **대괄호 꼬리표만** 뗀다(`[26년 3월 폐업함]` 같은 팀
+    메모 — 대표가 받는 글에 실리면 안 된다. 떼는 규칙은 `room_match.strip_notes`).
+    """
+    if isinstance(contact, IrCompany):
+        from .room_match import strip_notes
+
+        return " ".join(strip_notes(contact.name).split())
     return (contact.firm or "").strip()
 
 
@@ -350,28 +363,50 @@ def last_sent(db: Session, contacts: List[VcContact], topic: Topic) -> Dict[int,
         for twin in twin_send.twins(db, contact):
             owner = db.get(User, twin.user_id)
             owner_of[twin.id] = getattr(owner, "name", "") or "다른 팀원"
-        hits = db.execute(
-            select(SendItem.contact_id, SendItem.status, SendItem.sent_at,
+        hits = [(h, owner_of[h.contact_id]) for h in db.execute(
+            _live(topic).where(SendItem.contact_id.in_(list(owner_of)))).all()]
+        if contact.ir_company_id:
+            # 이어 둔 IR 기업에 **IR 기업현황 탭**에서 나간 것도 같은 대표가 받은 것이다
+            # (`services/ir_outreach.py` — 거기서도 이 줄이 받은 것을 센다).
+            hits += [(h, IR_TAB) for h in db.execute(
+                _live(topic).where(SendItem.ir_company_id == contact.ir_company_id)).all()]
+        info = _summary(hits)
+        if info:
+            out[contact.id] = info
+    return out
+
+
+#: 다른 자리에서 받은 것의 이름 — IR 기업현황 탭에서 나간 안내 카톡.
+IR_TAB = "IR 기업현황 탭"
+
+
+def _live(topic: Topic):
+    """이 문구로 **나갔거나 나갈** 건 — 고른 줄로 좁히는 것은 부르는 쪽이다."""
+    return (select(SendItem.contact_id, SendItem.status, SendItem.sent_at,
                    SendItem.created_at, SendItem.job_id)
             .join(SendJob, SendJob.id == SendItem.job_id)
             .where(SendJob.kind == KIND, SendJob.topic == topic.key,
-                   SendJob.status != "canceled",
-                   SendItem.contact_id.in_(list(owner_of)),
-                   SendItem.status.in_(LIVE_ITEM))
-        ).all()
-        if not hits:
-            continue
-        sent = sorted(((h.sent_at or h.created_at or "")[:10], owner_of[h.contact_id])
-                      for h in hits if h.status == "sent")
-        latest, by = sent[-1] if sent else ("", "")
-        waiting = [h for h in hits if h.status in ("pending", "sending")]
-        out[contact.id] = {
-            "date": latest,
-            "pending_job": waiting[0].job_id if waiting else 0,
-            "pending_by": owner_of[waiting[0].contact_id] if waiting else "",
-            "by_twin": by,
-        }
-    return out
+                   SendJob.status != "canceled", SendItem.status.in_(LIVE_ITEM)))
+
+
+def _summary(hits) -> Optional[dict]:
+    """`[(건, 어디서 받았나)]` → `last_sent` 한 줄의 모양. 없으면 `None`.
+
+    `어디서` 는 팀원 이름(그 사람 명단에서 받았다)이거나 `IR_TAB`, 이 줄 자신이면
+    빈 글자다. 화면 말은 `recent_reason` 이 짓는다.
+    """
+    if not hits:
+        return None
+    sent = sorted(((h.sent_at or h.created_at or "")[:10], by)
+                  for h, by in hits if h.status == "sent")
+    latest, by = sent[-1] if sent else ("", "")
+    waiting = [(h, who) for h, who in hits if h.status in ("pending", "sending")]
+    return {
+        "date": latest,
+        "pending_job": waiting[0][0].job_id if waiting else 0,
+        "pending_by": waiting[0][1] if waiting else "",
+        "by_twin": by,
+    }
 
 
 def recent_reason(info: Optional[dict], days: int) -> str:
@@ -385,13 +420,20 @@ def recent_reason(info: Optional[dict], days: int) -> str:
         return ""
     if info.get("pending_job"):
         # 회차 번호를 적는다 — 그 회차를 열어 보내거나 빼는 것이 할 일이다.
-        by = f"{info['pending_by']} 님 " if info.get("pending_by") else ""
+        by = _where(info.get("pending_by"), "님 ", "에서 세운 ")
         return f"{by}아직 안 나간 회차 #{info['pending_job']} 에 이미 들어 있음"
     since = (clock.today() - timedelta(days=days - 1)).isoformat()
     if info.get("date") and info["date"] >= since:
-        by = f"{info['by_twin']} 님 명단에서 " if info.get("by_twin") else ""
+        by = _where(info.get("by_twin"), "님 명단에서 ", "에서 ")
         return f"{by}{info['date']} 에 이 문구를 받음"
     return ""
+
+
+def _where(by: Optional[str], person: str, place: str) -> str:
+    """`홍길동 님 명단에서 ` · `IR 기업현황 탭에서 ` — 사람이면 `님`, 자리면 그대로."""
+    if not by:
+        return ""
+    return f"{by} {person}" if by != IR_TAB else f"{by}{place}"
 
 
 def clamp_days(value) -> int:
@@ -441,6 +483,8 @@ def rows(db: Session, user: User, topic: Topic, days: int) -> dict:
             "last_date": (info or {}).get("date", ""),
             "last_pending": (info or {}).get("pending_job", 0),
             "last_by": (info or {}).get("by_twin", ""),
+            # 화면에 적는 말 — `홍길동 님 명단` · `IR 기업현황 탭`(이 줄 자신이면 빈 글자).
+            "last_from": _where((info or {}).get("by_twin"), "님 명단", "").strip(),
             "reason": hard or recent,
             "group": group,
             "sendable": group == "ready",

@@ -118,7 +118,7 @@
         <td>{{ r.contract }}</td>
         <td>{{ r.room }} <span class="room-badge ok">{{ r.room_label }}</span></td>
         <td class="tabular">
-          {% if r.last_date %}{{ r.last_date }}{% if r.last_by %} <span class="muted">({{ r.last_by }} 님 명단)</span>{% endif %}{% endif %}
+          {% if r.last_date %}{{ r.last_date }}{% if r.last_from %} <span class="muted">({{ r.last_from }})</span>{% endif %}{% endif %}
           {% if r.reason %}<span class="status-badge warn">{{ r.reason }}</span>{% endif %}
           {# 아직 안 나간 회차에 들어 있으면 **그 회차로 가는 길**을 둔다 — 거기서
              보내거나 빼는 것이 할 일이다. #}

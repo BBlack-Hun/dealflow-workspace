@@ -821,9 +821,16 @@ WRITE_ROUTES = {
     # 아무것도 고치지 않고, 결과를 적는 것은 발송기 쪽 길이다
     # (`/api/agent/items/{item_id}/result` — 바로 위 기계 칸에 있다).
     ("POST", "/deals/startup-ir/rooms/search"): MACHINE,
-    # 스타트업 명단 줄의 [방 후보 찾기] — 위와 같다. 방 확인 잡을 세우기만
-    # 하고, 찾은 제목은 발송기 쪽 길이 **후보로만** 담는다.
-    ("POST", "/api/startup-rooms/search"): MACHINE,
+    # 스타트업 명단 줄의 [카톡방 찾기·확인](11/11 — 예전 [방 후보 찾기] 주소) — 방 확인
+    # 잡을 세운다. [방 연결 확인] 처럼 동명이인이라 못 싣는 줄에 `같은 이름이 여럿` 을
+    # 적으므로 그 길(`/api/contacts/verify-rooms`)과 같은 칸이다.
+    ("POST", "/api/startup-rooms/search"): WATCHED,
+    # IR 기업현황 탭의 안내 카톡 · [카톡방 찾기·확인](11/11) — 스타트업 쪽 셋과 같다:
+    # 미리보기는 안 고치고, 대기 목록은 `/api/deals/send` 와 같은 함수로 잡만 세우고,
+    # 찾기·확인은 방 확인 잡을 세우기만 한다(결과는 발송기 쪽 길이 적는다).
+    ("POST", "/api/ir-msg/preview"): MACHINE,
+    ("POST", "/api/ir-msg/send"): MACHINE,
+    ("POST", "/api/ir-rooms/check"): MACHINE,
     ("POST", "/api/llm-brief/resolve"): MACHINE,
     ("POST", "/api/import/contacts/sheets"): MACHINE,
     # 자료 전체를 파일째 갈아 끼운다 — ORM 을 지나지 않는다.
