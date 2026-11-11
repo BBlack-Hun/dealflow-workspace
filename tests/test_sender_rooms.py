@@ -515,3 +515,179 @@ def test_board_shows_pick_buttons_for_sourcing_only_from_two(
     assert ("sourcing", str(sourcing["noroom"].id)) not in {(k, c) for c, k in forms}
     assert {(k, c) for c, k in forms} >= {("sourcing", str(sourcing["room"].id)),
                                           ("vc", str(team["ok"].id))}
+
+
+# ── 보내는 계정으로 연 딜 소싱 화면 — 그 계정 전용 제목이 카톡방 칸에 선다(11/11) ──
+#
+# 사용자: 보내는 계정으로 [방 후보 찾기]를 했는데 "결과가 화면에 안 보임". 찾은 제목은
+# 그 계정 전용 표(`sender_rooms`)에만 담기는데 딜 소싱 화면은 명단의 방 이름만 그렸다.
+# 이제 그 계정으로 열면 그 표의 상태(확정 · 후보 · 못 찾음)가 먼저 서고, 고르고 거두는
+# 것도 그 표다 — 명단의 방 이름은 그대로다. 찾을 줄도 그 계정 제목 기준이다.
+
+def _cell(page: str, row_id: int) -> str:
+    """그 줄의 html — `<tr data-id="N"` 부터 `</tr>` 까지."""
+    return re.search(rf'<tr data-id="{row_id}"[\s\S]*?</tr>', page).group(0)
+
+
+@pytest.fixture()
+def sender_view(db, users, sourcing):
+    """u2(보내는 계정) 전용 제목 — 확정 · 후보 둘 · 못 찾음 · 아직 없음(명단 이름만)."""
+    from app.models import SenderRoom, SourcingContact
+
+    def person(name, room=None):
+        row = SourcingContact(bucket=GROUP, name=name, firm="가나다벤처스", title="심사역",
+                              kakao_room_name=room, participation="참여")
+        db.add(row)
+        db.flush()
+        return row
+
+    rows = dict(sourcing, missed=person("최못찾"), shared=person("정명단", "정명단 팀원 방"))
+    db.add_all([
+        SenderRoom(sender_user_id=users["u2"].id, sourcing_contact_id=rows["room"].id,
+                   room_name="보내는 계정 홍소싱 방", verified=1, candidates='["보내는 계정 홍소싱 방"]',
+                   checked_at="2026-11-11T10:00:00"),
+        SenderRoom(sender_user_id=users["u2"].id, sourcing_contact_id=rows["noroom"].id,
+                   candidates='["가 방", "나 방"]', checked_at="2026-11-11T10:00:00"),
+        SenderRoom(sender_user_id=users["u2"].id, sourcing_contact_id=rows["missed"].id,
+                   checked_at="2026-11-11T10:00:00"),
+    ])
+    db.commit()
+    return rows
+
+
+def test_sender_sees_its_own_titles_on_the_sourcing_page(client, db, users, sender_view):
+    _login(client, "01000000002")
+    page = client.get("/sourcing", params={"tab": GROUP}).text
+    me = users["u2"].name
+
+    done = _cell(page, sender_view["room"].id)
+    assert 'data-testid="sourcing-sender-room"' in done and 'data-state="confirmed"' in done
+    assert f"{me} 전용" in done and "💬 보내는 계정 홍소싱 방" in done
+    assert f'action="/sourcing/{sender_view["room"].id}/room-clear"' in done
+    assert "명단 이름:" in done and SRC_OWN in done       # 명단의 방 이름은 아래 참고로
+    assert "data-no-room" not in done.split(">", 1)[0]     # 이 계정 제목이 있다 — 안 찾는다
+    assert "room-confirm" not in done
+
+    picks = _cell(page, sender_view["noroom"].id)
+    assert 'data-state="picks"' in picks and "후보 2개 — 골라 주세요" in picks
+    assert picks.count(f'action="/sourcing/{sender_view["noroom"].id}/room-confirm"') == 2
+    assert 'value="가 방"' in picks and 'value="나 방"' in picks
+    assert "data-no-room" in picks.split(">", 1)[0]
+
+    missed = _cell(page, sender_view["missed"].id)
+    assert 'data-state="not_found"' in missed and "이 계정 카톡에서 못 찾음" in missed
+    assert "방 없음" in missed                  # 이 계정 제목도 명단 이름도 없다
+    assert "방 없음" not in done
+
+    # 이 계정 제목이 아직 없는 분 — 명단 이름은 참고로 · 그래도 찾을 수 있다.
+    shared = _cell(page, sender_view["shared"].id)
+    assert 'data-state="never"' in shared and "아직 안 찾아봄" in shared
+    assert "명단 이름:" in shared and "정명단 팀원 방" in shared
+    assert "이 계정 제목이 없으면 명단 이름으로 보냅니다" in shared
+    assert "data-no-room" in shared.split(">", 1)[0]
+    assert 'data-testid="sourcing-no-room"' not in shared   # 명단 쪽 `방 없음` 은 안 선다
+    assert "방 없음" not in shared              # 명단 이름으로는 보낼 수 있다
+    # 뺀 분을 말하는 글도 이 계정 기준이다.
+    assert 'data-skip="이 계정 제목이 이미 확인된(또는 불참여인)"' in page
+
+
+def test_member_view_of_the_sourcing_room_cell_is_unchanged(client, db, users, sender_view):
+    """보내는 계정이 아니면 예전 그대로 — 명단의 방 이름 · `방 없음` · 명단의 후보."""
+    _login(client, "01000000001")
+    page = client.get("/sourcing", params={"tab": GROUP}).text
+    assert "sourcing-sender-room" not in page and "전용</span>" not in page
+    assert "/room-clear" not in page and "data-skip=" not in page
+    assert "명단 이름:" not in page
+
+    room = _cell(page, sender_view["room"].id)
+    assert f'<div class="cell" data-field="kakao_room_name">{SRC_OWN}</div>' in room
+    assert "data-no-room" not in room.split(">", 1)[0]
+    noroom = _cell(page, sender_view["noroom"].id)
+    assert "data-no-room" in noroom.split(">", 1)[0]
+    assert 'data-testid="sourcing-no-room"' in noroom
+    assert "가 방" not in noroom               # 보내는 계정의 후보는 안 보인다
+    shared = _cell(page, sender_view["shared"].id)
+    assert "data-no-room" not in shared.split(">", 1)[0]
+
+
+def test_sender_pick_and_clear_on_the_sourcing_page_keep_the_list(
+        client, db, users, sender_view):
+    from app.models import SourcingContact
+    from app.services import sender_rooms
+
+    person = sender_view["noroom"]
+    _login(client, "01000000002")
+    json_ = {"Accept": "application/json"}
+    bad = client.post(f"/sourcing/{person.id}/room-confirm",
+                      data={"tab": GROUP, "room": "카톡에 없던 방"}, headers=json_)
+    assert bad.status_code == 400
+    answer = client.post(f"/sourcing/{person.id}/room-confirm",
+                         data={"tab": GROUP, "room": "나 방"}, headers=json_)
+    assert answer.status_code == 200
+    body = answer.json()
+    assert (body["ok"], body["sender"], body["room"]) == (True, True, "나 방")
+    assert "전용" in body["note"]
+    db.expire_all()
+    assert sender_rooms.sourcing_rooms_for(db, users["u2"].id, [person]) == {person.id: "나 방"}
+    row = db.get(SourcingContact, person.id)
+    assert (row.kakao_room_name, row.room_verified, row.room_candidates) == (
+        None, "unverified", None)
+
+    # 거두기도 그 계정 표만 — 명단의 방 이름은 그대로.
+    shared = sender_view["room"]
+    gone = client.post(f"/sourcing/{shared.id}/room-clear", data={"tab": GROUP},
+                       follow_redirects=False)
+    assert gone.status_code == 303
+    db.expire_all()
+    assert sender_rooms.sourcing_rooms_for(db, users["u2"].id, [shared]) == {}
+    assert db.get(SourcingContact, shared.id).kakao_room_name == SRC_OWN
+
+
+def test_member_cannot_clear_and_confirms_the_list_as_before(client, db, users, sender_view):
+    from app.models import SourcingContact
+    from app.services import sender_rooms
+
+    _login(client, "01000000001")
+    person = sender_view["room"]
+    answer = client.post(f"/sourcing/{person.id}/room-clear", data={"tab": GROUP},
+                         headers={"Accept": "application/json"})
+    assert answer.status_code == 400
+    db.expire_all()
+    assert sender_rooms.sourcing_rooms_for(db, users["u2"].id, [person]) == {
+        person.id: "보내는 계정 홍소싱 방"}
+    # 보내는 계정의 후보를 팀원이 눌러도 명단에는 안 들어간다 — 명단의 후보가 아니다.
+    assert client.post(f"/sourcing/{sender_view['noroom'].id}/room-confirm",
+                       data={"tab": GROUP, "room": "가 방"},
+                       headers={"Accept": "application/json"}).status_code == 400
+    assert db.get(SourcingContact, sender_view["noroom"].id).kakao_room_name is None
+
+
+def test_sender_search_takes_list_named_rows_without_its_own_title(
+        client, db, users, sender_view):
+    """명단의 방 이름이 있어도 이 계정 제목이 없으면 찾는다 · 확정된 분 · 불참여는 뺀다."""
+    from app.models import SendJob
+    from app.services import sourcing_rooms
+
+    every = [sender_view[k].id for k in ("room", "noroom", "left", "missed", "shared")]
+    got = {r.id for r in sourcing_rooms.targets(db, GROUP, every, users["u2"].id)}
+    assert got == {sender_view[k].id for k in ("noroom", "missed", "shared")}
+    # 보내는 계정이 아니면 예전 그대로 — 명단의 방 이름이 있는 분은 빠진다.
+    assert {r.id for r in sourcing_rooms.targets(db, GROUP, every)} == {
+        sender_view[k].id for k in ("noroom", "missed")}
+
+    _login(client, "01000000002")
+    json_ = {"Accept": "application/json"}
+    answer = client.post("/sourcing/rooms/search",
+                         data={"tab": GROUP, "ids": ",".join(map(str, every))}, headers=json_)
+    assert answer.status_code == 200
+    assert sorted(answer.json()["ids"]) == sorted(got)
+    [job] = db.execute(select(SendJob)).scalars().all()
+    assert {i.sourcing_contact_id for i in job.items} == got
+    shared = next(i for i in job.items if i.sourcing_contact_id == sender_view["shared"].id)
+    assert shared.room_name == "정명단 팀원 방"   # 명단의 방 이름으로 먼저 찾는다
+
+    # 이 계정 제목이 확정된 분만 고르면 찾을 줄이 없다.
+    none = client.post("/sourcing/rooms/search",
+                       data={"tab": GROUP, "ids": str(sender_view["room"].id)}, headers=json_)
+    assert none.status_code == 400
+    assert "다 확인돼 있습니다" in none.json()["detail"]

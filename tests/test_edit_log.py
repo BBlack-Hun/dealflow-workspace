@@ -627,6 +627,9 @@ WRITE_ROUTES = {
     # 확정](공용 명단 줄의 방 이름). `services/sourcing_rooms.py`.
     ("POST", "/sourcing/rooms/search"): WATCHED,
     ("POST", "/sourcing/{row_id}/room-confirm"): WATCHED,
+    # 보내는 계정으로 연 화면의 [확정 거두기] — 그 계정 전용 제목(`edit_log.WATCHED
+    # ["sender_rooms"]`). 명단의 방 이름은 안 건드린다(`sender_rooms.clear`).
+    ("POST", "/sourcing/{row_id}/room-clear"): WATCHED,
     # 딜 소싱 › 시리즈 A 줄을 투자사 관리 현황 줄과 [이 분으로 확정](#28) — 공용 명단
     # 줄의 `vc_contact_id`(`edit_log.VALUE_FIELDS`). `services/sourcing_sync.confirm_link`.
     ("POST", "/api/sourcing/{row_id}/link"): WATCHED,
@@ -639,6 +642,9 @@ WRITE_ROUTES = {
     ("POST", "/api/contacts/verify-rooms"): WATCHED,
     ("POST", "/api/contacts/assign"): WATCHED,
     ("POST", "/api/contacts/{contact_id}/transfer"): WATCHED,
+    # 딜 제안 관리의 [반응 없음에서 빼기] · [되돌리기](11/11) — 줄 하나의 칸
+    # (`no_reaction_cleared_at`)을 ORM 으로 고친다. 관리자가 남의 줄을 고치면 남는다.
+    ("POST", "/api/contacts/{contact_id}/no-reaction"): WATCHED,
     # 고른 줄 여러 개를 한 번에 넘긴다 — 줄 하나 넘기기와 같은 판정, 줄마다 남는다.
     ("POST", "/api/contacts/bulk-transfer"): WATCHED,
     ("POST", "/api/contacts/sheets/assign"): WATCHED,
@@ -893,11 +899,12 @@ def test_the_six_shared_routers_still_hold_the_forty_nine_paths(portal):
     for (_m, _p), mod in _write_routes(portal["app"]).items():
         if mod in SHARED_ROUTERS:
             counted[mod] = counted.get(mod, 0) + 1
-    # contacts 는 명단 라우터 18 + 참고 자료 6 이다(참고 자료는 주소에 접두가
+    # contacts 는 명단 라우터 19 + 참고 자료 6 이다(참고 자료는 주소에 접두가
     # 없어 파일만 같이 쓴다). 15번째가 감춘 줄 한꺼번에 지우기(`/bulk-delete`),
     # 16번째가 관리자의 탭 지우기(`/sheets/delete`)다. 17번째가 딜소개 메모 →
     # 활동 이력(`/memo-intro` — #52)이다. 18번째가 고른 줄 한 번에 이관
-    # (`/bulk-transfer`)이다.
+    # (`/bulk-transfer`)이다. 19번째가 딜 제안 관리의 [반응 없음에서 빼기]
+    # (`/{contact_id}/no-reaction` — 11/11)다.
     # ir 의 12번째는 미팅 요청을 손으로 보냈다고 적는 자리다. 13 · 14번째는
     # 리마인드 뒤 `답 없음 · 전화 필요` 켜고 끄기와 그 메모다(10/17 회의 #37).
     # 15번째는 IR 자료 검토 요청을 손으로 보냈다고 적는 자리다(#79). 16 · 17번째는
@@ -922,6 +929,7 @@ def test_the_six_shared_routers_still_hold_the_forty_nine_paths(portal):
     # 11번째는 갈래 하나의 [저절로 잇기](`sourcing_sync.auto_link_all`)다.
     # 12번째는 [+ 탭 추가](`sourcing_buckets.create` — 사람이 없는 새 갈래)다.
     # 13번째는 관리자의 [탭 삭제](#78 — `sourcing_buckets.delete`, 사람이 0명인 탭만)다.
+    # 14번째는 보내는 계정 전용 방 제목의 [확정 거두기](`sender_rooms.clear` — 11/11)다.
     # series_a 의 셋은 IR 기업 현황 메뉴의 `Series A 이상 딜 소싱` 탭을 더하기 ·
     # 고치기 · 지우기다(`routers/series_a.py`). 옆 두 탭과 같은 공용 화면이다.
     # 넷째는 `공유 심사역` 확정 · 해제(`/sharer` — Series A 딜 공유에서 이 딜을
@@ -933,7 +941,7 @@ def test_the_six_shared_routers_still_hold_the_forty_nine_paths(portal):
     # custom_columns 의 일곱은 관리자 `컬럼 관리` 여섯(붙이기 · 이름 · 순서 · 자리 ·
     # 숨김 · 삭제)과 표에서 추가 칸 값 적기 하나다.
     assert counted == {"companies": 9, "ir": 18, "consulting": 10,
-                       "templates_crud": 7, "sourcing": 13, "contacts": 24,
+                       "templates_crud": 7, "sourcing": 14, "contacts": 25,
                        "series_a": 5, "forecast": 4, "custom_columns": 7}
 
 
