@@ -8,6 +8,8 @@
 //  3. 못 고르는 줄(체크상자가 없는 줄)은 [전체 선택] 으로도 안 잡힌다.
 //  4. [대기 목록 만들기] 가 보내는 것이 고른 줄 · 문구 · N일 그대로다.
 //  5. 미리보기는 서버가 준 글을 **글자 그대로** 적는다(HTML 로 안 넣는다).
+//  7. `방 확인 전` 칸의 방 단추는 [카톡방 찾기·확인] **하나**다(11/11) — 줄 번호
+//     없이 보내 서버가 대조할지 찾을지 고르고, 옛 [방 연결 확인] 길은 안 탄다.
 //
 // 아이디·클래스가 실제 화면과 같은지는 파이썬 쪽이 본다
 // (`tests/test_startup_outreach.py`).
@@ -50,6 +52,7 @@ function build(fetchImpl) {
     el("button", { id: "msg-preview-btn" }),
     sendBtn,
     el("p", { id: "msg-error" }),
+    el("button", { id: "msg-room-check-btn", "data-count": "3" }),
     el("section", { id: "msg-preview" }, [
       el("span", { id: "msg-preview-note" }), el("div", { id: "msg-preview-list" })
     ])
@@ -165,6 +168,19 @@ function flush() { return new Promise(function (r) { setImmediate(r); }); }
     const pre = list.children[0].children[1];
     assert.strictEqual(pre.textContent, msg, "서버가 준 글이 바뀌었다");
     assert.strictEqual(s.byId("msg-preview").hidden, false);
+  }
+
+  // ── 7. [카톡방 찾기·확인] 하나 — 줄 번호 없이, 옛 확인 길은 안 탄다 ───────
+  {
+    const s = build(function () { return { job_id: 5, href: "/jobs/5" }; });
+    const btn = s.byId("msg-room-check-btn");
+    btn.fire("click", { target: btn });
+    await flush(); await flush();
+    assert.strictEqual(s.calls.length, 1);
+    assert.strictEqual(s.calls[0].url, "/api/startup-rooms/search");
+    assert.deepStrictEqual(s.calls[0].body, {}, "줄 번호를 화면이 골랐다");
+    assert.ok(s.calls.every(function (c) { return c.url !== "/api/contacts/verify-rooms"; }));
+    assert.strictEqual(s.win.location.href, "/jobs/5", "진행 화면으로 안 갔다");
   }
 
   // ── 6. 표가 없는 화면에서는 아무 일도 하지 않는다 ──────────────────────

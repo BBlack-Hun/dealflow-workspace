@@ -587,7 +587,7 @@ def verify_rooms(
                       "'팀원 화면으로 보기'로 그 팀원 화면에서 확인하세요")
         elif any(sheet_owner.on_page(c, startup) for c in contacts):
             # 스타트업 줄은 대개 방 이름이 없다 — 대조할 이름부터 찾아야 한다.
-            detail = ("방 이름이 적힌 줄이 없습니다 — [방 후보 찾기]로 회사명으로 먼저 "
+            detail = ("방 이름이 적힌 줄이 없습니다 — [카톡방 찾기·확인]으로 회사명으로 먼저 "
                       "찾고 [방 매칭]에서 확정하세요")
         db.commit()
         raise HTTPException(status_code=400, detail=detail)

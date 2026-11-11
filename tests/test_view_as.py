@@ -540,8 +540,8 @@ def test_startup_room_search_while_viewing_is_the_members_job(client, db, users,
     db.commit()
     _viewing(client, users)
     page = client.get(f"/startup?sheet={quote('스타트업 · 강민준')}").text
-    assert 'id="room-search-btn" data-send="proxy"' in page
-    assert 'id="room-search-one-btn" data-send="proxy"' in page
+    assert 'id="room-check-btn" data-send="proxy"' in page
+    assert 'id="room-check-one-btn" data-send="proxy"' in page
     r = client.post("/api/startup-rooms/search", json={"contact_ids": [row.id]})
     assert r.status_code == 200, r.text
     db.expire_all()

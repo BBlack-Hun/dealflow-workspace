@@ -599,14 +599,16 @@
       .catch(function () { alert("확인 요청 오류"); });
   }
 
-  // [방 후보 찾기] — 회사명으로 카톡을 뒤져 **후보만** 모은다. 어느 줄을 찾을지는
-  // 서버가 고른다(내 줄 중 방이 확인 안 된 곳 — `startup_room_pick.targets`).
-  // 여기서는 지금 보고 있는 줄을 보낼 뿐이다.
-  function searchRooms(ids, label) {
+  // [카톡방 찾기·확인] — 스타트업 화면의 **방 단추 하나**(11/11). 줄마다 할 일은
+  // 서버가 고른다(`startup_room_pick.task_of` — 적어 둔 이름은 그대로 대조, 없는
+  // 곳은 회사명으로 찾아 **후보만**). 여기서는 지금 보고 있는 줄을 보낼 뿐이다.
+  function checkRooms(ids, label) {
     if (!ids.length) { alert("찾을 줄이 없습니다."); return; }
-    if (!confirm(label + " " + ids.length + "줄 중 카톡방이 확인 안 된 내 줄을 회사명으로 " +
-      "카톡에서 찾습니다.\n카카오톡이 켜져 있어야 하며, 찾는 중에는 PC 조작을 멈춰주세요.\n" +
-      "(문구는 전송하지 않습니다 · 찾은 방은 [방 매칭] 에서 골라 확정합니다)")) return;
+    if (!confirm(label + " " + ids.length + "줄 중 카톡방이 확인 안 된 내 줄을 찾고 확인합니다.\n" +
+      "· 방 이름이 적힌 곳 — 그 이름 그대로 카톡에서 확인\n" +
+      "· 방 이름이 없는 곳 — 회사명으로 찾아 후보만 모음([방 매칭] 에서 골라 확정)\n" +
+      "카카오톡이 켜져 있어야 하며, 찾는 중에는 PC 조작을 멈춰주세요.\n" +
+      "(문구는 전송하지 않습니다)")) return;
     fetch("/api/startup-rooms/search", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -669,11 +671,11 @@
   on("verify-btn", "click", function () {
     verify(visibleIds(), "현재 목록의");
   });
-  on("room-search-one-btn", "click", function () {
-    if (current) searchRooms([current], "선택한");
+  on("room-check-one-btn", "click", function () {
+    if (current) checkRooms([current], "선택한");
   });
-  on("room-search-btn", "click", function () {
-    searchRooms(visibleIds(), "현재 목록");
+  on("room-check-btn", "click", function () {
+    checkRooms(visibleIds(), "현재 목록");
   });
   on("add-btn", "click", function () {
     // 고치던 줄을 두고 새 줄로 넘어가는 것도 폼을 갈아 끼우는 일이다 —
