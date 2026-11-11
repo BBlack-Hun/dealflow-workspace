@@ -30,7 +30,7 @@ from ..services import (sender_rooms, series_a_share, sheet_owner, sourcing_buck
                         sourcing_link,
                         sourcing_mail, sourcing_receipts, sourcing_rooms,
                         sourcing_sync, spreadsheet)
-from ..services import custom_columns, sourcing_remind_log, taxonomy
+from ..services import custom_columns, sourcing_msg, sourcing_remind_log, taxonomy
 from ..services.pipeline import current_assignee
 from ..ui import base_ctx
 # 방 확인 잡의 종류는 **한 곳에만 적는다**(`agent_api.VERIFY_KIND`).
@@ -449,6 +449,11 @@ def sourcing_page(request: Request, db: Session = Depends(get_db),
         "share_bucket": series_a_share.BUCKET,
         "share_topic": series_a_share.KIND,
         "share_tab": series_a_share.is_share_bucket(selected),
+        # [검토 가능 심사역 참여 안내] 단추 — 모든 탭에 선다(갈래가 섞여도 딜 제안 관리가
+        # 사람마다 제 갈래 문구를 짓는다). 같은 체크박스로 고르고, 그중 참여 안내를 받는
+        # 줄(`data-invite` — `sourcing_sync.can_get_invite`)만 싣는다(`sourcing.html`).
+        "invite_topic": sourcing_msg.KIND,
+        "invite_ok": {r.id for r in rows if sourcing_sync.can_get_invite(r)},
         # 그 탭 위 칩 두 줄 — 검토가능 · 참여 · 불참여 · 담당별(`split_chips`).
         "split": split_chips(rows, selected) if series_a_share.is_share_bucket(selected) else None,
         # 투자사 관리 현황과 잇는 갈래 탭인가 — [저절로 잇기] 단추가 선다.
@@ -769,6 +774,8 @@ def update_row(row_id: int, body: SourcingIn, db: Session = Depends(get_db),
     out = {"ok": True, "assignee": assignee_of(row),
            "participation": sourcing_sync.participation_of(row),
            "participation_kind": sourcing_sync.kind_of(row),
+           # [검토 가능 심사역 참여 안내] 단추가 이 줄을 싣는지(`data-invite`)도 서버가 정한다.
+           "invite_ok": sourcing_sync.can_get_invite(row),
            # `참여 요청일` 을 고치면 세울 값도 바뀐다(`sourcing.html` 이 줄에 다시 적는다).
            "requested_sort": requested_sort(row)}
     if contact is not None:
