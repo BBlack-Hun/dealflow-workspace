@@ -81,11 +81,11 @@ def test_remind_is_shown_as_deal_request(tab, client):
     from app.services import sourcing_msg
 
     assert sourcing_msg.REMIND_KIND == "sourcing_remind"
-    assert (sourcing_msg.REMIND_KIND, "딜 발송 요청") in MODE_TOPIC_KINDS["sourcing"]
+    assert (sourcing_msg.REMIND_KIND, "참여 심사역 딜 발송 요청") in MODE_TOPIC_KINDS["sourcing"]
     bar = client.get("/deals").text
     bar = bar[bar.index('id="sourcing-topic"'):]
     bar = bar[:bar.index("</div>")]
-    assert 'data-value="sourcing_remind">딜 발송 요청</button>' in bar
+    assert 'data-value="sourcing_remind">참여 심사역 딜 발송 요청</button>' in bar
     assert "월간 리마인드" not in bar
 
 
