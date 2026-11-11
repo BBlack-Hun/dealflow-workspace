@@ -221,11 +221,11 @@ class _Tables(HTMLParser):
             self._cell.append(data)
 
 
-def _meeting_table(body):
-    """'{달}월 미팅 총 N개사' 패널의 첫 주차 표 → (머리글, 행들).
+def _meeting_tables(body):
+    """'{달}월 미팅 총 N개사' 패널의 표들 → [(머리글, 행들)].
 
-    주차마다 표가 하나씩이라 첫 표를 본다. 찾는 기준은 머리글 첫 두 칸이다 —
-    화면에는 표가 여럿 있고, 그중 이것만 `심사역 / 회사` 로 시작한다(#87 — 옛 이름 `담당자 / 투자사`).
+    찾는 기준은 머리글 첫 두 칸이다 — 화면에는 표가 여럿 있고, 그중 이것만
+    `미팅 일자 · 심사역 / 회사` 로 시작한다(#87 — 옛 이름 `담당자 / 투자사`, 11/11 — 옛 `날짜`).
     """
     def text(cell):
         return " ".join("".join(cell).split())
@@ -235,9 +235,14 @@ def _meeting_table(body):
     seen = [([text(c) for c in t["head"]],
              [[text(c) for c in r] for r in t["rows"]])
             for t in reader.tables]
-    found = [t for t in seen if t[0][:2] == ["날짜", "심사역 / 회사"]]
+    found = [t for t in seen if t[0][:2] == ["미팅 일자", "심사역 / 회사"]]
     assert found, f"미팅 표를 못 찾았다 — 화면의 표들: {[t[0] for t in seen]}"
-    return found[0]
+    return found
+
+
+def _meeting_table(body):
+    """미팅 표 하나 → (머리글, 행들). 달마다 표가 하나다(11/11 — 주차로 쪼개지 않는다)."""
+    return _meeting_tables(body)[0]
 
 
 def test_the_meeting_table_has_a_company_column(logged, db, users):
@@ -259,6 +264,28 @@ def test_the_meeting_columns_follow_the_reaction_table(logged, db, users):
     head, _ = _meeting_table(logged.get("/report?month=2026-06").text)
     assert head.index("기업명") == head.index("심사역 / 회사") + 1
     assert head.index("기업명") < head.index("구분")
+
+
+def test_the_month_meetings_are_one_table_not_weekly(logged, db, users):
+    """팀 요청(11/11) "월로 통합해서 보여지게, 주별로 쪼개지 말구요" — 그 달 미팅이
+    **표 하나**에 미팅 일자 순으로 서고, 완료 수는 머리에 한 번만 선다(주차 머리 없음)."""
+    from app.services import report
+
+    _meeting(db, users, date(2026, 6, 25), who="넷째주", company="가나테크")
+    _meeting(db, users, date(2026, 6, 3), who="첫째주", company="다라테크")
+    _meeting(db, users, date(2026, 6, 16), who="셋째주", company="마바테크",
+             status="scheduled")
+
+    body = logged.get("/report?month=2026-06").text
+    tables = _meeting_tables(body)
+    assert len(tables) == 1, f"주차마다 표가 갈렸다: {len(tables)}개"
+    head, rows = tables[0]
+    assert [r[head.index("미팅 일자")] for r in rows] == \
+        ["2026-06-03", "2026-06-16", "2026-06-25"], "그 달 미팅 일자 순"
+    for label in report.WEEK_NAMES:
+        assert f"6월 {label}" not in body, f"주차 머리가 남았다: {label}"
+    assert body.count("개사 완료") == 1, "완료 수는 머리에 한 번만"
+    assert "<b>2</b>개사 완료" in body
 
 
 @pytest.mark.parametrize("scope, wide", [("", False), ("team", True)])

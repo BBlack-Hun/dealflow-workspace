@@ -166,14 +166,13 @@
 {% endif %}
 
 <section class="panel">
-  <h2 class="panel-title">{{ rep.month }}월 미팅 총 {{ rep.total }}개사</h2>
+  {# 달 하나 = 표 하나(11/11 팀 요청 "월로 통합해서 보여지게, 주별로 쪼개지 말구요"). 완료 수도
+     머리에 한 번만 — 그 달 진행한 미팅(`rep.done`, 미팅 카드와 같은 수). 줄은 `rep.weeks` 를
+     차례대로 이어 읽는다 — 주차 안이 날짜 순이라 이어 붙이면 그 달 날짜 순이다. 자료 모양
+     (`weeks`)은 그대로 둔다 — 엑셀 미팅 시트(`routers/data_io._meetings_sheet`)가 아직 주차로 묶는다. #}
+  <h2 class="panel-title"><span>{{ rep.month }}월 미팅 총 {{ rep.total }}개사
+    <span class="count-pill {% if rep.done %}on{% endif %}"><b>{{ rep.done }}</b>개사 완료</span></span></h2>
   {% if rep.weeks %}
-  {% for w in rep.weeks %}
-  <div class="due-group">
-    <div class="due-head">
-      <b>{{ w.label }}</b>
-      <span class="count-pill {% if w.done %}on{% endif %}"><b>{{ w.done }}</b>개사 완료</span>
-    </div>
     <div class="table-wrap">
     <table class="grid-table compact">
       {# 칸 차례는 아래 '이 달의 반응' 표, 그리고 엑셀 미팅 시트와 **같다**
@@ -183,7 +182,7 @@
       {# 날짜 칸은 옆 표('이 달의 반응' · 회차 표)와 같은 96px · `tabular` 다. 88px 에서는
          `2026-08-24` 처럼 넓은 숫자가 든 날이 `2026-08-` / `24` 로 꺾였다(글자 73~75px +
          여백 16px). #}
-      <thead><tr><th style="width:96px">날짜</th><th style="width:170px">심사역 / 회사</th>
+      <thead><tr><th style="width:96px">미팅 일자</th><th style="width:170px">심사역 / 회사</th>
         <th style="width:132px">기업명</th>
         <th class="num" style="width:104px">투자유치희망금액</th>
         <th style="width:62px">구분</th>{% if team_wide %}<th style="width:70px">담당자</th>{% endif %}
@@ -192,7 +191,7 @@
            두 번 적게 하면 한쪽은 반드시 비어 있게 된다. #}
         <th>후기 · 투자사 답변 내용</th></tr></thead>
       <tbody>
-        {% for m in w['items'] %}
+        {% for w in rep.weeks %}{% for m in w['items'] %}
         <tr class="{% if m.followup_late %}overdue-row{% endif %}">
           <td class="muted tabular">{{ m.date }}</td>
           <td><b>{{ m.name }}</b> <span class="muted">{{ m.firm }}</span></td>
@@ -222,12 +221,10 @@
             {% endif %}
           </td>
         </tr>
-        {% endfor %}
+        {% endfor %}{% endfor %}
       </tbody>
     </table>
     </div>
-  </div>
-  {% endfor %}
   {% else %}
   <p class="muted">이 달에는 기록된 미팅이 없습니다. <a href="/ir">딜 진행 관리</a>에서 등록하세요.</p>
   {% endif %}
