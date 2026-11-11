@@ -22,14 +22,20 @@ A 갈래는 투자사 방을 이어받지 않으므로(`sourcing_link.linked_roo
    줄이는데, 회사 이름이 든 방이 곧 그분의 **딜소개 방**이다(방 이름을 짓는
    `build_room_name` 이 회사명을 넣는다). 스타트업 쪽 `_company_search` 가 회사를
    안 보내는 것과 같은 까닭이다(PR #284 리뷰).
-2. 찾은 제목은 **후보로만** 담는다(`room_candidates` — 모양은
-   `room_match.save_candidates` 그대로). 하나뿐이어도 방 이름에 안 넣는다 — 이름이
-   든 방이 꼭 그 분과의 딜 소싱 방인 것은 아니다(딜소개 방일 수도 있다).
+2. 찾은 제목은 후보로 담는다(`room_candidates` — 모양은
+   `room_match.save_candidates` 그대로). **후보가 정확히 하나면 그 방으로 바로
+   확정한다**(사용자 결정 2026-11-10: "딜 소싱에서 방후보 찾기 할때 후보가 1개면
+   무조건 그걸로 매칭해줘" · "2개 이상일 경우부터 고르게 해야지") — 사람이 그
+   후보를 [이 방으로 확정] 한 것과 같은 길(`confirm`)이고, 수정 로그는 찾기를 건
+   사람 이름으로 남는다(`_confirm_single`). 예전에는 하나뿐이어도 사람이 골랐다 —
+   이름이 든 방이 딜소개 방일 수도 있어서였다. 딜소개 방을 빼는 규칙(아래)은
+   그대로 지난 뒤에 센다. **둘 이상이면 예전처럼 후보만** 담고 사람이 고른다.
+   스타트업 · 투자사 담당자 방 찾기는 그대로다(하나뿐이어도 후보만).
    발송기 오류로 끝난 찾기는 **담아 둔 후보를 지우지 않는다** — 오류만 적는다
    (`apply_result`). 지우면 `후보 없음` 으로 서서 사람은 카톡에 방이 없다고 읽는다.
-3. **[이 방으로 확정]** — 사람이 후보를 누르면 방 이름이 그 제목이 되고
-   `확인됨` 이 된다(`confirm`). 카톡 창에서 읽어 온 글자만 받는다. 후보가
-   없으면 카톡에서 복사해 `카톡방 이름` 칸에 직접 적는다(`확인 안 됨`).
+3. **[이 방으로 확정]** — 후보가 둘 이상일 때 사람이 하나를 누르면 방 이름이 그
+   제목이 되고 `확인됨` 이 된다(`confirm`). 카톡 창에서 읽어 온 글자만 받는다.
+   후보가 없으면 카톡에서 복사해 `카톡방 이름` 칸에 직접 적는다(`확인 안 됨`).
 
 스타트업 쪽과 다른 점 — 투자사 방을 통째로 후보에서 **빼지는 않는다.** 소싱
 명단의 사람은 투자사 심사역이라 찾는 방이 곧 투자사 사람과의 방이다. 무엇이 딜
@@ -66,7 +72,7 @@ from sqlalchemy.orm import Session, object_session
 from .. import clock
 from ..models import (SOURCING_ROOM_TOPIC, SendItem, SendJob, SenderRoom,
                       SourcingContact, User, VcContact)
-from . import room_match, sourcing_buckets, sourcing_link, sourcing_sync
+from . import edit_log, room_match, sourcing_buckets, sourcing_link, sourcing_sync
 # 줄의 상태 문구 · 확정 못 하는 까닭은 스타트업 [방 매칭] 과 **한 벌**이다 —
 # 두 벌이면 한쪽만 고친 날 두 [방 후보 찾기] 화면이 다른 말을 한다(PR #284 리뷰).
 from .startup_room_pick import STATE_LABELS, NotPickable  # noqa: F401 — 라우터가 잡는다
@@ -232,7 +238,9 @@ def last_error(contact: SourcingContact) -> str:
 
 
 def apply_result(item: SendItem, body) -> None:
-    """찾은 제목들을 **후보로만** 담는다. 방 이름 · 확인 표시는 안 건드린다.
+    """찾은 제목들을 후보로 담는다 — **하나뿐이면 그 방으로 확정**(`_confirm_single`).
+
+    둘 이상이면 후보만 — 방 이름 · 확인 표시는 안 건드린다(사람이 고른다).
 
     **발송기 오류로 끝난 찾기**(후보 없이 `error` 가 실려 온 결과 — 카톡 창
     오류 등)는 담아 둔 후보를 **덮지 않는다** — 오류만 건과 줄에 적는다. 덮으면
@@ -269,12 +277,42 @@ def apply_result(item: SendItem, body) -> None:
         # 후보가 여럿이면 고르면 된다 — `카톡에서 방 이름을 고유하게` 같은
         # 안 해도 되는 일을 시키지 않는다(`agent_api._apply_company_candidates`).
         item.error = None
+        _confirm_single(item, contact)
     else:
         item.status = "failed"
         item.sent_at = None
         item.error = error or ("카톡에서 찾은 방이 이 분의 딜소개 방뿐입니다"
                                if found or body.candidates
                                else "카톡에서 이 분의 방을 찾지 못했습니다")
+
+
+def _confirm_single(item: SendItem, contact: SourcingContact) -> None:
+    """담은 후보가 **정확히 하나면** 그 방으로 확정한다(사용자 결정 2026-11-10 — 모듈 머리말).
+
+    사람이 그 후보를 [이 방으로 확정] 한 것과 **같은 길**(`confirm`)이다 — 확정 못
+    하는 제목(같은 제목의 방이 여럿 · 그분의 딜소개 방)은 거기서 막혀 후보로 남는다.
+    이 길에는 요청 문맥이 없어서 수정 로그는 **찾기를 건 사람** 이름으로 남긴다
+    (`sourcing_sync.mark_invited` 와 같은 방식).
+
+    찾는 사이 누가 `카톡방 이름` 칸에 **다른 이름**을 적었으면 덮지 않는다 — 찾기는
+    방 이름이 빈 줄만 싣는다(`needs_room`). 사람이 적은 것이 먼저다.
+    """
+    rooms = room_match.candidates(contact)["rooms"]
+    if len(rooms) != 1:
+        return
+    now = (contact.kakao_room_name or "").strip()
+    if now and now != rooms[0]:
+        return
+    db = object_session(contact)
+    db.flush()       # 후보 담기 · 건 상태는 로그 밖에서 먼저 내보낸다
+    token = edit_log.begin(item.job.user_id, "POST", f"/agent/items/{item.id}/result")
+    try:
+        confirm(contact, rooms[0])
+        db.flush()
+    except NotPickable:
+        pass         # 사람이 눌러도 확정 안 되는 제목 — 후보로 둔다
+    finally:
+        edit_log.end(token)
 
 
 def picks(contact: SourcingContact) -> dict:
@@ -287,16 +325,23 @@ def picks(contact: SourcingContact) -> dict:
         state = "picks"
     else:
         state = "no_picks" if found["at"] else "never"
+    label = STATE_LABELS[state].format(n=len(found["rooms"]))
+    if state == "picks" and len(found["rooms"]) == 1:
+        # 하나뿐인데 확정 안 된 후보 — 고를 단추는 둘 이상일 때만 선다(`sourcing.html`).
+        # 다시 찾으면 그 방으로 확정된다(`_confirm_single`).
+        label = ("같은 제목의 방이 여럿 — 직접 적어 주세요" if found["same"]
+                 else "후보 1개 — 다시 찾으면 확정됩니다")
     return {"rooms": [{"room": r, "same": r in found["same"], "current": r == room}
                       for r in found["rooms"]],
             "at": found["at"], "query": found["query"], "state": state,
-            "state_label": STATE_LABELS[state].format(n=len(found["rooms"])),
+            "state_label": label,
             # 마지막 찾기가 발송기 오류로 끝났으면 그 사유(후보는 그 전 것 그대로).
             "error": last_error(contact)}
 
 
 def confirm(contact: SourcingContact, title: str) -> SourcingContact:
-    """[이 방으로 확정] — 후보 제목을 방 이름으로, `확인됨` 으로.
+    """[이 방으로 확정] — 후보 제목을 방 이름으로, `확인됨` 으로. 후보가 하나뿐이면
+    찾기 결과를 받을 때 이 함수로 저절로 확정된다(`_confirm_single`).
 
     받지 않는 것: 후보에 없는 글자(직접 적기는 `카톡방 이름` 칸 — 확인 안 됨),
     같은 제목이 여럿 걸린 제목(그 글자로는 어느 방인지 가를 수 없다).

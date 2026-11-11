@@ -483,8 +483,9 @@ def _apply_verify_result(item: SendItem, body: ItemResult,
         sender_rooms.apply_result(object_session(item), item, body, verdict)
         return
 
-    # 딜 소싱 명단 줄 — 찾은 제목은 **후보로만**(`services/sourcing_rooms.py`).
-    # 방 이름 · 확인 표시는 사람이 [이 방으로 확정] 을 눌러야 선다.
+    # 딜 소싱 명단 줄 — 찾은 제목은 후보로(`services/sourcing_rooms.py`). **하나뿐이면
+    # 그 방으로 확정**하고(사용자 결정 2026-11-10), 둘 이상이면 사람이 [이 방으로
+    # 확정] 을 눌러야 방 이름 · 확인 표시가 선다.
     if item.job is not None and item.job.topic == SOURCING_ROOM_TOPIC:
         from ..services import sourcing_rooms
 

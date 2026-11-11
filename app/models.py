@@ -260,7 +260,8 @@ class VcContact(TimestampMixin, Base):
     # 후보가 하나뿐이어도 위 `kakao_room_name` 에 저절로 들어가지 않는다 — 회사명이
     # 든 방이 꼭 그 대표와의 방인 것은 아니다. 투자사 줄은 이 칸을 쓰지 않는다
     # (그쪽은 적어 둔 방 이름을 글자까지 대조할 뿐 바꾸지 않는다 —
-    # `routers/agent_api._exact_verdict`).
+    # `routers/agent_api._exact_verdict`). 딜 소싱 명단만 다르다 — 하나뿐이면
+    # 확정한다(2026-11-10, `SourcingContact.room_candidates`). 여기는 그대로다.
     room_candidates: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     stages: Mapped[Optional[str]] = mapped_column(String, nullable=True)   # CSV: Seed,SeriesA
     sectors: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # CSV: AI,헬스케어
@@ -1464,7 +1465,8 @@ STARTUP_JOB_KINDS = (STARTUP_SEND_KIND, STARTUP_MSG_KIND)
 ROOM_SEARCH_TOPIC = "room_search"
 #: 방 확인 잡(`verify_room`)의 `SendJob.topic` — **딜 소싱 명단** 줄의 카톡방
 #: 후보 찾기(`services/sourcing_rooms.py`). 그 잡의 줄은 `sourcing_contact_id`
-#: 를 가리키고, 찾은 제목은 그 줄의 `room_candidates` 에 **후보로만** 담는다.
+#: 를 가리키고, 찾은 제목은 그 줄의 `room_candidates` 에 후보로 담는다 — **하나뿐이면
+#: 그 방으로 확정**한다(사용자 결정 2026-11-10). 둘 이상이면 사람이 고른다.
 #: 잡은 [방 후보 찾기] 를 누른 사람 계정에 선다 — 그 사람 PC 카톡에서 찾는다.
 SOURCING_ROOM_TOPIC = "sourcing_room"
 
@@ -1622,9 +1624,11 @@ class SourcingContact(TimestampMixin, Base):
     #: **보내는 사람 카톡에서 찾아 온 방 제목들**(JSON) — 딜 소싱 화면의
     #: [방 후보 찾기]가 담는다(`services/sourcing_rooms.py`). 모양과 읽고 쓰는
     #: 함수는 `VcContact.room_candidates` 와 같다(`room_match.save_candidates` ·
-    #: `candidates`). **아직 방 이름이 아니다** — 사람이 골라 확정해야 위
-    #: `kakao_room_name` 이 된다. (열린 PR #277 이 같은 이름 · 같은 모양으로
-    #: 만들려던 칸이다 — 그 이주는 있는지 보고 만든다.)
+    #: `candidates`). **아직 방 이름이 아니다** — 둘 이상이면 사람이 골라 확정해야
+    #: 위 `kakao_room_name` 이 된다. **하나뿐이면 찾기 결과를 받을 때 그 방으로
+    #: 확정된다**(사용자 결정 2026-11-10 — 딜 소싱만, `sourcing_rooms._confirm_single`).
+    #: (열린 PR #277 이 같은 이름 · 같은 모양으로 만들려던 칸이다 — 그 이주는
+    #: 있는지 보고 만든다.)
     room_candidates: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # ── 투자사 관리 현황과 잇기 (`services/sourcing_sync.py`) ─────────────
@@ -3252,6 +3256,8 @@ class SenderRoom(TimestampMixin, Base):
     **딜 소싱 명단 줄도 담는다**(0135). 딜 소싱 방 이름은 그 방을 찾아 확정한
     팀원 카톡의 제목이라, 보내는 계정 카톡에서는 다를 수 있다. 한 줄은 투자사
     담당자(`contact_id`)와 딜 소싱 분(`sourcing_contact_id`) 중 **하나만** 가리킨다.
+    딜 소싱 분은 찾은 제목이 **하나뿐이면** 그 제목으로 확정된다(사용자 결정
+    2026-11-10 — `sender_rooms.apply_result`).
 
     **아무것도 보내지 않는다** — 확인 잡은 방 제목만 읽는다.
     """

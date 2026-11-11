@@ -11,6 +11,8 @@
 """
 from __future__ import annotations
 
+import re
+
 import pytest
 from sqlalchemy import select
 
@@ -356,6 +358,7 @@ def test_sender_pressing_sourcing_search_keeps_the_list_untouched(
         client, db, users, team, sourcing):
     """보내는 계정이 딜 소싱 화면에서 [방 후보 찾기]를 눌러도 → 보내는 계정 기준 표로."""
     from app.models import SENDER_ROOM_TOPIC, SendJob, SourcingContact
+    from app.services import sender_rooms
 
     _login(client, "01000000002")
     person = sourcing["noroom"]
@@ -370,6 +373,9 @@ def test_sender_pressing_sourcing_search_keeps_the_list_untouched(
             candidates=["곽 카톡 이빈방"])
     db.expire_all()
     assert db.get(SourcingContact, person.id).room_candidates is None
+    # 하나뿐이라 보내는 계정 표에서는 그 방으로 확정된다(사용자 결정 2026-11-10).
+    assert sender_rooms.sourcing_rooms_for(db, users["u2"].id, [person]) == {
+        person.id: "곽 카톡 이빈방"}
 
 
 def test_member_pressing_sourcing_search_is_unchanged(client, db, users, team, sourcing):
@@ -412,3 +418,100 @@ def test_deleting_a_sourcing_row_takes_its_sender_titles(client, db, users, team
     sourcing_rooms.forget(db, person.id)
     db.commit()
     assert db.execute(select(SenderRoom)).scalars().all() == []
+
+
+# ── 딜 소싱 분은 찾은 방이 하나면 그 방으로 확정(사용자 결정 2026-11-10) ─────────
+#
+# "딜 소싱에서 방후보 찾기 할때 후보가 1개면 무조건 그걸로 매칭해줘" · "2개 이상일
+# 경우부터 고르게 해야지". 사람이 [이 방으로 확정] 한 것과 같은 길(`confirm`)이고,
+# 딜 소싱 명단의 줄은 그대로다. 투자사 담당자 줄은 예전 그대로(하나뿐이어도 후보만 —
+# `test_a_renamed_room_is_only_a_candidate`).
+
+def test_a_single_sourcing_candidate_is_confirmed_in_the_sender_table_only(
+        client, db, users, team, sourcing):
+    import json
+
+    from app.models import EditLog, SendItem, SourcingContact
+    from app.services import sender_rooms
+
+    job = sender_rooms.queue_check(db, users["u2"])
+    item_id = _sourcing_item(job, sourcing["noroom"]).id
+    _report(client, item_id, verify_result="ambiguous", status="failed",
+            candidates=["곽 카톡 이빈방"])
+    db.expire_all()
+    row = sender_rooms.row_of(db, users["u2"].id, sourcing["noroom"].id, sourcing=True)
+    assert (row.verified, row.room_name) == (1, "곽 카톡 이빈방")
+    assert db.get(SendItem, item_id).status == "sent"
+    person = db.get(SourcingContact, sourcing["noroom"].id)
+    assert (person.kakao_room_name, person.room_candidates, person.room_verified) == (
+        None, None, "unverified")
+    # 수정 로그 — 찾기를 건 계정(u2) 이름으로.
+    [log] = db.query(EditLog).filter_by(table_name="sender_rooms", row_id=row.id).all()
+    assert log.actor_user_id == users["u2"].id
+    assert "room_name" in {c["field"] for c in json.loads(log.changes_json)}
+
+
+def test_two_sourcing_candidates_or_one_title_twice_stay_candidates(
+        client, db, users, team, sourcing):
+    from app.services import sender_rooms
+
+    job = sender_rooms.queue_check(db, users["u2"])
+    _report(client, _sourcing_item(job, sourcing["noroom"]).id, verify_result="ambiguous",
+            status="failed", candidates=["곽 카톡 이빈방", "다른 방"])
+    _report(client, _sourcing_item(job, sourcing["room"]).id, verify_result="ambiguous",
+            status="failed", candidates=["곽 카톡 홍소싱", "곽 카톡 홍소싱"])
+    for key in ("noroom", "room"):
+        db.expire_all()
+        row = sender_rooms.row_of(db, users["u2"].id, sourcing[key].id, sourcing=True)
+        assert (row.verified, row.room_name) == (0, None), key
+
+
+def test_a_new_single_sourcing_room_replaces_a_title_no_longer_found(
+        client, db, users, team, sourcing):
+    from app.models import SenderRoom
+    from app.services import sender_rooms
+
+    person = sourcing["noroom"]
+    db.add(SenderRoom(sender_user_id=users["u2"].id, sourcing_contact_id=person.id,
+                      room_name="예전 제목", verified=1, candidates='["예전 제목"]',
+                      checked_at="2026-11-01"))
+    db.commit()
+    job = sender_rooms.queue_check(db, users["u2"])
+    _report(client, _sourcing_item(job, person).id, verify_result="ambiguous",
+            status="failed", candidates=["바뀐 제목"])
+    db.expire_all()
+    row = sender_rooms.row_of(db, users["u2"].id, person.id, sourcing=True)
+    assert (row.verified, row.room_name) == (1, "바뀐 제목")
+
+
+def test_board_shows_pick_buttons_for_sourcing_only_from_two(
+        client, db, users, team, sourcing):
+    """하나뿐인데 확정 안 된 딜 소싱 줄(확정을 거둠 · 예전에 담긴 후보)에는 고르는
+    단추 · `골라 주세요` 가 없다. 투자사 담당자 줄은 하나여도 고른다."""
+    from app.models import SenderRoom
+    from app.services import sender_rooms
+
+    db.add_all([
+        SenderRoom(sender_user_id=users["u2"].id, sourcing_contact_id=sourcing["noroom"].id,
+                   candidates='["곽 카톡 이빈방"]', checked_at="2026-11-10"),
+        SenderRoom(sender_user_id=users["u2"].id, sourcing_contact_id=sourcing["room"].id,
+                   candidates='["가 방", "나 방"]', checked_at="2026-11-10"),
+        SenderRoom(sender_user_id=users["u2"].id, contact_id=team["ok"].id,
+                   candidates='["후보 방"]', checked_at="2026-11-10"),
+    ])
+    db.commit()
+    rows = {(r["kind"], r["contact_id"]): r
+            for r in sender_rooms.board(db, users["u2"])["rows"]}
+    single = rows[("sourcing", sourcing["noroom"].id)]
+    assert not single["choose"] and "골라" not in single["state_label"]
+    assert rows[("sourcing", sourcing["room"].id)]["choose"]
+    assert rows[("vc", team["ok"].id)]["choose"]
+
+    _login(client, "01000000002")
+    page = client.get("/team/sender-rooms").text
+    forms = re.findall(r'action="/team/sender-rooms/(\d+)/confirm"[^<]*'
+                       r'<input[^>]*>\s*<input type="hidden" name="kind" value="(\w+)">',
+                       page)
+    assert ("sourcing", str(sourcing["noroom"].id)) not in {(k, c) for c, k in forms}
+    assert {(k, c) for c, k in forms} >= {("sourcing", str(sourcing["room"].id)),
+                                          ("vc", str(team["ok"].id))}

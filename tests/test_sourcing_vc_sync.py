@@ -1021,7 +1021,8 @@ def test_the_room_forms_are_marked_for_the_script(board, db, users):
     from app.services import room_match
 
     row = sc(db)
-    room_match.save_candidates(row, ["홍길동 딜소싱"], at="2026-10-28T10:00:00+09:00")
+    room_match.save_candidates(row, ["홍길동 딜소싱", "홍길동 다른 방"],
+                               at="2026-10-28T10:00:00+09:00")
     db.commit()
     page = board.get(f"/sourcing?tab={SYNC}").text
     assert re.search(r'<form method="post" action="/sourcing/rooms/search" '
@@ -1158,8 +1159,11 @@ def test_room_search_sends_no_firm_and_drops_the_deal_intro_room(board, db, user
     db.expire_all()
     from app.services import room_match
 
-    found = room_match.candidates(db.get(SourcingContact, row.id))
+    got = db.get(SourcingContact, row.id)
+    found = room_match.candidates(got)
     assert found["rooms"] == ["딜소싱 홍길동 심사역"]
+    # 딜소개 방을 뺀 뒤 하나가 남았다 → 그 방으로 확정(사용자 결정 2026-11-10)
+    assert (got.kakao_room_name, got.room_verified) == ("딜소싱 홍길동 심사역", "verified")
 
 
 def test_a_deal_intro_room_cannot_be_confirmed_as_the_sourcing_room(board, db, users):
@@ -1197,16 +1201,36 @@ def test_an_invitee_keeps_the_deal_intro_room_and_can_confirm_it(board, db, user
     row.participation = value
     db.commit()
 
-    _report(board, _search(board, row.id), verify_result="found",
-            found_room="홍길동 심사역 가나다벤처스")
+    _report(board, _search(board, row.id), verify_result="ambiguous",
+            candidates=["홍길동 심사역 가나다벤처스", "홍길동 다른 방"])
     page = board.get(f"/sourcing?tab={SYNC}").text
-    assert "후보 1개" in page
+    assert "후보 2개" in page
     assert "홍길동 심사역 가나다벤처스 — 이 방으로 확정" in page
 
     r = board.post(f"/sourcing/{row.id}/room-confirm",
                    data={"room": "홍길동 심사역 가나다벤처스", "tab": SYNC},
                    follow_redirects=False)
     assert r.status_code == 303 and "방을 확정했습니다" in unquote(r.headers["location"])
+    db.expire_all()
+    got = db.get(SourcingContact, row.id)
+    assert (got.kakao_room_name, got.room_verified) == ("홍길동 심사역 가나다벤처스", "verified")
+
+
+@pytest.mark.parametrize("value", ["딜 소싱 참여 제안 대기중", "참여"])
+def test_an_invitees_only_room_is_confirmed_even_if_it_is_the_deal_intro_room(
+        board, db, users, value):
+    """참여 안내 받을 분 · `참여` 인 분은 딜소개 방도 후보로 둔다 — 그 방 하나뿐이면
+    사람이 확정한 것과 같이 그 방이 된다(사용자 결정 2026-11-10)."""
+    from app.models import SourcingContact
+
+    contact = vc(db, users, kakao_room_name="홍길동 심사역 가나다벤처스")
+    mark(board, contact.id, "O")
+    [row] = sync_rows(db)
+    row.participation = value
+    db.commit()
+
+    _report(board, _search(board, row.id), verify_result="found",
+            found_room="홍길동 심사역 가나다벤처스")
     db.expire_all()
     got = db.get(SourcingContact, row.id)
     assert (got.kakao_room_name, got.room_verified) == ("홍길동 심사역 가나다벤처스", "verified")
@@ -1255,6 +1279,89 @@ def test_a_failed_search_keeps_the_candidates_found_before(board, db, users):
     db.expire_all()
     pick = sourcing_rooms.picks(db.get(SourcingContact, row.id))
     assert (pick["state"], pick["rooms"], pick["error"]) == ("no_picks", [], "")
+
+
+# ── 후보가 하나면 그 방으로 확정(사용자 결정 2026-11-10) ──────────────────────
+#
+# "딜 소싱에서 방후보 찾기 할때 후보가 1개면 무조건 그걸로 매칭해줘" · "2개 이상일
+# 경우부터 고르게 해야지". 사람이 [이 방으로 확정] 한 것과 같은 길(`confirm`)이다.
+
+def test_a_single_candidate_is_confirmed_like_a_person_picked_it(board, db, users):
+    import json
+
+    from app.models import EditLog, SendItem, SourcingContact
+
+    row = sc(db, name="홍길동", title="심사역")
+    item = _search(board, row.id)                 # u2 가 눌렀다 → u2 PC
+    board.cookies.clear()                         # 발송기는 로그인 쿠키 없이 올린다
+    _report(board, item, verify_result="found", found_room="홍길동 심사역 딜소싱",
+            candidates=["홍길동 심사역 딜소싱"])
+    db.expire_all()
+    got = db.get(SourcingContact, row.id)
+    assert (got.kakao_room_name, got.room_verified) == ("홍길동 심사역 딜소싱", "verified")
+    assert db.get(SendItem, item["id"]).status == "sent"
+
+    # 수정 로그 — 찾기를 건 사람(u2) 이름으로, 방 이름 · 확인 표시가 남는다.
+    [log] = [r for r in db.query(EditLog).filter_by(table_name="sourcing_contacts",
+                                                    row_id=row.id)]
+    assert log.actor_user_id == users["u2"].id
+    fields = {c["field"] for c in json.loads(log.changes_json)}
+    assert {"kakao_room_name", "room_verified"} <= fields
+
+    login(board, "01000000001")
+    page = board.get(f"/sourcing?tab={SYNC}").text
+    assert _no_room_rows(page) == []
+    assert "이 방으로 확정" not in page           # 고를 것이 없다
+
+
+def test_two_candidates_stay_candidates_and_none_leaves_the_row_alone(board, db, users):
+    from app.models import SourcingContact
+    from app.services import sourcing_rooms
+
+    two = sc(db, name="홍길동")
+    none = sc(db, name="김철수", phone="010-2222-3333", position=2)
+    _report(board, _search(board, two.id), verify_result="ambiguous",
+            candidates=["홍길동 딜소싱", "홍길동 다른 방"])
+    _report(board, _search(board, none.id), verify_result="not_found")
+    db.expire_all()
+    for rid in (two.id, none.id):
+        got = db.get(SourcingContact, rid)
+        assert not got.kakao_room_name and got.room_verified == "unverified"
+    assert sourcing_rooms.picks(db.get(SourcingContact, two.id))["state"] == "picks"
+    assert sourcing_rooms.picks(db.get(SourcingContact, none.id))["state"] == "no_picks"
+    page = board.get(f"/sourcing?tab={SYNC}").text
+    assert "홍길동 딜소싱 — 이 방으로 확정" in page   # 둘 이상이면 고른다
+
+
+def test_one_title_on_two_rooms_is_not_confirmed(board, db, users):
+    """같은 제목의 방이 여럿이면 사람이 눌러도 확정 안 되는 제목이다 — 후보로 둔다."""
+    from app.models import SourcingContact
+    from app.services import sourcing_rooms
+
+    row = sc(db)
+    _report(board, _search(board, row.id), verify_result="ambiguous",
+            candidates=["홍길동 딜소싱", "홍길동 딜소싱"])
+    db.expire_all()
+    got = db.get(SourcingContact, row.id)
+    assert not got.kakao_room_name and got.room_verified == "unverified"
+    pick = sourcing_rooms.picks(got)
+    assert pick["state_label"] == "같은 제목의 방이 여럿 — 직접 적어 주세요"
+    assert "이 방으로 확정" not in board.get(f"/sourcing?tab={SYNC}").text
+
+
+def test_a_name_typed_while_searching_is_not_overwritten(board, db, users):
+    """찾는 사이 누가 `카톡방 이름` 칸에 다른 이름을 적었으면 덮지 않는다."""
+    from app.models import SourcingContact
+
+    row = sc(db)
+    item = _search(board, row.id)
+    db.get(SourcingContact, row.id).kakao_room_name = "손으로 적은 방"
+    db.commit()
+    _report(board, item, verify_result="found", found_room="홍길동 딜소싱",
+            candidates=["홍길동 딜소싱"])
+    db.expire_all()
+    got = db.get(SourcingContact, row.id)
+    assert (got.kakao_room_name, got.room_verified) == ("손으로 적은 방", "unverified")
 
 
 def test_the_phone_written_differently_is_not_a_different_field(board, db, users):

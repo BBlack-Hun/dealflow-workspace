@@ -1060,7 +1060,8 @@ def search_rooms(request: Request, tab: str = Form(""), ids: str = Form(""),
     카톡**에서 찾는다.
 
     잡은 누른 사람 계정에 선다(`sourcing_rooms.queue_search`) — 그 사람 PC 의
-    발송기가 그 사람 카톡에서 찾고, 찾은 제목은 후보로만 담긴다. 보내는 사람이
+    발송기가 그 사람 카톡에서 찾고, 찾은 제목이 하나면 그 방으로 확정되고 둘
+    이상이면 후보로 담긴다(`sourcing_rooms.apply_result`). 보내는 사람이
     눌러야 그 사람 카톡의 방 제목이 나온다. **아무것도 보내지 않는다**(방 확인 잡).
 
     **아무도 안 골랐으면 아무것도 안 세운다** — 예전처럼 그 갈래의 방 없는 줄
@@ -1077,8 +1078,8 @@ def search_rooms(request: Request, tab: str = Form(""), ids: str = Form(""),
     계정 · 자동화마다 고른 계정)의 카톡 제목은 손으로 보내는 팀원 카톡의 제목과
     다를 수 있다. 그 계정이 누르면 같은 방 확인 잡을 **보내는 계정 기준 방 제목**
     으로 세운다(`sender_rooms.queue_sourcing`) — 찾은 제목은 그 표에만 담기고, 이
-    명단의 후보 · 방 이름 · 확인 표시는 그대로다. 고르는 곳은 팀 현황 › 보내는
-    계정 기준 방 제목이다.
+    명단의 후보 · 방 이름 · 확인 표시는 그대로다. 하나면 그 표에서 바로 확정되고,
+    둘 이상이면 팀 현황 › 보내는 계정 기준 방 제목에서 고른다.
     """
     picked = _ids(ids)
     if not picked:
@@ -1094,13 +1095,15 @@ def search_rooms(request: Request, tab: str = Form(""), ids: str = Form(""),
     if sender:
         note = (f"{user.name} 님 PC 의 카톡에서 {job.total}명의 방을 찾습니다(회차 #{job.id}) — "
                 "자동화를 보내는 계정이라 찾은 제목은 이 계정 전용으로 담깁니다(딜 소싱 "
-                "명단의 방 이름은 그대로). 끝나면 팀 현황 › 보내는 계정 기준 방 제목에서 고르세요")
+                "명단의 방 이름은 그대로). 하나면 바로 확정되고, 둘 이상이면 팀 현황 › "
+                "보내는 계정 기준 방 제목에서 고르세요")
         return _answer(request, tab, note, job_id=job.id, ids=[r.id for r in rows],
                        note=note)
     return _answer(request, tab,
                    f"{user.name} 님 PC 의 카톡에서 {job.total}명의 방을 찾습니다"
                    f"(회차 #{job.id}) — 그 PC 의 발송 프로그램이 켜져 있어야 합니다. "
-                   "끝나면 이 화면을 새로고침해 후보를 고르세요",
+                   "끝나면 이 화면을 새로고침하세요 — 찾은 방이 하나면 바로 확정되고, "
+                   "둘 이상이면 후보를 고릅니다",
                    job_id=job.id, ids=[r.id for r in rows])
 
 
