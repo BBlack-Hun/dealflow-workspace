@@ -231,7 +231,7 @@ def test_invite_lists_asking_but_not_custom_or_left(board, db, users):
     held = deals[deals.index('id="sourcing-held"'):]
     held = held[:held.index("</p>")]
     assert "참여 중 <b>1</b>명·불참여 <b>1</b>명·직접 문구 <b>1</b>명은" in held
-    assert "참여 안내 대상이 아니라 뺐습니다" in held
+    assert "검토 가능 심사역 참여 안내 대상이 아니라 뺐습니다" in held
 
 
 @pytest.mark.parametrize("channel", [None, "email"])
