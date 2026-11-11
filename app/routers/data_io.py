@@ -776,7 +776,7 @@ class _ReportSheet:
         self.at += 1
 
     def group(self, text):
-        """그룹 머리 — 화면의 bucket-head(딜 소개 / 8월 넷째주 / IR 요청 투자사)."""
+        """그룹 머리 — 화면의 bucket-head(딜 소개 / IR 요청 투자사)."""
         from openpyxl.styles import Alignment, Font, PatternFill
 
         cell = self.ws.cell(row=self.at, column=1, value=text)
@@ -922,8 +922,15 @@ def _sends_sheet(sheet, data, team_wide):
 
 
 def _meetings_sheet(sheet, data, team_wide):
-    """미팅 — 주차별. 화면의 '{달}월 미팅 총 N개사' 패널(화면은 11/11 부터 달마다 표 하나)."""
-    sheet.title(f"{data['year']}년 {data['month']}월 미팅  총 {data['total']}개사",
+    """미팅 — 화면의 '{달}월 미팅 총 N개사' 패널. 달 하나 = 표 하나, 미팅 일자 순.
+
+    11/11 사용자 요청 "엑셀 미팅 시트도 한달표로" — 화면(#521)처럼 주차 머리 · 주차
+    소계를 없앴다. 완료 수는 화면 판 머리처럼 맨 위 제목 줄에 한 번만 — 그 달 진행한
+    미팅(`done`, 미팅 카드 `진행한 미팅` 과 같은 수). 줄은 `weeks` 를 차례대로 이어
+    읽는다 — 화면과 같은 읽기다(주차 안이 날짜 순이라 이어 붙이면 그 달 날짜 순).
+    """
+    sheet.title(f"{data['year']}년 {data['month']}월 미팅  총 {data['total']}개사"
+                f"  ·  {data['done']}개사 완료",
                 f"결과 문의는 미팅 뒤 {data['followup_days']}일쯤 겁니다 — "
                 f"그걸 놓치면 계약이 흐지부지됩니다.")
     # 화면의 미팅 표와 **같은 이름**이다(#87 — 투자사 쪽 사람은 `심사역`, 우리 팀원은
@@ -933,33 +940,31 @@ def _meetings_sheet(sheet, data, team_wide):
                + (["담당자"] if team_wide else [])
                + ["결과", "결과 문의", "후기 · 투자사 답변 내용"])
     last = len(headers) - 1
+    sheet.blank()
     if not data["weeks"]:
-        sheet.blank()
         sheet.note("이 달에는 기록된 미팅이 없습니다.")
-    for week in data["weeks"]:
-        sheet.blank()
-        sheet.group(f"{week['label']}   {week['done']}개사 완료")
+    else:
         sheet.head(headers)
-        for m in week["items"]:
-            # 화면의 '결과 문의' 칸과 **같은 말**이어야 한다. 여기서 따로 지어내면
-            # 같은 건이 화면과 파일에서 다르게 불린다.
-            if m["status"] != "done":
-                ask = "미완료"
-            elif m["followup_done"]:
-                ask = "완료"
-            elif not m["needs_followup"]:
-                ask = "문의 불필요"
-            elif m["followup_late"]:
-                ask = f"{m['followup_due']} 지남"
-            else:
-                ask = f"{m['followup_due']} 예정"
-            told = [t for t in (m["note"], (f"문의: {m['followup_note']}"
-                                            if m["followup_note"] else "")) if t]
-            sheet.row(
-                [m["date"], m["name"], m["firm"], m["company"], m["raise_target"], m["kind"]]
-                + ([m["owner"]] if team_wide else [])
-                + [m["outcome"] or "-", ask, "\n".join(told)],
-                level="bad" if m["followup_late"] else "", wraps={last})
+    for m in (m for week in data["weeks"] for m in week["items"]):
+        # 화면의 '결과 문의' 칸과 **같은 말**이어야 한다. 여기서 따로 지어내면
+        # 같은 건이 화면과 파일에서 다르게 불린다.
+        if m["status"] != "done":
+            ask = "미완료"
+        elif m["followup_done"]:
+            ask = "완료"
+        elif not m["needs_followup"]:
+            ask = "문의 불필요"
+        elif m["followup_late"]:
+            ask = f"{m['followup_due']} 지남"
+        else:
+            ask = f"{m['followup_due']} 예정"
+        told = [t for t in (m["note"], (f"문의: {m['followup_note']}"
+                                        if m["followup_note"] else "")) if t]
+        sheet.row(
+            [m["date"], m["name"], m["firm"], m["company"], m["raise_target"], m["kind"]]
+            + ([m["owner"]] if team_wide else [])
+            + [m["outcome"] or "-", ask, "\n".join(told)],
+            level="bad" if m["followup_late"] else "", wraps={last})
 
     sheet.blank()
     sheet.band("미팅 결과")
