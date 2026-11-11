@@ -556,6 +556,8 @@ VALUE_FIELDS = frozenset({
     "received_at", "contract_month", "card_registered_at", "effective_from",
     "founded_year", "last_login_at", "contract_done_at", "follow_round_month", "contract_ym",
     "consulting_meeting_at",
+    # 딜 제안 관리의 `반응 없음` 에서 손으로 뺀 시각(0136) — 비면 되돌린 것이다.
+    "no_reaction_cleared_at",
     # 투자컨설턴트 줄의 `컨설팅 미팅일`(계약 탭에서는 `계약월`) — IR 기업 현황에서도 고치게
     # 되어(#166) 전→후가 보여야 "누가 미팅일을 옮겼나" 에 답한다. 짧은 날짜 글이다.
     "meeting_at",
@@ -611,6 +613,7 @@ FIELD_LABELS = {
     # 다른 표의 로그가 틀린 이름을 단다.
     "received_at": "수신일", "follow_round_month": "후속라운드 시작", "contract_ym": "계약년월",
     "consulting_meeting_at": "IR 투자컨설팅 미팅일시",
+    "no_reaction_cleared_at": "반응 없음에서 뺀 때",
     # 투자컨설턴트 줄(#166 — IR 기업 현황에서도 고친다). 계약 탭에서는 같은 칸이 `계약여부` ·
     # `계약월` 이지만 로그 줄의 화면 이름(`/consulting`)이 어느 표인지 말해 준다.
     "management": "기업 관리", "meeting_at": "컨설팅 미팅일",

@@ -203,7 +203,7 @@ function clickAll(t, on) { t.all.checked = on; t.all.fire("change"); }
   const t = setup(rows, { share: true });
   pick(rows[0]);
   pick(rows[1]);
-  assert.strictEqual(t.share.textContent, "Series A 딜 소개 (선택 2명)");
+  assert.strictEqual(t.share.textContent, "참여 심사역 딜 발송 요청 (선택 2명)");
   assert.strictEqual(t.btn.textContent, "방 후보 찾기 (선택 1명)");
   assert.strictEqual(t.btn.disabled, false);
 }

@@ -46,10 +46,29 @@
 푸는 것은 `반응없음` 하나다 — `검토중단` 은 딜 소개를 멈춰 둔 사람의 결정이라
 (`sheet_owner.is_paused`) 반응과 상관없다. 이미 낡아 있는 값은 새 반응이 와야
 풀리므로, 그 몫은 운영 데이터를 한 번 고쳐야 한다(코드가 하지 않는다).
+
+## 사람이 손으로 뺀 분 (11/11)
+
+요청: "반응 없는 담당자 사용자가 체크해서 뺄 수 있게". 위 판정은 앱에 적힌 기록만
+읽어서, 전화 · 다른 길로 답을 준 분은 팀이 알아도 `반응 없음` 으로 남았다. 딜 제안
+관리의 카드에서 [반응 없음에서 빼기] 를 누르면 그 시각이
+`VcContact.no_reaction_cleared_at` 에 적히고(`routers/contacts.set_no_reaction_cleared`),
+`listed` 가 그분을 뺀다 — 딱지 · [반응 없는 담당자만] 수와 거르기 · 대시보드의
+`반응 없는 분 N명` 이 이 한 벌을 읽으므로 함께 따라온다. [되돌리기] 는 칸을 비운다.
+
+**반응으로 치지 않는다.** 이 칸은 `반응 없음` 목록에서 빼는 표시일 뿐이라
+`reacted_ids` 도, 대시보드 반응 칸(`dashboard.reaction_hits`)도, 투자사 관리 현황의
+`반응` 칸(`contacts._reaction_tags` — IR · 미팅 기록을 세는 칸이다)도, 리마인드 멈춤
+(`cadence.stop_on_reaction`)도, `상태` 칸의 `반응없음` 풀기(`before_flush`)도, 그룹 칸도
+읽지 않는다. 무슨 반응이었는지 적힌 것이 없어서다 — IR 요청인지 미팅인지 모르는 채로
+그 자리들에 세면 수가 근거 없이 는다. 반응이 실제로 적히면 그때 위 판정이 그분을 뺀다.
+
+**한 번 빼면 그대로다.** 반응이 한 번 오면 없어지지 않는다는 위 판정과 같은 뜻이다 —
+다음 딜소개를 보냈다고 다시 `반응 없음` 으로 세우지 않는다. 다시 세우려면 [되돌리기].
 """
 from __future__ import annotations
 
-from typing import List, Set
+from typing import List, Set, Tuple
 
 from sqlalchemy import inspect, select
 from sqlalchemy.orm import Session
@@ -134,6 +153,22 @@ def before_flush(session) -> None:
             contact.status = STATUS_ACTIVE
 
 
+def judged(db: Session, user, contacts=None) -> Tuple[Set[int], Set[int]]:
+    """(`반응 없음` 인 분, 판정은 `반응 없음` 인데 **사람이 손으로 뺀** 분) — 대상 목록 안에서.
+
+    딜 제안 관리는 둘 다 쓴다 — 앞엣것에 딱지를, 뒤엣것에 [되돌리기] 를 단다. 판정을
+    두 번 돌리지 않으려고 한 번에 나눠 준다. 손으로 뺀 분이라도 그 뒤 반응이 실제로
+    적혀 판정에서 빠졌으면 뒤엣것에도 없다(되돌릴 것이 없다).
+    """
+    from ..routers.contacts import contact_rows   # 순환 import 를 피해 늦게 부른다
+    from .sheet_owner import recipients
+
+    shown = contacts if contacts is not None else recipients(db, user)
+    quiet = ids(db, contact_rows(db, user)) & {c.id for c in shown}
+    cleared = {c.id for c in shown if c.id in quiet and c.no_reaction_cleared_at}
+    return quiet - cleared, cleared
+
+
 def listed(db: Session, user, contacts=None) -> Set[int]:
     """딜 제안 관리 대상 목록(`sheet_owner.recipients`)에 선 사람 중 **반응 없는 분**.
 
@@ -142,9 +177,6 @@ def listed(db: Session, user, contacts=None) -> Set[int]:
     (IR 요청한 분 순위)의 바깥을 따로 세면 딜소개를 아직 안 받은 분과 미팅 · 답 옴이
     있는 분이 섞여, 눌러 넘어간 화면과 수가 갈린다(2026-11-10 운영: 계정마다 5~41명).
     `contacts` 는 이미 구한 대상 목록을 받는 자리다(딜 제안 관리가 넘긴다).
+    사람이 손으로 뺀 분은 들지 않는다(`judged` · 머리말 `사람이 손으로 뺀 분`).
     """
-    from ..routers.contacts import contact_rows   # 순환 import 를 피해 늦게 부른다
-    from .sheet_owner import recipients
-
-    shown = contacts if contacts is not None else recipients(db, user)
-    return ids(db, contact_rows(db, user)) & {c.id for c in shown}
+    return judged(db, user, contacts)[0]

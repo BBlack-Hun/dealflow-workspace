@@ -673,6 +673,37 @@ def assign_to_my_sheet(body: AssignIn, db: Session = Depends(get_db),
     return {"moved": moved, "label": label}
 
 
+class NoReactionIn(BaseModel):
+    # 참이면 `반응 없음` 에서 뺀다, 거짓이면 되돌린다(판정대로 다시 선다).
+    cleared: bool
+
+
+@router.post("/{contact_id}/no-reaction")
+def set_no_reaction_cleared(contact_id: int, body: NoReactionIn,
+                            db: Session = Depends(get_db),
+                            user: User = Depends(get_current_user)):
+    """딜 제안 관리의 `반응 없음` 에서 이 분을 **손으로 빼거나 되돌린다**(11/11).
+
+    전화 · 다른 길로 반응이 있었던 분은 앱에 기록이 없어 판정이 그대로 `반응 없음`
+    이라고 한다. 뺀 시각을 줄에 적고(`VcContact.no_reaction_cleared_at`), 판정 쪽이
+    그분을 목록에서 뺀다 — 무엇에서 빠지고 무엇에는 안 닿는지는
+    `services/no_reaction` 머리말 한 곳에 있다.
+
+    **누가 할 수 있나 — 이 줄을 고칠 수 있는 사람**(`_owned` — 맡은 사람과 관리자).
+    표에서 칸을 고치는 길(`update_contact`)과 같은 판정이다. 남의 줄은 `없는 것` 으로
+    답한다. ORM 으로 고치므로 남의 줄을 고친 일은 수정 로그에 저절로 남는다.
+
+    이미 뺀 분을 또 빼면 처음 뺀 시각을 그대로 둔다 — 언제 뺐는지가 그 칸의 뜻이다.
+    """
+    contact = _owned(db, contact_id, user)
+    if not body.cleared:
+        contact.no_reaction_cleared_at = None
+    elif not contact.no_reaction_cleared_at:
+        contact.no_reaction_cleared_at = clock.now_iso()
+    db.commit()
+    return {"ok": True, "cleared": bool(contact.no_reaction_cleared_at)}
+
+
 class TransferIn(BaseModel):
     label: str
 
@@ -1396,7 +1427,7 @@ _SEND_STATES = {"failed": "실패", "pending": "대기", "canceled": "취소"}
 #: 이력 줄의 갈래 이름. 딜 소싱은 `topic` 으로 가른다(비면 참여 안내). 화면의 같은 이름은
 #: `static/js/contacts.js` 의 `KIND_KO`.
 _SEND_LABELS = {"deal_intro": "딜소개", "ir_delivery": "IR 전달",
-                sourcing_msg.KIND: "딜 소싱(참여 안내)",
+                sourcing_msg.KIND: "딜 소싱(검토 가능 심사역 참여 안내)",
                 sourcing_msg.REMIND_KIND: f"딜 소싱({sourcing_msg.REMIND_LABEL})",
                 sourcing_msg.SHARE_KIND: f"딜 소싱({series_a_share.LABEL})"}
 

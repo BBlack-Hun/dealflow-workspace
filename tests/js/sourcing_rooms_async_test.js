@@ -12,6 +12,8 @@
 //   ⑤ 툴바 [방 후보 찾기] — 화면 스크립트(확인창 · 고른 줄 번호)를 지난 뒤에만 보낸다.
 //      확정한 줄은 툴바 셈에서 빠진다
 //   ⑥ 다른 폼(딜 받음 등)은 건드리지 않는다
+//   ⑦ 보내는 계정이 확정(답에 `sender`) — 그 계정 전용 칸만 걷고 그 자리에 적는다.
+//      명단의 방 이름 칸 · `명단 이름:` 은 그대로
 //
 // 이름 · 방 제목은 가상값이다(공개 저장소).
 "use strict";
@@ -278,6 +280,47 @@ async function main() {
     const t = setup([row(11, "홍길동")], { inline: true });
     t.submit(t.tool);
     assert.strictEqual(t.calls.length, 0, "안 골랐는데 보냈다");
+  }
+
+  // --- ⑦ 보내는 계정이 확정 — 그 계정 전용 칸만 걷고, 명단의 방 이름 칸은 그대로 -------
+  // 서버가 그리는 보내는 계정 줄(`sourcing.html` 의 `room_sender`): 전용 상태 · 전용 후보 ·
+  // `명단 이름:` · 명단의 방 이름 칸. 답에 `sender` 가 실려 온다(`confirm_room`).
+  {
+    const status = el("div", { class: "cell-sub sourcing-room js-sender-room",
+                               "data-testid": "sourcing-sender-room" }, [
+      el("form", { class: "inline-form js-room-search", method: "post",
+                   action: "/sourcing/rooms/search" },
+         [hidden("tab", "all"), hidden("ids", "21"), button("방 후보 찾기")])]);
+    const picks = el("div", { class: "cell-sub sourcing-room js-sender-room",
+                              "data-testid": "sourcing-sender-room-picks" },
+      ["가 방", "나 방"].map(function (r) {
+        return el("form", { class: "inline-form js-room-confirm", method: "post",
+                            action: "/sourcing/21/room-confirm" },
+                  [hidden("tab", "all"), hidden("room", r), button("💬 " + r + " — 이 방으로 확정")]);
+      }));
+    const label = el("div", { class: "cell-sub muted", "data-testid": "sourcing-shared-room" });
+    label.textContent = "명단 이름:";
+    const shared = el("div", { class: "cell muted", "data-field": "kakao_room_name" });
+    shared.textContent = "팀원 카톡 방";
+    const cellTd = el("td", { title: "팀원 카톡 방", class: "room-td" }, [status, picks, label, shared]);
+    const tr = el("tr", { "data-id": "21", "data-no-room": "" }, [
+      el("td", { class: "pick-col" }, [el("input", { type: "checkbox", class: "js-sourcing-pick",
+                                                     value: "21" })]), cellTd]);
+    const t = setup([tr]);
+    t.submit(picks.querySelectorAll(".js-room-confirm")[1]);
+    assert.strictEqual(t.calls[0].url, "/sourcing/21/room-confirm");
+    assert.strictEqual(t.calls[0].init.body.get("room"), "나 방");
+    reply(t.calls[0], 200, { ok: true, sender: true, room: "나 방", msg: "…",
+                             note: "✓ 나 방 — 가상 님 계정 전용 제목으로 확정했습니다" });
+    await flush();
+    assert.strictEqual(shared.textContent, "팀원 카톡 방", "명단의 방 이름 칸을 덮었다");
+    assert.strictEqual(cellTd.getAttribute("title"), "팀원 카톡 방");
+    assert.strictEqual(cellTd.querySelector(".js-sender-room"), null, "전용 상태 · 후보가 남았다");
+    assert.ok(cellTd.querySelector('[data-testid="sourcing-shared-room"]'), "`명단 이름:` 을 걷었다");
+    assert.strictEqual(cellTd.children[0].textContent,
+                       "✓ 나 방 — 가상 님 계정 전용 제목으로 확정했습니다",
+                       "확정 글이 전용 칸 자리(맨 위)에 안 섰다");
+    assert.strictEqual(tr.hasAttribute("data-no-room"), false, "툴바 찾기에 아직 실린다");
   }
 
   // --- ⑥ 다른 폼은 그대로 — 예전처럼 보내진다 ---------------------------------------

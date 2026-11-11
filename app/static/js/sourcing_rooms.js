@@ -25,8 +25,8 @@
   }
 
   // 찾기는 잡만 세운다 — 찾는 것은 누른 사람 PC 의 발송기다. 실린 줄마다 적어 둔다.
-  // 서버가 줄 안내(`note`)를 주면 그대로 쓴다 — 보내는 계정이 누른 찾기는 후보가 이
-  // 화면이 아니라 팀 현황 › 보내는 계정 기준 방 제목에 담긴다(`routers/sourcing.py`).
+  // 서버가 줄 안내(`note`)를 주면 그대로 쓴다 — 보내는 계정이 누른 찾기는 후보가 명단이
+  // 아니라 그 계정 전용 표(보내는 계정 기준 방 제목)에 담긴다(`routers/sourcing.py`).
   function searched(form, d) {
     var text = d.note || ("찾기 요청됨(회차 #" + d.job_id + ") — 끝나면 새로고침하세요 · 하나면 바로 확정, 둘 이상이면 고릅니다");
     (d.ids || []).forEach(function (id) {
@@ -39,20 +39,27 @@
 
   // 확정 — 서버가 그리는 확정된 줄과 같게: 방 이름 칸에 제목, `방 없음` · 후보 · 이어받은
   // 방 표시는 걷는다(`sourcing.html` 의 카톡방 칸).
+  // 보내는 계정이 확정했으면(`d.sender`) 그 계정 전용 칸(`.js-sender-room`)만 걷고 그
+  // 자리에 적는다 — 명단의 방 이름 칸은 그대로다(`routers/sourcing.confirm_room`).
   function confirmed(form, d) {
     var td = form.closest("td");
     var tr = form.closest("tr");
     if (!td || !tr) return;
-    var cell = td.querySelector('.cell[data-field="kakao_room_name"]');
-    if (cell) cell.textContent = d.room || "";
-    td.setAttribute("title", d.room || "");
-    Array.prototype.slice.call(td.querySelectorAll(".cell-sub")).forEach(function (n) {
-      if (n.parentNode) n.parentNode.removeChild(n);
-    });
+    if (!d.sender) {
+      var cell = td.querySelector('.cell[data-field="kakao_room_name"]');
+      if (cell) cell.textContent = d.room || "";
+      td.setAttribute("title", d.room || "");
+    }
+    var stale = Array.prototype.slice.call(
+      td.querySelectorAll(d.sender ? ".js-sender-room" : ".cell-sub"));
     var done = document.createElement("div");
     done.className = "cell-sub muted js-room-note";
-    done.textContent = "✓ 이 방으로 확정했습니다";
-    td.appendChild(done);
+    done.textContent = d.note || "✓ 이 방으로 확정했습니다";
+    if (d.sender && stale.length) td.insertBefore(done, stale[0]);
+    else td.appendChild(done);
+    stale.forEach(function (n) {
+      if (n.parentNode) n.parentNode.removeChild(n);
+    });
     tr.removeAttribute("data-no-room");
     // 툴바 [방 후보 찾기 (선택 N명)]이 이 줄을 다시 세게 — 그 셈은 체크 칸이 바뀔 때 돈다.
     var cb = tr.querySelector(".js-sourcing-pick");

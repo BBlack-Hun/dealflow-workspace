@@ -48,15 +48,33 @@ const PEOPLE = [
   [5, "마담당", "", false]      // 그룹을 안 정해 둔 사람
 ];
 
-function contactCard(id, name, group, noreact) {
+// `반응 없음` 딱지와 [반응 없음에서 빼기] · [되돌리기](11/11 — `deals.html` 의 `noreact-mark`).
+// 화면처럼 두 모양을 다 세우고 하나만 보인다. 다섯째 값 `cleared` 는 **서버가 이미 뺀 분**
+// (`no_reaction.judged` 의 뒤엣것)이다 — 그분은 `data-noreact="0"` 에 [되돌리기] 가 보인다.
+function noreactMark(cleared) {
+  const on = el("span", { class: "noreact-on" }, [
+    el("span", { class: "tag warn" }), el("button", { class: "linkbtn noreact-toggle" })]);
+  const off = el("span", { class: "noreact-off" }, [
+    el("span", { class: "tag soft" }), el("button", { class: "linkbtn noreact-toggle" })]);
+  on.hidden = !!cleared;
+  off.hidden = !cleared;
+  return el("span", { class: "noreact-mark", "data-cleared": cleared ? "1" : "0" }, [on, off]);
+}
+
+function contactCard(id, name, group, noreact, cleared) {
   const cb = el("input", {
     id: "cb-" + id, class: "contact-cb", value: String(id),
-    "data-name": name, "data-noreact": noreact ? "1" : "0"
+    "data-name": name, "data-noreact": noreact && !cleared ? "1" : "0"
   });
+  const kids = [cb];
+  if (noreact || cleared) {
+    kids.push(el("div", { class: "pick-body" },
+                 [el("div", { class: "pick-name" }, [noreactMark(cleared)])]));
+  }
   return el("label", {
     class: "pick-card", "data-group": group || "",
     "data-search": (name + " " + (group || "")).toLowerCase()
-  }, [cb]);
+  }, kids);
 }
 
 // **발송 목록에 없는** 사람. 사유는 둘이고 같은 칸에 나란히 선다 —
@@ -241,7 +259,7 @@ function buildDom(people) {
   const root = makeEl("html");
   const roster = people || PEOPLE;
 
-  const cards = roster.map(function (p) { return contactCard(p[0], p[1], p[2], p[3]); });
+  const cards = roster.map(function (p) { return contactCard(p[0], p[1], p[2], p[3], p[4]); });
   const contactList = el("div", { id: "contact-list", class: "card-list" }, cards);
   const blocked = blockedBlock();
   const sourcingCards = SOURCING.map(function (s) {
@@ -462,6 +480,9 @@ function run(people, opts) {
     setTimeout: opts.setTimeout || function () { return 0; },
     clearTimeout: function () {},
     URLSearchParams: URLSearchParams,
+    // 코드로 바꾼 체크를 알리는 `change`(`[반응 없음에서 빼기]`) — 이 DOM 의 `dispatchEvent`
+    // 는 `type` 만 읽는다.
+    Event: function (type, init) { this.type = type; this.bubbles = !!(init && init.bubbles); },
     alert: opts.alert || function () {},
     confirm: opts.confirm || function () { return false; },
     fetch: opts.fetch || function () {
