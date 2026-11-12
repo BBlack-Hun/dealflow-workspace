@@ -7,7 +7,7 @@ from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import clock
@@ -21,7 +21,7 @@ from ..services import (cadence, contact_columns, custom_columns, deal_history, 
                         sheet_owner, sourcing_link, sourcing_receipts,
                         sourcing_sync, startup_send, taxonomy)
 from ..ui import MENU, base_ctx as _base_ctx
-from .companies import BLOCKED_CONTRACT
+from .companies import deal_blocked_clause
 from .companies import blocked_reason as company_blocked_reason
 from .contacts import contact_rows
 from .deals import MODE_DEAL, MODE_TITLES, TOPIC_TITLES
@@ -80,12 +80,12 @@ def deals_page(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    # **딜소개 불가로 표시한 기업은 아예 안 보여준다.**
-    # 내용이 부족한 기업과는 다르다 — 그건 채우면 되지만, 이건 "보내면 안 되는
-    # 곳" 이라 목록에 있는 것만으로 실수로 고를 수 있다.
+    # **딜소개 불가로 표시한 기업은 아예 안 보여준다** — 계약여부든 기업명 꼬리표든
+    # (`companies.deal_blocked_clause`). 내용이 부족한 기업과는 다르다 — 그건 채우면
+    # 되지만, 이건 "보내면 안 되는 곳" 이라 목록에 있는 것만으로 실수로 고를 수 있다.
     companies = db.execute(
         select(IrCompany)
-        .where(func.coalesce(IrCompany.contract_status, "") != BLOCKED_CONTRACT)
+        .where(~deal_blocked_clause())
         .order_by(IrCompany.id)
     ).scalars().all()
     # 소개 가능한 기업을 앞에 세우되, 내용이 부족한 기업도 **감추지 않는다**.

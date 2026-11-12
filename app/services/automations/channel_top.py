@@ -8,7 +8,8 @@
 
 IR 기업 현황에서 **TOP·핵심**(`is_top_deal`)인 기업 중
 
-  · `딜소개 불가` 는 뺀다(발송 화면이 아예 안 보여 주는 기업 — `pages.deals_page`).
+  · `딜소개 불가` 는 뺀다 — 계약여부든 기업명 꼬리표든(발송 화면이 아예 안 보여 주는
+    기업 — `pages.deals_page` · `companies.deal_blocked_clause`).
   · 문구를 만들 수 없는 기업(`introducible` 아님)은 뺀다 — 빈 소개가 채널에
     나가면 안 된다.
   · **90일 안에 채널로 나간 기업은 뺀다.**
@@ -117,13 +118,13 @@ def last_sent(db: Session, test: bool) -> Dict[int, str]:
 def pick(db: Session, day: date, count: int, exclude_days: int,
          test: bool) -> tuple:
     """이번 주 기업들 `(고른 것, 뺀 사유)`."""
-    from ...routers.companies import BLOCKED_CONTRACT
+    from ...routers.companies import deal_blocked_clause
 
     history = last_sent(db, test)
     cutoff = (day - timedelta(days=exclude_days)).isoformat()
     rows = db.execute(
         select(IrCompany).where(IrCompany.is_top_deal == 1)
-        .where(func.coalesce(IrCompany.contract_status, "") != BLOCKED_CONTRACT)
+        .where(~deal_blocked_clause())
         .order_by(IrCompany.id)
     ).scalars().all()
     fresh, again, skipped = [], [], []
