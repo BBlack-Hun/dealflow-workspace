@@ -97,7 +97,7 @@ VIEW_HEADERS = [
     "특이사항 (장점)", "설립년도", "지역", "정책자금",
     "총 소개 횟수", "소개 발송(명)", "담당별 소개",
     "미팅제공일자", "계약년월", "카톡 연결 여부", "홍보메일삭제",
-    "핵심/TOP Deal", "메모", "IR 자료",
+    "핵심/TOP Deal", "메모", "IR 자료 수신",
 ]
 
 #: 투자컨설턴트 진행 기록 두 칸 — 화면에서 `핵심/TOP Deal` 바로 뒤, 그 화면을 볼 수 있는
@@ -115,7 +115,9 @@ IN_FULL = {
     "성공보수율": "성공보수율", "지역": "지역", "견적서 첨부 여부": "견적서 첨부 여부",
     "카톡 연결 여부": "카톡 연결 여부",
     "홍보메일삭제": "계약월",   # 같은 `contract_month` — 옛 이름 그대로다
-    "IR 자료": "IR 자료 파일명",
+    # `IR 자료 수신`(i239 — 옛 `IR 자료`)의 파일 이름. 받은 기록 글은 전체 파일에서 제 추가 칸
+    # `IR 자료 수신` 으로 끝에 그대로 붙는다(`data_io.export_companies` — 옛 차례를 지킨다).
+    "IR 자료 수신": "IR 자료 파일명",
 }
 #: 매출 · 금액 칸 중 전체 파일에 있는 것 — 머리글이 해마다 바뀌어 칸으로 짚는다.
 AMOUNTS_IN_FULL = {"revenue_recent": "최근매출(억)", "funding_total": "누적투자(억)",
@@ -280,12 +282,26 @@ def owner_times_text(by_owner) -> str:
     return " · ".join(f"{o['name']} {o['times']}" for o in by_owner)
 
 
-def to_cells(rows: List[dict], cols, consulting=None) -> List[list]:
+def ir_received_text(file_name: str, has_file: bool, memo: str = "") -> str:
+    """`IR 자료 수신` 칸 하나의 글자(i239) — 화면처럼 파일 이름 아래 받은 기록, 둘 다 없으면 `없음`.
+
+    파일이 없고 받은 기록만 있으면 기록만 싣는다 — 화면의 `⚠ 없음` 배지는 **보낼 파일**이
+    없다는 말이라, 받았다고 적힌 칸 글자 앞에 `없음` 을 붙이면 거꾸로 읽힌다.
+    """
+    memo = (memo or "").strip()
+    if not has_file:
+        return memo or "없음"
+    return "\n".join(p for p in (file_name, memo) if p)
+
+
+def to_cells(rows: List[dict], cols, consulting=None, received=None) -> List[list]:
     """파일 줄 — `view_headers(cols, consulting is not None)` 차례. `NO` 는 보이는 차례 1, 2, 3…
 
     `consulting` 은 `companies.consulting_view` 가 준 것(볼 수 없는 계정이면 None) — 칸에는
-    화면 글자 그대로(여럿이면 ` · ` 로 이은 것)를 싣는다.
+    화면 글자 그대로(여럿이면 ` · ` 로 이은 것)를 싣는다. `received` 는 `{기업 번호: 받은 기록}`
+    — 화면처럼 `IR 자료 수신` 칸에 파일 이름과 함께 싣는다(`custom_columns.absorb`).
     """
+    received = received or {}
     out = []
     for no, r in enumerate(rows, start=1):
         cv = None if consulting is None else consulting.get(r["id"], {})
@@ -308,7 +324,7 @@ def to_cells(rows: List[dict], cols, consulting=None) -> List[list]:
             r["meeting_offered_at"], r["contract_ym"], r["kakao_joined"], r["contract_month"],
             r["top_deal_kind"] or "",
             *([] if cv is None else [cv.get("status", ""), cv.get("meeting", "")]),
-            r["note"], r["ir_file_name"] if r["has_ir"] else "없음",
+            r["note"], ir_received_text(r["ir_file_name"], r["has_ir"], received.get(r["id"], "")),
         ])
     return out
 

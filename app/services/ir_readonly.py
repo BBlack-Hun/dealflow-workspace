@@ -40,10 +40,11 @@ _LONG = {"business_desc", "one_liner", "competitiveness", "guarantee"}
 #: 스타트업DB 탭의 금액 뒤 넷(#85 요청 차례).
 _STARTUP_TAIL = [("competitiveness", "특이사항 (장점)", 260), ("founded_year", "설립년도", 72),
                  ("region", "지역", 80), ("guarantee", "정책자금", 130)]
-#: IR 기업 현황 탭의 금액 뒤(투자라운드 ~ IR 자료).
+#: IR 기업 현황 탭의 금액 뒤(투자라운드 ~ IR 자료 수신). 마지막 칸은 그 탭의 `IR 자료 수신`
+#: (i239 — 옛 `IR 자료`)과 같은 이름이고, 보이는 글자는 그대로 **보낼 파일**이 있나(`있음`/`없음`)다.
 _IR_TAIL = [("series", "투자라운드", 150), ("one_liner", "딜 소개 문구", 300),
             ("meeting_offered_at", "미팅제공일자", 110), ("contract_month", "홍보메일삭제", 110),
-            ("top_deal_kind", "핵심/TOP Deal", 110), ("ir_file_name", "IR 자료", 102)]
+            ("top_deal_kind", "핵심/TOP Deal", 110), ("ir_file_name", "IR 자료 수신", 102)]
 
 
 def _col(key: str, label: str, width: int) -> Column:

@@ -605,8 +605,10 @@ def export_companies_view(request: Request, q: str = "", sort: str = "",
     from .companies import company_rows, consulting_view
 
     # 추가 칸도 화면처럼 고른 자리(안 고르면 끝)에 붙이고, 그 칸의 O/X 필터도 같이
-    # 건다(숨긴 칸은 빠진다).
+    # 건다(숨긴 칸은 빠진다). `IR 자료 수신` 메모 칸은 화면처럼 같은 이름의 칸 안에
+    # 싣는다(i239 — 따로 한 칸 더 서지 않는다).
     extra = custom_columns.view(db, "companies", "ir_companies")
+    _recv_col, received = custom_columns.absorb(extra)
     by_custom = company_view.custom_filters(extra)
     rows = company_view.view_rows(
         company_rows(db), company_view.parse_raw_query(request.url.query, by_custom),
@@ -621,7 +623,7 @@ def export_companies_view(request: Request, q: str = "", sort: str = "",
     head = company_view.view_headers(cols, con is not None)
     put = custom_columns.arranger(head, extra)
     cells = [put(line + custom_columns.cells(extra, r["id"]))
-             for r, line in zip(rows, company_view.to_cells(rows, cols, con))]
+             for r, line in zip(rows, company_view.to_cells(rows, cols, con, received))]
     return _xlsx(f"IR 기업현황_화면_{today}.xlsx", "IR 기업현황 (화면)",
                  put(head + custom_columns.names(extra)), cells)
 

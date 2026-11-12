@@ -71,7 +71,7 @@ SORTED_COLUMNS = {
 # (바꾼 자리 전부는 tests/test_company_column_renames.py 에 적혀 있다.)
 UNSORTED_COLUMNS = ["NO", "대분류", "소분류", "투자라운드",
                     "딜 소개 문구", "담당자", "계약여부", "계약서 수신 여부",
-                    "홍보메일삭제", "핵심/TOP Deal", "IR 자료"]
+                    "홍보메일삭제", "핵심/TOP Deal", "IR 자료 수신"]
 
 
 def _tables() -> list:

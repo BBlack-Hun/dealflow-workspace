@@ -44,7 +44,7 @@
        말하고, 그 말이 안 잘리게 IR 기업 현황 탭의 검색칸과 같은 폭으로 넓힌다. #}
     <input type="search" id="sa-search" placeholder="모든 칸에서 찾기 (기업명 · 회사 · 심사역 …)"
            style="min-width:300px"
-           title="표에 보이는 글 칸을 모두 찾습니다 — 기업명 · 메모 · 수신일 · 미팅일시 · 대표자명 · 연락처 · 이메일 · 계약 칸 · 분야 · 매출 · 금액 · 투자라운드 · 상세 내용 · 딜 소개 문구 · 담당자 · Type · 공유 심사역 · 휴대폰 · 회사 · IR 자료 · 추가 칸. 전화번호는 하이픈이 있든 없든, 뒷자리만으로도 찾아집니다. O/X 칸 · 수정한 날짜 · 수정한 팀원은 찾지 않습니다(O/X 칸은 머리글 필터로 거릅니다)."
+           title="표에 보이는 글 칸을 모두 찾습니다 — 기업명 · 메모 · 수신일 · 미팅일시 · 대표자명 · 연락처 · 이메일 · 계약 칸 · 분야 · 매출 · 금액 · 투자라운드 · 상세 내용 · 딜 소개 문구 · 담당자 · Type · 공유 심사역 · 휴대폰 · 회사 · IR 자료 수신 · 추가 칸. 전화번호는 하이픈이 있든 없든, 뒷자리만으로도 찾아집니다. O/X 칸 · 수정한 날짜 · 수정한 팀원은 찾지 않습니다(O/X 칸은 머리글 필터로 거릅니다)."
            value="{{ q }}" autocomplete="off">
     {# 관리자만 — 단추와 길이 같은 판정(`series_a.can_upload_pitch`)을 읽는다. #}
     {% if can_upload_pitch %}
@@ -210,8 +210,10 @@
         <th style="width:140px" data-filters="firm:회사" title="딜을 넘겨 준 투자사">회사<div class="th-filters"></div></th>
         {# 보낼 IR 자료의 **파일 이름**(0118) — IR 기업 현황의 `IR 자료 파일명` 과 같은 칸 ·
            같은 규칙이다. 폴더 경로가 아니라 자료 폴더 안의 이름 하나를 적고, 딜 진행
-           관리의 [자료 보내기]가 그 이름으로 파일을 붙인다(폴더는 각자 `/setup`). #}
-        <th style="width:180px" title="자료 폴더에 넣어 둔 파일 이름(예: 샘플애그_IR_2026.pdf) · 경로·주소는 받지 않습니다 · 눌러서 수정">IR 자료</th>
+           관리의 [자료 보내기]가 그 이름으로 파일을 붙인다(폴더는 각자 `/setup`).
+           i239(11/12) — IR 기업 현황과 같이 옛 `IR 자료` 와 추가 칸 `IR 자료 수신`(받은 기록 글)을
+           **한 칸**으로 합쳤다. 위는 파일 이름, 아래는 받은 기록(`custom_columns.absorb`). #}
+        <th style="width:180px" title="위: 보낼 파일 이름(자료 폴더 안 · 예: 샘플애그_IR_2026.pdf — 경로·주소는 받지 않습니다) · 아래: 받은 기록(예: 2026/11/04 수신완료) — 각각 눌러서 수정">IR 자료 수신</th>
         {{ cc.heads() }}
         <th style="width:52px"></th>
       </tr>
@@ -330,13 +332,24 @@
         {# IR 기업 현황에도 있는 기업은 **그쪽 자료**가 나간다(`pipeline.match_company` 가
            요청을 IR 줄로 잇는다) — 여기서는 고치지 않고 IR 쪽 파일 이름을 보여만 준다.
            서버도 이 줄에 적기를 막는다(`series_a._check_ir_file`). #}
+        <td class="ir-recv">
         {% if r.ir_name %}
-        <td class="muted" title="IR 기업 현황에도 있는 기업 — IR 자료는 IR 기업 현황에서 등록합니다">
-          {% if r.ir_file %}📎 {{ r.ir_file }}{% else %}IR 현황에서 등록{% endif %}
-        </td>
+          <div class="muted ellipsis" title="IR 기업 현황에도 있는 기업 — IR 자료는 IR 기업 현황에서 등록합니다">
+            {%- if r.ir_file %}📎 {{ r.ir_file }}{% else %}IR 현황에서 등록{% endif -%}
+          </div>
         {% else %}
-        <td class="cell ellipsis" data-field="ir_file_name" title="{{ r.ir_file_name }}">{{ r.ir_file_name }}</td>
+          <div class="cell ellipsis" data-field="ir_file_name" data-hover-hint="파일 이름 적기"
+               title="{{ r.ir_file_name }}">{{ r.ir_file_name }}</div>
         {% endif %}
+          {# 받은 기록(i239) — 추가 칸 `IR 자료 수신` 의 값 · 적는 길도 추가 칸 그대로(`data-custom`).
+             IR 기업 현황에도 있는 기업도 **이 줄의** 받은 기록은 여기서 적는다. #}
+          {% if ir_recv_col %}{% set memo = ir_recv_vals.get(r.id, '') %}
+          <div class="cell clamp2 keep-lines ir-recv-memo" data-field="cc{{ ir_recv_col.id }}"
+               data-custom="{{ ir_recv_col.id }}" data-custom-rows="{{ custom_rows }}"
+               data-type="long" data-memo-date data-hover-hint="받은 기록 적기"
+               title="{{ memo or '받은 기록 — 눌러서 적습니다 (예: 2026/11/04 수신완료)' }}">{{ memo }}</div>
+          {% endif %}
+        </td>
         {{ cc.cells(r.id) }}
         <td>
           {# 지우는 판정은 옆 두 탭과 같은 함수다(`companies.can_delete_company`). #}
@@ -353,8 +366,8 @@
 </div>
 <p class="hint">
   머리글을 눌러 정렬하고, 머리글의 ▾ 로 거릅니다. 칸을 눌러 바로 고칩니다.
-  {% if in_ir %}<b>IR 현황</b> 딱지는 IR 기업 현황에도 있는 기업({{ in_ir }}곳)입니다 — 그 기업의 <b>IR 자료</b>는 IR 기업 현황에서 등록합니다.{% endif %}
-  <b>IR 자료</b>에 자료 폴더 안의 <b>파일 이름</b>을 적으면 딜 진행 관리의 <b>[자료 보내기]</b>가 그 파일을 붙여 보냅니다.
+  {% if in_ir %}<b>IR 현황</b> 딱지는 IR 기업 현황에도 있는 기업({{ in_ir }}곳)입니다 — 그 기업의 IR 자료 <b>파일 이름</b>은 IR 기업 현황에서 등록합니다.{% endif %}
+  <b>IR 자료 수신</b> 칸의 윗줄에 자료 폴더 안의 <b>파일 이름</b>을 적으면 딜 진행 관리의 <b>[자료 보내기]</b>가 그 파일을 붙여 보냅니다 — 아랫줄은 <b>받은 기록</b>(예: <code>2026/11/04 수신완료</code>)을 적는 자리입니다.
   <b>공유 심사역</b> 아래 후보는 딜 소싱 명단에서 이름이 같은 분입니다 — 그 딜을 넘겨 준 분께는 Series A 딜 공유에서
   이 딜이 빠지므로, 맞는 분을 <b>[이 분으로 확정]</b>하면 이름 · 회사로 짐작하지 않고 그 분만 뺍니다.
   확정한 분의 번호는 <b>휴대폰</b>에 보이고, 여기서 고치면 딜 소싱 · 투자사 관리 현황에도 반영됩니다.
