@@ -282,7 +282,8 @@ def test_writes_receipt_into_the_column_not_the_ir_file_field(db, admin, configu
     assert _cell(db, company) == "2026/11/04 수신완료 (드라이브: TalkFile_샘플가_IR.pdf)"
     assert company.ir_file_name in (None, "")
     col = db.execute(select(CustomColumn).where(CustomColumn.name == "IR 자료 수신")).scalars().one()
-    assert (col.target, col.kind, col.after_key) == ("companies", "memo", "IR 자료")
+    # 자리는 같은 이름의 고정 칸 뒤(i239 — 옛 `IR 자료` 가 `IR 자료 수신` 한 칸이 됐다).
+    assert (col.target, col.kind, col.after_key) == ("companies", "memo", "IR 자료 수신")
     # 수정 기록 — 주체는 `자동`.
     logs = db.execute(select(EditLog).where(EditLog.table_name == "ir_companies")).scalars().all()
     assert len(logs) == 1 and logs[0].method == edit_log.AUTO_METHOD

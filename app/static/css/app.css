@@ -641,7 +641,9 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
     서면 표가 그만큼 넓어질 뿐 칸이 눌리지 않는다. 관리자가 붙인 추가 칸도 같다).
     이제 남는 자리를 나눠 갖는 `%` 칸이 없으므로 **칸을 더하면 이 값을 그 칸 폭만큼 올린다.**) */
 /* (4,610 → 4,698 : 과제 169 의 `27년 예상매출`(88px — 머리글이 한 줄에 서는 폭) — 든 만큼만 올린다.) */
-#co-table { min-width: 4698px; }
+/* (4,698 → 4,776 : i239 — `IR 자료` 를 `IR 자료 수신` 한 칸으로 합치며 받은 기록 글(두 줄)이
+    들어가게 102 → 180px(+78). 따로 서던 추가 칸(180px)은 빠진다 — 추가 칸은 이 값에 안 셌다.) */
+#co-table { min-width: 4776px; }
 #co-table td.updated-by { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #sa-table td.updated-by { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* IR 기업 현황 › Series A 이상 딜 소싱 — 넓은 표 공통 값(2,030px)에 직접 적는 칸
@@ -2379,6 +2381,11 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
 .room-badge.cell-hint { border: 0; border-radius: 6px; padding: 2px 6px; margin-top: 0;
                         font-weight: normal; line-height: inherit; }
 #co-table .ir-file-name { margin-top: 2px; min-height: 1.2em; font-size: 11px; color: var(--muted); }
+/* `IR 자료 수신`(i239) — 파일(배지 · 이름) 아래 받은 기록. 빈 줄이 표 전체에 `적기` 글자로
+   깔리면 시끄러워서 **올려 둘 때만** 자리를 알린다(`.cell[data-placeholder]` 와 같은 생김새 ·
+   글자는 칸의 `data-hover-hint` — 이 파일에는 주석 밖 한글을 두지 않는다). */
+.ir-recv-memo { margin-top: 2px; }
+.cell[data-hover-hint]:empty:hover::before { content: attr(data-hover-hint); color: var(--muted); font-size: 11.5px; }
 
 /* 리마인드 구역에서 이름을 눌러 IR 요청 기록으로 — 누를 수 있다는 게 보여야 한다. */
 .req-link { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--line); }

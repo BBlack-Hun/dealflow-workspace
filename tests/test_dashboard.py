@@ -294,7 +294,7 @@ def test_all_required_fields_must_be_filled(logged, db):
     full.ir_file_name = None
     db.commit()
     assert is_ready(full) is False
-    assert missing_fields(full) == ["IR 자료"]
+    assert missing_fields(full) == ["IR 자료 수신 파일"]   # i239 — 옛 `IR 자료`
 
 
 def test_editing_makes_a_company_introducible(logged, db):

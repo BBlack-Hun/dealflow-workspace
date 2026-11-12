@@ -281,7 +281,8 @@ REQUIRED_FIELDS = [
     ("raise_target", "투자유치 진행금액"),
     ("pre_value", "Pre Value"),
     ("competitiveness", "특이사항"),
-    ("ir_file_name", "IR 자료"),
+    # 칸 이름은 `IR 자료 수신`(i239) — 그 칸 안의 **파일 이름**이 있어야 한다(받은 기록 글로는 안 된다).
+    ("ir_file_name", "IR 자료 수신 파일"),
 ]
 
 
@@ -972,8 +973,10 @@ def companies_page(request: Request, db: Session = Depends(get_db),
         # 고른 기업에 안내 카톡 · 카톡방 찾기·확인(11/11 · `routers/ir_outreach.py`).
         "ir_msg": ir_msg_screen(db, user),
     })
-    # 관리자가 붙인 추가 칸(`_custom_cols.html`).
+    # 관리자가 붙인 추가 칸(`_custom_cols.html`). 그중 `IR 자료 수신` 메모 칸은 따로 서지 않고
+    # 같은 이름의 고정 칸 안, 파일 이름 아래에 선다(i239 — `custom_columns.absorb`).
     ctx.update(custom_columns.view(db, "companies", "ir_companies"))
+    ctx["ir_recv_col"], ctx["ir_recv_vals"] = custom_columns.absorb(ctx)
     return templates.TemplateResponse(request, "companies.html", ctx)
 
 

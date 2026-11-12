@@ -106,7 +106,8 @@ def test_탭에서_IR_자료_파일_이름을_적는다(stage):
     html = c.get("/companies?tab=series-a").text
     heads = re.findall(r"<th\b[^>]*>(.*?)</th>",
                        re.search(r'id="sa-table".*?</thead>', html, re.S).group(0), re.S)
-    assert "IR 자료" in [re.sub(r"<[^>]+>", "", h).strip() for h in heads]
+    # i239 — 옛 `IR 자료` 는 `IR 자료 수신` 한 칸이 됐다(그 칸 윗줄이 파일 이름).
+    assert "IR 자료 수신" in [re.sub(r"<[^>]+>", "", h).strip() for h in heads]
     row = re.search(rf'<tr data-id="{bare.id}".*?</tr>', html, re.S).group(0)
     assert 'data-field="ir_file_name"' in row and "샘플비랩_IR.pdf" in row
 
@@ -143,7 +144,8 @@ def test_수정_로그에_칸_이름으로_남는다():
     """누가 이 기업의 자료 파일을 바꿨나 — 수정 로그 화면에 `ir_file_name` 이 날것으로 안 뜨게."""
     from app.services import edit_log
 
-    assert edit_log.field_label("ir_file_name") == "IR 자료"
+    # i239 — 칸 이름이 `IR 자료 수신` 이 됐고, 이 값은 그 칸의 **파일** 쪽이다.
+    assert edit_log.field_label("ir_file_name") == "IR 자료 수신 파일"
 
 
 # ── 2. 보내기 ────────────────────────────────────────────────────────────────

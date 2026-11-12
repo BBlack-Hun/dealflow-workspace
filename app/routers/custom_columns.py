@@ -60,6 +60,8 @@ def columns_page(request: Request, db: Session = Depends(get_db),
         "cols": cols,
         # 고른 자리 — 이름이 바뀐 머리글이면 새 이름(`svc.anchor_of` · #63).
         "afters": {c.id: svc.anchor_of(c) for c in cols},
+        # 따로 서지 않고 고정 칸 안에 서는 칸(i239 — `IR 자료 수신`) — 위치를 안 쓴다고 알린다.
+        "merged": {c.id: svc.MERGED[c.target] for c in cols if svc.is_merged(c)},
         "counts": svc.value_counts(db, cols),
         "anchors": svc.anchors(target),
         "kinds": svc.KINDS,

@@ -19,7 +19,8 @@ from tests.test_company_tab_order import _head_names
 # 합치기 전 `스타트업DB` 탭의 머리글(왼쪽부터). 가운데 매출 · 금액 칸은 해마다 이름이
 # 바뀌어 `revenue_years.columns()` 가 끼운다(`_old_db`).
 OLD_DB_BEFORE_YEARS = ["기업명", "수신일", "대표자명", "연락처", "이메일", "기업 한줄 소개"]
-OLD_DB_AFTER_YEARS = ["특이사항 (장점)", "설립년도", "지역", "정책자금", "IR 자료"]
+# 끝의 `IR 자료` 는 i239(11/12)에 추가 칸 `IR 자료 수신` 과 합쳐 `IR 자료 수신` 한 칸이 됐다.
+OLD_DB_AFTER_YEARS = ["특이사항 (장점)", "설립년도", "지역", "정책자금", "IR 자료 수신"]
 
 
 def _old_db() -> list:

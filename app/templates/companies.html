@@ -86,7 +86,7 @@
        · id 로 꾸미지 않는다). #}
     <input type="search" id="co-search" placeholder="모든 칸에서 찾기 (기업명 · 연락처 · 메모 …)"
            style="min-width:300px"
-           title="표에 보이는 글 칸을 모두 찾습니다 — 기업명 · 대표자명 · 연락처 · 이메일 · 기업 한줄 소개 · 딜 소개 문구 · 분야 · 매출 · 투자라운드 · 특이사항 · 지역 · 정책자금 · 담당자 · 계약 칸 · 메모 · IR 자료 · 추가 칸, [수정] 창의 대표 카톡방 · 합치기 전 값까지. 전화번호는 하이픈이 있든 없든, 뒷자리만으로도 찾아집니다. O/X 칸 · 수정한 날짜 · 수정한 팀원 · 소개 횟수는 찾지 않습니다(O/X 칸 · 수정한 팀원은 머리글 필터로 거릅니다)."
+           title="표에 보이는 글 칸을 모두 찾습니다 — 기업명 · 대표자명 · 연락처 · 이메일 · 기업 한줄 소개 · 딜 소개 문구 · 분야 · 매출 · 투자라운드 · 특이사항 · 지역 · 정책자금 · 담당자 · 계약 칸 · 메모 · IR 자료 수신 · 추가 칸, [수정] 창의 대표 카톡방 · 합치기 전 값까지. 전화번호는 하이픈이 있든 없든, 뒷자리만으로도 찾아집니다. O/X 칸 · 수정한 날짜 · 수정한 팀원 · 소개 횟수는 찾지 않습니다(O/X 칸 · 수정한 팀원은 머리글 필터로 거릅니다)."
            value="{{ q }}" autocomplete="off">
     {# 내려받기 둘은 **관리자 + 팀 현황에서 켜 준 계정**(11/01 · 0132) — 라우터도 같은
        판정으로 막는다(`deps.may_export_companies` · `data_io.export_companies*`). #}
@@ -798,16 +798,19 @@
         {% endif %}
         {# ── 메모(`note`) — #103 "컬럼 메모 노출되게" ─────────────────────────────
            [수정] 창에만 있던 칸이다(시트의 `비고` 를 옮겨 온 칸 · 10/27 TIPS 조사 메모
-           45곳도 여기 있다). `IR 자료` 는 맨 끝 그대로 두고(tests/test_inline_edit.py) 그
-           바로 앞에 선다 — 관리자가 붙인 칸(`TIPS` 등)은 `IR 자료` 오른쪽이라 가깝다.
+           45곳도 여기 있다). `IR 자료 수신`(옛 `IR 자료`)은 맨 끝 그대로 두고(tests/test_inline_edit.py) 그
+           바로 앞에 선다 — 관리자가 붙인 칸(`TIPS` 등)은 `IR 자료 수신` 오른쪽이라 가깝다.
            추가 메모 칸처럼 적은 줄바꿈을 살리고 두 줄에서 자른다 — 전체는 `title`. #}
         <th style="width:240px" title="두 줄까지 보입니다 · 눌러서 수정 · [수정] 창의 메모와 같은 칸">메모</th>
-        {# IR 자료는 맨 끝에 그대로 둔다 — 요청이 왔을 때 바로 꺼내 쓰는 칸이다. #}
-        {# 폭은 이름(`IR 자료`)이 아니라 **필터를 고른 뒤의 단추**(`IR 자료 (1) ▾`)에
-           맞춘다 — 고르고 나면 `(1)` 이 붙어 13px 이 더 든다. 82px 에서는 화면에서
-           `IR` / `자료 (1) ▾` 두 줄이었다. 두 자리 수(`(12)`)까지 들어가게 여유를
-           두어 102px(단추 77px + th 좌우 여백 18px + 한 자리 여유 7px). #}
-        <th style="width:102px" data-filters="ir:IR 자료">IR 자료<div class="th-filters"></div></th>
+        {# IR 자료 수신은 맨 끝에 그대로 둔다 — 요청이 왔을 때 바로 꺼내 쓰는 칸이다.
+           i239(11/12 팀원 요청) — 옛 `IR 자료`(보낼 파일 이름)와 추가 칸 `IR 자료 수신`(받은
+           기록 글)을 **한 칸**으로 합쳤다. 값은 두 자리 그대로다: 파일 이름은 발송기가 붙이는
+           칸이라 글을 섞으면 첨부가 깨진다(`agent/sender/base.py` 의 `check_ir_file_name`).
+           칸 안에 파일(배지 · 이름) 아래 받은 기록이 선다(`custom_columns.absorb`).
+           폭은 받은 기록 글(두 줄)이 들어가게 옆 메모 칸 · 추가 메모 칸과 같은 결로 180px.
+           필터는 그대로 **파일**이 있나(`● 있음`/`⚠ 없음`)다 — 보낼 수 있는 기업을 고르는 필터다. #}
+        <th style="width:180px" data-filters="ir:IR 자료 수신"
+            title="위: 보낼 파일 이름(자료 폴더 안) · 아래: 받은 기록(예: 2026/11/04 수신완료) — 각각 눌러서 수정 · 필터는 파일이 있는지로 거릅니다">IR 자료 수신<div class="th-filters"></div></th>
         {{ cc.heads() }}
         <th style="width:52px"></th>
       </tr>
@@ -1121,6 +1124,7 @@
              `data-f-ir` 는 `companies.js` 가 응답(`has_ir`)으로 다시 그린다 — 필터 값은 친
              파일 이름이 아니라 `● 있음`/`⚠ 없음` 이라 `data-filter-derived`(금액 칸과 같은 표시)로
              inline_edit.js 가 친 글자를 행에 적지 않게 한다. #}
+          <div class="ir-file-part">
           {% if r.has_ir %}
             <span class="room-badge ok cell-hint ir-badge" title="자료 파일: {{ r.ir_file_name }} — 눌러서 고칩니다">📎 있음</span>
           {% else %}
@@ -1129,6 +1133,16 @@
           <div class="cell ellipsis ir-file-name" data-field="ir_file_name"
                data-filter-key="ir" data-filter-derived
                title="{{ r.ir_file_name }}">{{ r.ir_file_name }}</div>
+          </div>
+          {# 받은 기록(i239) — 추가 칸 `IR 자료 수신` 의 값. 적는 길은 추가 칸 그대로다
+             (`data-custom` → `/api/custom-values/…`). 배지 · 파일 이름과 **다른 묶음**이라
+             배지를 누르면 파일 이름이 열린다(`inline_edit.js` 는 딱지의 부모 안 첫 칸을 연다). #}
+          {% if ir_recv_col %}{% set memo = ir_recv_vals.get(r.id, '') %}
+          <div class="cell clamp2 keep-lines ir-recv-memo" data-field="cc{{ ir_recv_col.id }}"
+               data-custom="{{ ir_recv_col.id }}" data-custom-rows="{{ custom_rows }}"
+               data-type="long" data-memo-date data-hover-hint="받은 기록 적기"
+               title="{{ memo or '받은 기록 — 눌러서 적습니다 (예: 2026/11/04 수신완료)' }}">{{ memo }}</div>
+          {% endif %}
         </td>
         {{ cc.cells(r.id) }}
         <td><button type="button" class="linkbtn js-co-edit">수정</button></td>
@@ -1142,7 +1156,8 @@
 </div>
 <p class="hint">
   금액 단위는 <b>억</b>입니다 — <code>18.3</code> 처럼 소수점도 됩니다.
-  <b>IR 자료</b>는 자료 폴더에 넣어 둔 <b>파일 이름</b>을 적습니다(주소가 아닙니다) — 칸을 눌러 바로 적고, 비우면 <b>없음</b>이 됩니다.
+  <b>IR 자료 수신</b> 칸의 윗줄에는 자료 폴더에 넣어 둔 <b>파일 이름</b>을 적습니다(주소가 아닙니다) — 배지나 이름을 눌러 바로 적고, 비우면 <b>없음</b>이 됩니다.
+  아랫줄은 <b>받은 기록</b>(예: <code>2026/11/04 수신완료</code>)을 적는 자리입니다.
   그러면 자료 요청이 왔을 때 <a href="/deals">딜 제안 관리 → IR 자료 전달</a>에서
   바로 보낼 수 있습니다.
   {# 자료 폴더를 정하러 가라는 말은 **그 칸이 그려지는 계정에만** 한다 —
@@ -1577,9 +1592,10 @@
     {# **주소 칸이 아니다**(0056). 자료 폴더 안의 **파일 이름 하나**를 적는다 —
        폴더 경로는 PC 마다 달라서 각자 `/setup` 에서 정하고, 발송기가
        `폴더 + 이름` 으로 조립해 붙여 보낸다. 경로·주소는 발송기가 거부한다. #}
-    {# 이름은 표 머리글과 같은 `IR 자료`(tests/test_ui_layout.py) — #151 로 표에서도 고치는
-       칸이 되며 둘이 짝지어졌다. 파일 이름을 적는다는 말은 placeholder 에 있다. #}
-    <label class="field wide"><span>IR 자료</span>
+    {# 이름은 표 머리글과 같은 `IR 자료 수신`(i239 — 옛 `IR 자료` · tests/test_ui_layout.py) —
+       #151 로 표에서도 고치는 칸이 되며 둘이 짝지어졌다. 여기는 그 칸 윗줄의 **파일 이름**이고
+       (placeholder 가 그렇게 말한다), 아랫줄 받은 기록 글은 표에서만 적는다(추가 칸). #}
+    <label class="field wide"><span>IR 자료 수신</span>
       <input type="text" id="f-ir_file_name"
              placeholder="예: 샘플애그_IR_2026.pdf — 자료 폴더에 넣어 둔 파일 이름"></label>
     {#

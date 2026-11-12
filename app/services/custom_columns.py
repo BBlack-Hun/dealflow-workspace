@@ -77,6 +77,10 @@ _FORECAST = "{예상매출}"
 #: Series A 탭의 매출 칸 — 이름이 해마다 `27년 예상매출` → `27년 매출` 로 넘어간다.
 _SA_YEARS = "{Series A 연도별 매출}"
 _SA_REVENUE = ("revenue_2024", "revenue_2025", "revenue_2026", "revenue_2027")
+#: IR 기업 현황 · Series A 두 탭의 `IR 자료 수신` 칸(i239 · 11/12 — 옛 `IR 자료` 칸과 추가 칸
+#: `IR 자료 수신` 을 한 칸으로). 한 칸 안에 **두 값**이 선다: 보낼 파일 이름(`ir_file_name` —
+#: 발송기가 붙이는 칸이라 글을 섞을 수 없다)과 받은 기록(같은 이름의 추가 메모 칸 — `absorb`).
+IR_RECEIVED = "IR 자료 수신"
 _HAND_ANCHORS = {
     "companies": {
         # 옛 `스타트업DB` 탭의 칸(`특이사항 (장점)` · `설립년도` · `지역` · `정책자금` 등)도
@@ -90,14 +94,14 @@ _HAND_ANCHORS = {
             "특이사항 (장점)", "설립년도", "지역", "정책자금",
             "총 소개 횟수", "담당별 소개", "미팅제공일자", "계약년월",
             "카톡 연결 여부", "홍보메일삭제",
-            "핵심/TOP Deal", "메모", "IR 자료"),
+            "핵심/TOP Deal", "메모", IR_RECEIVED),
         "Series A 이상 딜 소싱": (
             "기업명", "계약년월", "계약여부", "계약서 수신 여부",
             "메모", "수정한 팀원", "담당자", "수정한 날짜", "수신일", "후속라운드 시작",
             "IR 투자컨설팅 미팅일시", "대표자명", "연락처", "이메일",
             "대분류", "소분류", _SA_YEARS, "누적투자금액", "투자유치희망금액",
             "Pre Value", "투자라운드", "상세 내용", "딜 소개 문구", "Type",
-            "공유 심사역", "휴대폰", "회사", "IR 자료"),
+            "공유 심사역", "휴대폰", "회사", IR_RECEIVED),
     },
     "consulting": {
         # 계약 넷은 `이메일`(·`등록일`) 오른쪽 · `소개 메모` → `메모`(#154 · 11/04).
@@ -128,7 +132,9 @@ RENAMED = {
                   # #87(10/29) — Series A 탭도 옆 두 탭과 같은 `수신일`.
                   "수신 일자": "수신일",
                   # #165(11/06) — IR 기업 현황의 소개 횟수가 업무 보고와 같은 셈의 `총` 이 됐다.
-                  "소개 횟수": "총 소개 횟수"},
+                  "소개 횟수": "총 소개 횟수",
+                  # i239(11/12) — `IR 자료` 와 추가 칸 `IR 자료 수신` 을 한 칸으로 합쳤다.
+                  "IR 자료": IR_RECEIVED},
     # 이름 통일(10/22) — 기업 쪽은 IR 기업 현황 낱말, 투자사 쪽은 투자사 관리 현황 낱말.
     "consulting": {"미팅일": "컨설팅 미팅일", "대표자": "대표자명",
                    "계약완료여부": "계약여부", "계약서 수신완료여부": "계약서 수신 여부",
@@ -277,6 +283,37 @@ def view(db: Session, target: str, row_table: str) -> dict:
             "custom_after": {c.id: anchor_of(c) for c in cols},
             # 관리자에게 이 표의 `컬럼 관리` 로 가는 길을 세울 때(`_custom_cols.html` 의 `manage`).
             "custom_target": target}
+
+
+#: 따로 서지 않고 **고정 칸 안에** 함께 서는 추가 칸 — `{화면: 칸 이름}`(i239).
+MERGED = {"companies": IR_RECEIVED}
+
+
+def is_merged(col) -> bool:
+    """고정 칸 안에 함께 서는 칸인가(`MERGED` — 그 화면의 같은 이름 메모 칸)."""
+    want = MERGED.get(getattr(col, "target", None))
+    return bool(want) and col.kind == "memo" \
+        and label_key(col.name).casefold() == label_key(want).casefold()
+
+
+def absorb(v: dict):
+    """`view` 가 준 것에서 고정 칸 안에 설 메모 칸을 빼낸다 — `(칸, {줄 번호: 값})`, 없으면 `(None, {})`.
+
+    IR 기업 현황 · Series A 두 탭은 추가 칸 `IR 자료 수신`(관리자가 붙인 메모 칸 · 구글 드라이브
+    수신 확인이 적는 칸 — `gdrive_ir.COLUMN`)을 같은 이름의 고정 칸 안, 파일 이름 아래에 그린다
+    (i239). 값은 그 칸에 그대로 있고 적는 길도 같다(`data-custom`) — 그리는 자리만 옮긴다.
+    빼낸 칸은 `custom_cols` 에서 빠져 머리글 · 칸 · 엑셀 끝에 따로 서지 않는다.
+
+    숨긴 칸은 `view` 가 이미 뺐다(숨기면 이 칸 안에서도 안 보인다). O/X 칸은 안 빼낸다 —
+    받은 기록은 글이다. 이름이 바뀐 칸도 안 빼낸다 — 관리자가 따로 세우려고 바꾼 것이다.
+    """
+    for col in v["custom_cols"]:
+        if is_merged(col):
+            v["custom_cols"] = [c for c in v["custom_cols"] if c is not col]
+            vals = {row_id: got[col.id] for row_id, got in v["custom_vals"].items()
+                    if got.get(col.id)}
+            return col, vals
+    return None, {}
 
 
 def names(v: dict) -> List[str]:

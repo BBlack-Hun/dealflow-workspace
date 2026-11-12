@@ -111,7 +111,7 @@ def search_text(c: SeriesACompany, extra=()) -> str:
 
 def ir_names(db: Session) -> Dict[str, tuple]:
     """IR 기업 현황의 `{비교용 이름: (그 탭에 적힌 이름, IR 자료 파일 이름)}` —
-    `IR 현황` 딱지와 그 줄의 `IR 자료` 칸(IR 쪽 자료를 보여만 준다)의 재료."""
+    `IR 현황` 딱지와 그 줄의 `IR 자료 수신` 칸 파일 이름(IR 쪽 자료를 보여만 준다)의 재료."""
     out: Dict[str, tuple] = {}
     for name, file_name in db.execute(select(IrCompany.name, IrCompany.ir_file_name)):
         key = deal_history._key(name)
@@ -177,9 +177,10 @@ def row_dict(c: SeriesACompany, known: Dict[str, tuple],
         # IR 기업 현황에 같은 기업이 있으면 그 탭에 적힌 이름 — 딱지가 그 이름으로
         # 그 탭을 연다(`/companies?q=…` 가 검색칸을 채운다).
         "ir_name": ir_name,
-        # `IR 자료` 칸 — 이 줄에 적은 파일 이름. IR 기업 현황에 같은 기업이 있으면
-        # 이 칸 대신 **IR 쪽 파일 이름**(`ir_file`)을 보여만 준다 — [자료 보내기]는 그
-        # 이름의 요청을 IR 줄로 잇고 IR 쪽 자료를 붙인다(`_check_ir_file` 이 여기 적기를 막는다).
+        # `IR 자료 수신` 칸의 파일 이름(i239 — 옛 `IR 자료`) — 이 줄에 적은 것. IR 기업
+        # 현황에 같은 기업이 있으면 이 칸 대신 **IR 쪽 파일 이름**(`ir_file`)을 보여만
+        # 준다 — [자료 보내기]는 그 이름의 요청을 IR 줄로 잇고 IR 쪽 자료를 붙인다
+        # (`_check_ir_file` 이 여기 적기를 막는다).
         "ir_file_name": c.ir_file_name or "",
         "ir_file": ir_file,
         "shared_count": len(shared),
@@ -189,7 +190,7 @@ def row_dict(c: SeriesACompany, known: Dict[str, tuple],
         # `공유 심사역` 오른쪽 `휴대폰` 칸(#25) — [이 분으로 확정]한 분의 딜 소싱 줄 번호.
         # 확정한 분이 없으면 빈칸이고 고칠 수 없다(`_set_sharer_phone`).
         "sharer_phone": sharer_phone,
-        # 칸에 보이는 그대로 — IR 쪽 자료 이름(`IR 자료` 칸이 그것을 보인다) · `휴대폰`(두 꼴).
+        # 칸에 보이는 그대로 — IR 쪽 자료 이름(`IR 자료 수신` 칸이 그것을 보인다) · `휴대폰`(두 꼴).
         "search": search_text(c, [ir_file, sharer_phone, phone_digits(sharer_phone), *custom]),
     }
 
@@ -301,8 +302,10 @@ def render_page(request: Request, db: Session, user: User, msg: str = "", q: str
         # `계약여부` 고르개의 보기 — IR 기업 현황 표와 같은 목록.
         "contract_labels": CONTRACT_LABELS,
     })
-    # 관리자가 붙인 추가 칸 — 옆 두 탭과 **같은 칸**(`custom_columns.TARGETS`).
+    # 관리자가 붙인 추가 칸 — 옆 두 탭과 **같은 칸**(`custom_columns.TARGETS`). `IR 자료 수신`
+    # 메모 칸은 IR 기업 현황처럼 같은 이름의 고정 칸 안에 선다(i239 — `custom_columns.absorb`).
     ctx.update(custom_columns.view(db, "companies", "series_a_companies"))
+    ctx["ir_recv_col"], ctx["ir_recv_vals"] = custom_columns.absorb(ctx)
     return templates.TemplateResponse(request, "companies_series_a.html", ctx)
 
 

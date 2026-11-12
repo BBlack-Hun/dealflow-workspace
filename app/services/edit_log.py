@@ -618,8 +618,9 @@ FIELD_LABELS = {
     # `계약월` 이지만 로그 줄의 화면 이름(`/consulting`)이 어느 표인지 말해 준다.
     "management": "기업 관리", "meeting_at": "컨설팅 미팅일",
     "detail": "상세 내용", "deal_pitch": "딜 소개 문구",
-    # 보낼 IR 자료 파일 이름 — IR 기업 현황 · `Series A 이상 딜 소싱`(0118) 두 탭의 `IR 자료`.
-    "ir_file_name": "IR 자료",
+    # 보낼 IR 자료 파일 이름 — IR 기업 현황 · `Series A 이상 딜 소싱`(0118) 두 탭의 `IR 자료 수신`
+    # 칸 윗줄(i239 — 옛 `IR 자료`). 아랫줄 받은 기록은 추가 칸 이름(`추가 칸 · IR 자료 수신`)으로 남는다.
+    "ir_file_name": "IR 자료 수신 파일",
     "memo": "메모", "notes": "칸 메모", "note": "메모", "body": "본문",
     "phone": "연락처", "email": "메일", "one_liner": "한 줄 소개",
     "summary": "요약", "business_desc": "사업 설명", "content_json": "내용",

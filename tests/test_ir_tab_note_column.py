@@ -29,7 +29,7 @@ def logged(client, users, db):
 def test_IR_자료_앞에_메모가_선다(logged):
     html = logged.get("/companies").text
     names = _head_names(html)
-    assert names[names.index("IR 자료") - 1] == "메모", names
+    assert names[names.index("IR 자료 수신") - 1] == "메모", names   # i239 — 옛 `IR 자료`
     body = html.split("<tbody>", 1)[1]
     assert 'data-field="note" data-type="long" data-memo-date>TIPS 가능\n누적 투자 12억</div>' in body
 
