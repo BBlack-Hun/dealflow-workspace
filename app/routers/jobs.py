@@ -138,6 +138,7 @@ def _requeue(db: Session, job: SendJob, items: list[SendItem],
     단 딜 소싱 글 회차는 나가는 순간 참여를 다시 보고(`_drop_not_taking_part`),
     스타트업 월간 발송은 회차를 세운 뒤 그 달 글을 받은 기업을 뺀다(`_drop_already_received`).
     스타트업 안내 카톡은 막는 규칙과 방 이름을 다시 본다(`_drop_outreach_unsendable`).
+    딜 소개 · IR 자료 전달은 실린 기업이 딜소개 불가가 됐는지 본다(`_drop_blocked_companies`).
     """
     for item in items:
         item.status = "pending"
@@ -145,6 +146,7 @@ def _requeue(db: Session, job: SendJob, items: list[SendItem],
     _drop_not_taking_part(db, job)
     _drop_already_received(db, job)
     _drop_outreach_unsendable(db, job)
+    _drop_blocked_companies(db, job)
     items = [i for i in items if i.status == "pending"]
     if not any(i.status == "pending" for i in job.items):
         # 다시 본 판정으로 전부 빠졌다 — 큐에 세우지 않는다. 예약으로 서 있던
@@ -212,6 +214,35 @@ def _drop_outreach_unsendable(db: Session, job: SendJob) -> None:
         if why:
             item.status = "canceled"
             item.error = f"{why} — 나가기 전에 다시 보고 뺐습니다"
+
+
+def _drop_blocked_companies(db: Session, job: SendJob) -> None:
+    """딜 소개 · IR 자료 전달 — **나가는 순간** 실린 기업을 다시 본다.
+
+    회차를 세운 뒤 [발송 시작] · 예약 · 재시도까지 사이에 실린 기업이 `딜소개 불가`
+    (계약여부 · 기업명 꼬리표 — `companies.deal_blocked`)가 됐으면 대기 건을 전부
+    취소한다. 글은 이미 굳어 있어(기업 여럿이 한 글에 든다) 그 기업만 뺄 수 없다 —
+    다시 고르게 둔다. 실린 기업이 없는 회차(문구만 나가는 종류)는 그대로.
+    """
+    if not job.batch_id:
+        return
+    from sqlalchemy import select
+
+    from ..models import DealBatchCompany
+    from .companies import deal_blocked   # 순환 import 를 피해 늦게 부른다
+    from .deals import blocked_note
+
+    rows = db.execute(select(DealBatchCompany)
+                      .where(DealBatchCompany.batch_id == job.batch_id)
+                      .order_by(DealBatchCompany.position)).scalars()
+    hit = next((r.company for r in rows
+                if r.company is not None and deal_blocked(r.company)), None)
+    if hit is None:
+        return
+    for item in job.items:
+        if item.status == "pending":
+            item.status = "canceled"
+            item.error = f"{blocked_note(hit)} — 나가기 전에 다시 보고 뺐습니다"
 
 
 def _drop_already_received(db: Session, job: SendJob) -> None:

@@ -607,6 +607,27 @@ def _load_companies(db: Session, company_ids: List[int]) -> List[IrCompany]:
     return companies
 
 
+def blocked_note(company) -> str:
+    """딜소개 불가 기업을 고른 까닭으로 멈출 때의 말 — 만들 때와 나가는 순간(`jobs`)이 같다."""
+    return f"'{company.name}' 은(는) 딜소개 불가 기업입니다"
+
+
+def refuse_blocked(companies) -> None:
+    """고른 IR 기업 중 **딜소개 불가**(계약여부 · 기업명 꼬리표 — `companies.deal_blocked`)가
+    있으면 400.
+
+    발송 화면은 그 기업을 아예 안 보여 준다(`pages.deals_page`). 여기 닿는 것은 오래 열어
+    둔 탭 · 세운 뒤에 막힌 예약 줄(`deal_queue` 의 [시작]) · 손으로 만든 요청이다. 조용히
+    빼면 몇 곳이 실려 나가는지 아무도 모른다 — 통째로 멈춘다.
+    """
+    from .companies import deal_blocked   # 순환 import 를 피해 늦게 부른다
+
+    hit = next((c for c in companies if isinstance(c, IrCompany) and deal_blocked(c)), None)
+    if hit is not None:
+        raise HTTPException(status_code=400,
+                            detail=f"{blocked_note(hit)} — 빼고 다시 고르세요")
+
+
 # ── IR 자료 전달에 **Series A 이상 딜 소싱** 기업도 싣는다 (0118) ──────────────
 #
 # 딜 진행 관리에서 그 기업의 IR 요청을 적고(#365) 그 탭에 IR 자료 파일 이름을 적으면
@@ -622,10 +643,15 @@ def _picked_count(req) -> int:
 
 
 def _picked_companies(db: Session, req) -> list:
-    """보낼 기업 — 기업을 고르는 방식만, IR 자료 전달은 IR 기업 뒤에 Series A 기업."""
+    """보낼 기업 — 기업을 고르는 방식만, IR 자료 전달은 IR 기업 뒤에 Series A 기업.
+
+    `딜소개 불가` 기업이 섞이면 말하고 멈춘다(`refuse_blocked`). 미리보기와 발송 목록
+    만들기가 둘 다 이 함수를 지난다.
+    """
     if req.mode not in MODES_WITH_COMPANIES:
         return []
     companies = _load_companies(db, req.company_ids)
+    refuse_blocked(companies)
     if req.mode == MODE_IR and req.series_a_ids:
         companies += _series_a_for_ir(db, req.series_a_ids)
     return companies
@@ -1839,8 +1865,8 @@ def add_queue_item(
         raise HTTPException(
             status_code=400,
             detail=f"기업은 1~{MAX_COMPANIES_PER_SEND}개 선택하세요")
-    # 없는 기업을 예약해 두면 [시작] 을 누르는 순간에야 죽는다 — 지금 막는다.
-    _load_companies(db, req.company_ids)
+    # 없는 기업 · 딜소개 불가 기업을 예약해 두면 [시작] 을 누르는 순간에야 죽는다 — 지금 막는다.
+    refuse_blocked(_load_companies(db, req.company_ids))
 
     item = DealQueueItem(
         user_id=user.id,

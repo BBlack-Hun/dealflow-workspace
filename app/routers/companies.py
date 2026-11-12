@@ -22,7 +22,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from ..clock import stamp_text
@@ -137,6 +137,52 @@ def contract_key(value) -> str:
     key = (value or "none").strip()
     key = CONTRACT_FROM_LABEL.get(key.replace(" ", ""), key)
     return CONTRACT_ALIAS.get(key, key)
+
+
+# ── 딜소개 불가 — 계약여부 **또는** 기업명 꼬리표 ──────────────────────────────
+#
+# 팀은 딜소개 불가를 계약여부 칸보다 **기업명 뒤 꼬리표**로 먼저 적는다
+# (`[딜소개 불가/폐업]` · `(딜소개 불가 / 2027년 3분기 부터 딜소개 가능)` ·
+# `딜 소개불가`). 이름에 꼬리표가 있으면 계약여부가 `blocked` 일 때와 똑같이
+# 다룬다 — 발송 화면 · 자동 발송 · 추천 · IR 아웃리치에서 빠진다.
+#
+# 계약여부 값은 **건드리지 않는다**(유료 계약 같은 사실이 사라진다). 막는 판정만
+# 둘을 함께 본다. `IrCompany.introducible`(내용이 갖춰졌는가)과는 다른 뜻이라
+# 거기에 섞지 않는다.
+#
+# 파이썬 판정(`deal_blocked`)과 SQL 조건(`deal_blocked_clause`)은 **같은 규칙**이다 —
+# 띄어쓰기만 지우고 견준다(이름은 `딜소개불가` 가 들었는가, 계약여부는 값 또는 말).
+
+#: 이름에 이 글자가 들었으면(띄어쓰기를 지우고) 딜소개 불가다.
+NAME_BLOCK_MARK = CONTRACT_LABELS[BLOCKED_CONTRACT].replace(" ", "")
+
+
+def name_blocked(name) -> bool:
+    """기업명에 `딜소개 불가` 꼬리표가 붙었나 — 띄어쓰기를 지우고 본다."""
+    return NAME_BLOCK_MARK in (name or "").replace(" ", "")
+
+
+def deal_blocked(company) -> bool:
+    """딜소개 불가 기업인가 — 계약여부가 `딜소개 불가` 이거나 이름에 그 꼬리표가 있다.
+
+    소개 · 발송 대상을 고르는 자리는 모두 이것(또는 SQL 로 같은 `deal_blocked_clause`)을
+    지난다.
+    """
+    return (contract_key(company.contract_status) == BLOCKED_CONTRACT
+            or name_blocked(company.name))
+
+
+def deal_blocked_clause():
+    """`deal_blocked` 와 같은 판정의 SQL 조건(`IrCompany`). 빼려면 `~deal_blocked_clause()`.
+
+    계약여부는 지금 값(`blocked`)과 화면 말(`딜소개 불가` — 띄어쓰기 무관) 둘 다 본다
+    (`contract_key` 가 그 둘을 같은 값으로 읽는다). 빈칸은 빈 글자로 읽어 `NOT` 이
+    NULL 에 걸려 줄이 사라지지 않게 한다.
+    """
+    contract = func.replace(func.coalesce(IrCompany.contract_status, ""), " ", "")
+    name = func.replace(func.coalesce(IrCompany.name, ""), " ", "")
+    return or_(contract.in_((BLOCKED_CONTRACT, NAME_BLOCK_MARK)),
+               name.like(f"%{NAME_BLOCK_MARK}%"))
 
 
 def _is_admin(user: User) -> bool:
