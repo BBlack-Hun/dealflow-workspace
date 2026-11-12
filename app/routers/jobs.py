@@ -223,7 +223,15 @@ def _drop_blocked_companies(db: Session, job: SendJob) -> None:
     (계약여부 · 기업명 꼬리표 — `companies.deal_blocked`)가 됐으면 대기 건을 전부
     취소한다. 글은 이미 굳어 있어(기업 여럿이 한 글에 든다) 그 기업만 뺄 수 없다 —
     다시 고르게 둔다. 실린 기업이 없는 회차(문구만 나가는 종류)는 그대로.
+
+    **딜 소개 · IR 자료 전달만 본다.** 스타트업 월간 발송(A5)은 딜 소개가 아니라
+    계약 기업에 주는 보고라 계약여부로 고른 그대로 나간다 — 묶음에 그 기업이 실려도
+    여기서 막지 않는다. 다른 종류도 같다(이 판정이 맡는 일이 아니다).
+
+    발송기가 큐에 선 회차를 받아 가는 자리(`agent_api.poll`)도 이 함수를 부른다.
     """
+    if job.kind not in ("deal_intro", "ir_delivery"):
+        return
     if not job.batch_id:
         return
     from sqlalchemy import select

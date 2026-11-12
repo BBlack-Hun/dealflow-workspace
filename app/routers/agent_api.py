@@ -29,7 +29,7 @@ from sqlalchemy.orm import Session
 from .. import clock, config
 from ..db import get_db
 from ..services import (cadence, pipeline, room_joined, room_match, room_name,
-                        scheduled_send, send_guard, sourcing_sync)
+                        scheduled_send, send_guard, sourcing_sync, vc_room_search)
 from ..deps import agent_serves, get_agent_device, may_auto_attach, now_iso
 from ..models import (ROOM_SEARCH_TOPIC, SENDER_ROOM_TOPIC, SOURCING_ROOM_TOPIC,
                       AgentDevice, SendItem, SendJob, User)
@@ -242,6 +242,23 @@ def poll(
     db.commit()
 
     job = db.get(SendJob, candidate)
+    # ★ **내주기 직전에 실린 기업을 다시 본다**(딜 소개 · IR 자료 전달 —
+    #   `jobs._drop_blocked_companies`, [발송 시작] · 예약 풀림 · 재시도와 같은 판정).
+    #   19시 이후 · PC 꺼짐 · 하루 한도(`_settle` 이 다시 큐에 세운다)로 `queued` 인 채
+    #   밤을 넘긴 회차가 그사이 `딜소개 불가` 가 된 기업을 싣고 다음 날 그대로 나가면
+    #   안 된다. 걸리면 대기 건은 그 까닭으로 취소되고(나간 건은 그대로) 회차는 닫힌다
+    #   — 발송기에는 아무것도 안 준다. 다음 폴링이 다른 회차를 집는다.
+    from .jobs import _drop_blocked_companies   # 순환 import 를 피해 늦게 부른다
+
+    waiting = sum(1 for i in job.items if i.status == "pending")
+    _drop_blocked_companies(db, job)
+    if waiting and not any(i.status == "pending" for i in job.items):
+        job.status = "canceled"
+        job.finished_at = now_iso()
+        db.commit()
+        log.warning("회차 %s — 내주기 직전 다시 보니 딜소개 불가 기업이 실려 대기 %s건을 "
+                    "취소하고 닫습니다", job.id, waiting)
+        return Response(status_code=204)
     pending_items = _agent_items(job)
 
     # ★ 한 번에 내주는 건수의 상한은 **에이전트가 정한다** (`?cap=`).
@@ -362,6 +379,11 @@ def _verify_search(job: SendJob, item: SendItem) -> dict:
         # 보고한다(`agent/main.py: process_verify_job`). 여기서 필요한 것은 사람이
         # 고를 **후보 전부**다 — 서버가 미리 줄이면 맞는 방이 화면에 서지도 못한다.
         return _company_search(company)
+    if vc_room_search.is_search(job, item):
+        # 투자사 담당자 [방 연결 확인] 중 **방 이름이 빈 건** — 방 이름이 없는 줄이거나,
+        # 적어 둔 이름으로 못 찾아 되돌아온 건(`vc_room_search.fall_back`). 이름+직급,
+        # 못 찾으면 이름으로 찾는다(11/12 — 사용자: 카톡방 이름 >>> 이름 직급 >>> 이름).
+        return vc_room_search.search_terms(item.contact)
     # IR 기업 줄도 방 이름이 실렸으면 같은 대조다(`_company_row` — 11/11).
     if item.contact is not None or item.ir_company is not None:
         from ..services.room_name import normalize_space
@@ -510,6 +532,12 @@ def _apply_verify_result(item: SendItem, body: ItemResult,
         _apply_company_candidates(item, company, body, verdict)
         return
 
+    # 투자사 담당자를 **이름으로 찾은** 건(방 이름이 빈 건) — 찾은 방이 이 분 방으로
+    # 분명할 때만 빈 방 이름 칸을 채운다. 적어 둔 방 이름은 여기서도 안 바꾼다.
+    if vc_room_search.is_search(item.job, item):
+        vc_room_search.apply_result(item, body)
+        return
+
     # ★ **담당자 줄 · 시험 확인 — 적어 둔 방 이름을 절대 바꾸지 않는다** (11/05).
     #
     #   예전에는 발송기가 올린 제목(`found_room`)으로 방 이름 칸과 건의 방 이름을
@@ -561,6 +589,13 @@ def _apply_verify_result(item: SendItem, body: ItemResult,
         item.error = _mismatch_error(titles, _other_rooms(item))
     else:
         item.error = body.error or VERIFY_ERRORS.get(verdict, verdict)
+    # 적어 둔 이름으로 **찾아봤는데 없었다** — 같은 건을 이름+직급 → 이름으로 한 번 더
+    # 찾는다. 발송기 오류 · 판정 없이 온 결과 · 판을 못 믿는 발송기 · 잡 뒤에 고친
+    # 이름은 뺀다(찾아본 결과가 아니다). 적어 둔 이름은 그대로이고, 위에서 적은 사유는
+    # 남겨 두었다가 이름으로도 못 찾으면 앞에 붙인다(`vc_room_search.apply_result`).
+    if (verdict == "not_found" and body.verify_result in VERIFY_VERDICTS
+            and not (renamed or blind or investor) and not (body.error or "").strip()):
+        vc_room_search.fall_back(item)
 
 
 def _startup_investor_room(item: SendItem, contact, want: str) -> str:
@@ -620,12 +655,17 @@ def _blind_verifier(device: Optional[AgentDevice]) -> bool:
 
 
 def _other_rooms(item: SendItem) -> set:
-    """같은 회차 **다른 건**의 방 이름들(`title_key`) — 앞 검색 결과가 늦게 읽힌 것을 짚는다."""
+    """같은 회차 **다른 건**의 방 이름들(`title_key`) — 앞 검색 결과가 늦게 읽힌 것을 짚는다.
+
+    이름으로 다시 찾으려고 방 이름을 비운 건(`vc_room_search.fall_back`)은 그 줄의
+    방 이름 칸을 본다 — 건에서는 비었어도 그 줄의 방 이름은 그대로다.
+    """
     job = item.job
     if job is None:
         return set()
-    return {room_name.title_key(i.room_name) for i in job.items
-            if i.id != item.id and (i.room_name or "").strip()}
+    names = (i.room_name or (i.contact.kakao_room_name if i.contact is not None else "")
+             for i in job.items if i.id != item.id)
+    return {room_name.title_key(n) for n in names if (n or "").strip()}
 
 
 def _mismatch_error(titles: list, others: set = frozenset()) -> str:
@@ -866,10 +906,20 @@ def _made_progress(job: SendJob) -> bool:
     읽힌다(`>=`). 그 쪽으로 틀리는 편이 안전하다 — 실제로 보낸 회분을 진행 없음으로
     보면 남은 사람이 또 대기로 묶인다. 그래도 다음 폴링은 다른 초에 일어나므로
     되돌림이 무한히 이어지지는 않는다(막아야 할 것은 반복이지 한 번의 여유가 아니다).
+
+    ## 방 확인 잡은 **대기로 되돌린 건**도 일을 한 것이다
+
+    적어 둔 방 이름으로 못 찾은 건은 결과를 받는 자리에서 대기로 되돌아가 다음 회분에
+    이름으로 찾는다(`services/vc_room_search.fall_back`). 회분의 모든 건이 그렇게
+    되돌아가면(운영 잡 349 — 7건 모두 못 찾음) 대기 아닌 건이 없어 `paused` 로 멈춘다.
+    그래서 방 확인 잡만은 대기 건이라도 이번에 바뀐 것을 센다. 되돌리기는 건마다 한
+    번뿐이라(되돌린 건은 찾기 건이 된다) 반복이 끝없이 이어지지 않는다. 아무것도
+    보내지 않는 잡이라 한 바퀴 더 도는 쪽으로 틀려도 해가 없다.
     """
     started = job.started_at or ""
+    verify = job.kind == VERIFY_KIND
     return any((i.updated_at or "") >= started
-               for i in job.items if i.status != "pending")
+               for i in job.items if verify or i.status != "pending")
 
 
 def _settle(job: SendJob) -> str:
