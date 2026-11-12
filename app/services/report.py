@@ -56,7 +56,8 @@ from . import message_composer as mc
 from .pipeline import (IR_MEETING_ASK_DAYS, LABEL_DELIVERED, LABEL_REQUESTED,
                        MEETING_FOLLOWUP_DAYS, MEETING_KINDS,
                        NO_FOLLOWUP_OUTCOMES, OUTCOMES, REQUEST_STATUS,
-                       company_finder, meeting_ask_state, raise_target)
+                       company_finder, meeting_ask_state, raise_target,
+                       when_label)
 from .pipeline import meeting_ask_note as _pipeline_meeting_ask_note
 from .weekly import WEEKDAYS
 from .pipeline import SENT_STATUSES
@@ -914,6 +915,24 @@ def meeting_ask_note(state: Optional[dict]) -> tuple:
     return _pipeline_meeting_ask_note(state)
 
 
+def request_status_note(request: IrRequest) -> str:
+    """`IR 요청 투자사` 표 상태 칸의 첫 줄 — 전달 완료면 **언제 전달했는지**를 오른쪽에.
+
+    팀 요청(11/12): "업무보고 > 상태 컬럼에 IR 전달 완료 우측에 년월일시 자동으로".
+    `IR 자료 전달 완료 · 2026-11-11 14:05`. 날짜는 `delivered_at`, 시각은
+    `delivered_time`(0137 부터 전달하는 순간 적힌다) — 시각을 모르는 옛 줄은 날짜만
+    붙는다(`pipeline.when_label`, 미팅 일시와 같은 꼴). 잇는 말 ` · ` 는 아랫줄의
+    `회의실 미팅 톡 요청 보냄 완료 · 날짜` 와 같다.
+
+    ★ 화면과 엑셀(`routers/data_io._buckets_sheet`)이 이 **한 문자열**을 받아 쓴다.
+    전달 완료가 아닌 줄(요청 받음 · 보내지 않음 · 드랍)은 상태 말 그대로다.
+    """
+    label = REQUEST_STATUS.get(request.status, request.status)
+    if request.status != "delivered" or not request.delivered_at:
+        return label
+    return f"{label} · {when_label(request.delivered_at[:10], request.delivered_time)}"
+
+
 def meeting_ask_count_note(missing: int, requests: int) -> tuple:
     """`미팅 요청 안 보냄 N명` 옆에 **요청이 몇 건인지**를 같이 밝힌다.
 
@@ -1008,7 +1027,7 @@ def _buckets(meetings, requests, contacts, owners, today, open_followup,
     ir = []
     for r in requests:
         one = row(r.requested_at, r.contact_id, r.company_name,
-                  REQUEST_STATUS.get(r.status, r.status), r.user_id, r.company_id)
+                  request_status_note(r), r.user_id, r.company_id)
         if r.status == "delivered":
             one["ask"], one["ask_state"] = meeting_ask_note(ask.get(r.contact_id))
         ir.append(one)
