@@ -34,7 +34,7 @@ from ..services import (company_sync, contact_columns, deal_stage, firm_type, in
                         ir_readonly, last_activity, manual_send, meeting_kind, memo_intro,
                         room_joined,
                         room_name, series_a_share, series_stage, sheet_import, sheet_owner,
-                        sourcing_msg, sourcing_sync)
+                        sourcing_msg, sourcing_sync, vc_room_search)
 from ..services.room_name import DEFAULT_SUFFIX, build_room_name
 from .sourcing import requested_sort
 
@@ -532,6 +532,11 @@ def verify_rooms(
     카톡방 제목이 실제와 한 글자라도 다르면 발송이 통째로 skip 되므로, 실운영 전
     126명을 한 번에 대조해야 한다. 확인은 **발송과 같은 큐**를 타되 잡 종류로 갈린다
     (kind=verify_room) — 에이전트는 이 잡에서 방을 열지도, 문구를 보내지도 않는다.
+
+    찾는 순서는 **적어 둔 카톡방 이름 → 이름+직급 → 이름**이다(11/12). 방 이름이
+    적힌 줄은 그 이름 그대로 대조하고, 못 찾으면 같은 건이 이름으로 한 번 더 찾는다.
+    방 이름이 **빈** 투자사 줄은 처음부터 이름으로 찾는다 — 예전에는 싣지도 않아서
+    명단 전체가 방 이름이 없는 계정은 잡이 서지 않았다(`services/vc_room_search`).
     """
     query = select(VcContact).where(VcContact.user_id == user.id)
     if req.contact_ids:
@@ -553,7 +558,13 @@ def verify_rooms(
         )
 
     targets = [c for c in contacts if _is_kakao(c)]
-    skipped = [c.name for c in contacts if not _is_kakao(c)]
+    # 방 이름이 빈 **투자사** 줄은 이름+직급 → 이름으로 찾는다(`vc_room_search`).
+    # 스타트업 줄은 회사명으로 찾는 길이 따로다([카톡방 찾기·확인]).
+    hidden = sheet_owner.hidden_labels(db)
+    search = [c for c in contacts if not (c.kakao_room_name or "").strip()
+              and vc_room_search.searchable(c, hidden)]
+    looked = {c.id for c in targets} | {c.id for c in search}
+    skipped = [c.name for c in contacts if c.id not in looked]
 
     # 동명이인인데 방 이름으로 **구별되지 않으면** 확인할 수가 없다 — 방 이름이
     # 비었거나 같은 성함의 다른 줄과 방 이름까지 같은 줄이다(`room_name.
@@ -574,8 +585,11 @@ def verify_rooms(
             room_joined.set_verdict(contact, room_joined.AMBIGUOUS)
     targets = [c for c in targets if c.id not in unclear]
 
-    if not targets:
-        detail = "확인할 카톡방 이름이 등록된 담당자가 없습니다"
+    if not targets and not search:
+        # 방 이름이 빈 줄도 이름으로 찾으므로(`vc_room_search.searchable`) 여기까지 오면
+        # 카톡 채널이 꺼졌거나 · 이름이 비었거나 · 방을 나간 줄뿐이다.
+        detail = ("확인할 담당자가 없습니다 — 카톡방 이름이 적혀 있거나, 이름이 있고 "
+                  "카톡 채널이 켜진 투자사 담당자만 확인합니다")
         startup = sheet_owner.page_labels(db, contact_columns.PAGE_STARTUP)
         if conflicts:
             detail = (f"동명이인인데 방 이름까지 같아 구별되지 않습니다: "
@@ -593,21 +607,27 @@ def verify_rooms(
         raise HTTPException(status_code=400, detail=detail)
 
     job = SendJob(user_id=user.id, kind="verify_room", status="queued",
-                  total=len(targets), sent=0, failed=0)
+                  total=len(targets) + len(search), sent=0, failed=0)
     db.add(job)
     db.flush()
-    for contact in targets:
+    # 대조할 건 다음에 찾을 건 — 찾을 건은 방 이름을 **비워** 싣는다. 빈 방 이름이
+    # 「이름으로 찾는 건」이라는 표시다(`vc_room_search.is_search`). 모르는 값을
+    # 지어 넣지 않는다(스타트업 · IR 기업 줄의 찾기 건과 같은 약속).
+    for contact, room in ([(c, c.kakao_room_name) for c in targets]
+                          + [(c, "") for c in search]):
         db.add(SendItem(
             job_id=job.id,
             contact_id=contact.id,
-            room_name=contact.kakao_room_name,
+            room_name=room,
             # 확인 잡에는 보낼 문구가 없다. 빈 문자열이어야 혹시 구버전 에이전트가
             # 이 잡을 발송으로 오해해도 보낼 내용이 없어 실패로 끝난다(오발송 방지).
             message="",
             status="pending",
         ))
     db.commit()
-    return {"job_id": job.id, "total": len(targets), "skipped": skipped,
+    return {"job_id": job.id, "total": len(targets) + len(search), "skipped": skipped,
+            # 이름으로 찾는 줄 — 방 이름이 빈 투자사 줄.
+            "search": len(search),
             # 세는 것만 보여주면 왜 빠졌는지 모른다.
             "conflicts": conflicts}
 
