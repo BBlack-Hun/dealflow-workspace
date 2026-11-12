@@ -176,12 +176,20 @@ def view_as_member(db: Session, real: User, raw: Optional[str]) -> Optional[User
     return member if may_view_as(real, member) else None
 
 
+# 고르개에 세우는 순서(i237) — **운영 계정 id** 로 적는다: 공용 관리자 계정 ·
+# 관리자 겸 팀원 · 팀원 · BACKUPONE · BACKUPTWO · BACKUPTHREE · BACKUPFOUR.
+# 이름으로 가르지 않는 것은 이름이 바뀌기 때문이다(11/04 에 한 번 다 바뀌었다).
+# 여기 없는 계정(새로 만든 계정 등)은 이 뒤에 id 순으로 선다.
+VIEW_AS_ORDER = (2, 1, 4, 10, 11, 5, 9)
+
+
 def view_as_targets(db: Session, real: User) -> list:
-    """밑틀의 팀원 고르개에 세울 사람들."""
+    """밑틀의 팀원 고르개에 세울 사람들 — `VIEW_AS_ORDER` 순, 나머지는 뒤에 id 순."""
     if real.role != "admin":
         return []
-    rows = db.execute(select(User).where(User.is_active == 1)
-                      .order_by(User.id)).scalars().all()
+    rows = db.execute(select(User).where(User.is_active == 1)).scalars().all()
+    rank = {uid: i for i, uid in enumerate(VIEW_AS_ORDER)}
+    rows = sorted(rows, key=lambda u: (rank.get(u.id, len(rank)), u.id))
     return [u for u in rows if may_view_as(real, u)]
 
 
