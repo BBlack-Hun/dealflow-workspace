@@ -414,9 +414,16 @@ def release(db: Session, job: SendJob, now: Optional[datetime] = None) -> bool:
         # 보낼 것이 없는 회차. 자리는 잡은 채로 둔다 — 다시 들여다보지 않게.
         log.warning("예약 회차 %s 에 대기 건이 없습니다 — 풀지 않습니다", job.id)
         return False
-    jobs_view._requeue(db, job, pending, _ThreadTasks())
+    # 큐에 올리는 자리가 나가기 직전에 다시 본다(`_requeue` — 딜소개 불가 · 참여 · 이미
+    # 받음 …). 거기서 전부 빠졌으면 **나간 것이 없다** — 보냈다고 적지 않는다.
+    queued = jobs_view._requeue(db, job, pending, _ThreadTasks())["requeued"]
+    if not queued:
+        why = next((i.error for i in job.items if i.status == "canceled" and i.error), "")
+        log.info("예약 회차 %s — 나가기 직전 다시 보고 보낼 건이 남지 않아 닫습니다: %s",
+                 job.id, why)
+        return False
     log.info("예약 발송 — 회차 %s, %s명, 예약 %s",
-             job.id, len(pending), job.scheduled_at)
+             job.id, queued, job.scheduled_at)
     return True
 
 

@@ -19,6 +19,9 @@ IR 기업 현황에서 **TOP·핵심**(`is_top_deal`)인 기업 중
 3곳이 안 되면 있는 만큼(1곳도 보낸다). 0곳이면 그 주는 건너뛰고 오늘 할 일에
 그 사유가 선다(공통 틀의 `0건`).
 
+아침에 고르고 13:30 에 풀리므로 **풀릴 때 다시 본다**(`still_ok`) — 그사이 실린
+기업이 `딜소개 불가` 가 됐으면 그 방의 한 통은 나가지 않고 까닭이 그 건에 남는다.
+
 ## 방마다
 
 그 주에는 **모든 방에 같은 기업**이 간다. 다만
@@ -180,6 +183,21 @@ def collect(db: Session, row: Automation, sender: User,
     return batch
 
 
+def still_ok(db: Session, rec: AutomationSend) -> str:
+    """풀리기 직전 — 아침에 고른 뒤 그 기업이 `딜소개 불가`(계약여부 · 기업명 꼬리표 —
+    `companies.deal_blocked`)가 됐으면 뺀다. 까닭은 그 건의 `error` 칸에 남는다.
+
+    한 통에 여러 곳이 실려 한 곳만 뺄 수 없다 — 기록 줄이 기업마다 서고, 그중 하나라도
+    걸리면 그 방의 한 통이 통째로 빠진다(`automation_runner.screen`). 그 주 다른 방도
+    같은 기업들이라 함께 빠진다. 기업 줄이 없거나 기업이 없으면 이 판정으로 빼지 않는다.
+    """
+    from ...routers.companies import deal_blocked
+    from ...routers.deals import blocked_note
+
+    company = db.get(IrCompany, rec.company_id) if rec.company_id else None
+    return blocked_note(company) if company is not None and deal_blocked(company) else ""
+
+
 def describe(db: Session, row: Optional[Automation]) -> str:
     """판에 덧붙이는 한 줄 — 최근 채널 발송."""
     history = last_sent(db, automation.is_test(row))
@@ -194,4 +212,4 @@ def describe(db: Session, row: Optional[Automation]) -> str:
 
 runner.register(runner.Spec(
     key=automation.CHANNEL_TOP, kind="deal_intro", plan=plan, collect=collect,
-    fields=FIELDS, check=_check, describe=describe))
+    still_ok=still_ok, fields=FIELDS, check=_check, describe=describe))
