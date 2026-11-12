@@ -4,7 +4,7 @@
 
 [방 연결 확인]은 **적어 둔 카톡방 이름**만 대조했다(`routers/agent_api._exact_verdict`,
 11/05). 방 이름이 빈 줄은 잡에 싣지도 않았다 — 명단 전체가 방 이름이 없는 계정
-(운영: BACKUPFOUR 46줄 중 0줄)은 누를 때마다 `확인할 카톡방 이름이 등록된 담당자가
+(운영: 팀원 계정 46줄 중 0줄)은 누를 때마다 `확인할 카톡방 이름이 등록된 담당자가
 없습니다` 로 끝나고 잡이 서지 않았다. 사용자(11/12): "카톡방 이름(제일 우선) >>>
 이름 직급 >>> 이름 이런 식으로 체크를 해야 할 거 같음".
 
@@ -43,6 +43,10 @@
   남의 방 이름으로 바뀐 사고). 이름으로 찾은 결과 중 **적어 둔 이름과 글자까지 같은
   제목**이 하나면 확인됨(1 에서 결과가 늦게 읽혀 놓친 경우), 아니면 `방 없음` 그대로
   두고 찾은 제목을 사유에 적는다.
+- **확인됨을 달면 보낼 수 있는 줄로**(`_connect`) — 연결 단계를 `연결 완료` 로,
+  카톡이 꺼져 있으면 켠다. 방 이름 칸만 채우면 단계가 `미착수` 그대로라 딜 소개
+  대상에 안 뜬다. 수정 창의 「방 이름만 넣으면 연결 완료」와 같은 규칙이고, 방 나감 ·
+  참여 안 함 줄은 그대로 둔다. 확정 못 한 줄은 단계 · 채널 모두 그대로다.
 - **발송기 오류**(카톡 창을 못 잡음 등) — 줄은 건드리지 않고 오류만 건에 적는다.
 
 ## 누가 찾나 — 그 계정 발송기
@@ -63,7 +67,7 @@ from sqlalchemy.orm import Session, object_session
 from .. import clock
 from ..models import SendItem, SendJob, VcContact
 from . import edit_log, room_joined, room_name, sheet_owner
-from .sheet_import import CONNECT_DONE
+from .sheet_import import CONNECT_DONE, STAGE_CONNECTED
 
 
 def _squash(text: Optional[str]) -> str:
@@ -73,15 +77,25 @@ def _squash(text: Optional[str]) -> str:
 
 # ── 누구를 찾나 ─────────────────────────────────────────────────────────────
 
+def _kakao_or_unset(contact: VcContact) -> bool:
+    """카톡으로 받는 줄이거나, 받는 길을 **아직 안 정한** 줄(채널 칸이 하나도 안 켜짐).
+
+    시트 가져오기는 `초대 완료` 줄에만 카톡을 켠다(`sheet_import`) — 그래서 방 이름 ·
+    채널이 다 빈 명단이 생긴다(운영: 팀원 계정 46줄 중 31줄). 그 줄도 찾는다. 메일로만 ·
+    문자로만(`sheet_owner.sms_only`) 받는다고 정해 둔 줄은 카톡방이 없는 게 정상이다.
+    """
+    return bool(contact.channel_kakao) or not (contact.channel_email or contact.channel_sms)
+
+
 def searchable(contact: VcContact, hidden: Set[str]) -> bool:
-    """이름으로 찾을 줄인가 — **카톡으로 받는 투자사 담당자**, 이름이 있다.
+    """이름으로 찾을 줄인가 — **카톡으로 받는(또는 아직 안 정한) 투자사 담당자**, 이름이 있다.
 
     스타트업 명단 줄은 아니다 — 그쪽은 회사명으로 찾는다(`startup_room_pick`). 방을
     나갔다 · 참여 안 함 으로 적힌 줄도 아니다 — 방을 찾아도 확인됨을 달지 않는다
-    (`room_joined` 규칙 2).
+    (`room_joined` 규칙 2). 메일로만 · 문자로만 받는 줄도 아니다(`_kakao_or_unset`).
     """
     return (bool((contact.name or "").strip())
-            and bool(contact.channel_kakao)
+            and _kakao_or_unset(contact)
             and (contact.connect_stage or "") not in CONNECT_DONE
             and sheet_owner.is_investor(contact, hidden))
 
@@ -216,7 +230,7 @@ def apply_result(item: SendItem, body) -> None:
     if written:
         hits = sum(1 for r in rooms if room_name.same_title(r, written))
         if hits == 1:
-            room_joined.set_verdict(contact, room_joined.VERIFIED)
+            _confirm(db, item, contact)
             done(None)
             return
         if hits > 1:
@@ -234,12 +248,35 @@ def apply_result(item: SendItem, body) -> None:
         done(f"{why} — 찾은 방: {_shown(rooms)} (맞는 방이면 그 제목을 방 이름 칸에 넣고 "
              "다시 확인하세요)")
         return
-    _write(db, item, contact, title)
+    _confirm(db, item, contact, title)
     done(None)
 
 
-def _write(db: Session, item: SendItem, contact: VcContact, title: str) -> None:
-    """찾은 제목을 방 이름으로 넣고 확인됨 — 수정 로그는 **찾기를 건 계정** 이름으로.
+def _connect(contact: VcContact) -> None:
+    """찾기로 방을 확정한 줄을 **보낼 수 있는 줄**로 — 연결 단계 `연결 완료` · 카톡 켬.
+
+    방 이름만 넣고 확인됨을 달면 단계는 `미착수`(또는 진행 중) 그대로라
+    `sheet_owner.can_send_to` 가 거짓 — 딜 소개 대상에 안 뜬다(운영: 팀원 계정 46줄이
+    전부 방 이름 빈칸 · 미착수). 수정 창이 「단계를 고르지 않고 방 이름만 넣으면
+    `연결 완료`」로 두는 것(`routers/contacts` 의 연결 단계 맞추기)과 같은 규칙이다.
+
+    방 나감 · 참여 안 함 줄은 그대로 둔다 — `room_joined.set_verdict` 가 그 줄에
+    확인됨을 달지 않는 것과 같은 판정이다. 방을 찾았다 = 카톡으로 받는다 — 카톡이
+    꺼져 있으면 켠다(채널을 아직 안 정한 줄, `_kakao_or_unset`).
+    """
+    stage = contact.connect_stage or ""
+    if stage in CONNECT_DONE:
+        return
+    if stage != STAGE_CONNECTED:
+        contact.connect_stage = STAGE_CONNECTED
+    if not contact.channel_kakao:
+        contact.channel_kakao = 1
+
+
+def _confirm(db: Session, item: SendItem, contact: VcContact,
+             title: Optional[str] = None) -> None:
+    """찾기로 이 분 방을 확정 — 확인됨 · 연결 완료(`_connect`). `title` 이 있으면 그
+    제목을 방 이름으로 넣는다(방 이름이 빈 줄). 수정 로그는 **찾기를 건 계정** 이름으로.
 
     이 길에는 요청 문맥이 없다(발송기가 부른다). 딜 소싱의 저절로 확정과 같은 방식이다
     (`sourcing_rooms._confirm_single`). 확인 값 · 참여여부는 한 자리를 지난다
@@ -248,9 +285,12 @@ def _write(db: Session, item: SendItem, contact: VcContact, title: str) -> None:
     db.flush()          # 건 상태는 로그 밖에서 먼저 내보낸다
     token = edit_log.begin(item.job.user_id, "POST", f"/agent/items/{item.id}/result")
     try:
-        contact.kakao_room_name = title
+        if title is not None:
+            contact.kakao_room_name = title
         room_joined.set_verdict(contact, room_joined.VERIFIED)
+        _connect(contact)
         db.flush()
     finally:
         edit_log.end(token)
-    item.room_name = title
+    if title is not None:
+        item.room_name = title

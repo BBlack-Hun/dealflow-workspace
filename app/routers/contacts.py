@@ -587,9 +587,9 @@ def verify_rooms(
 
     if not targets and not search:
         # 방 이름이 빈 줄도 이름으로 찾으므로(`vc_room_search.searchable`) 여기까지 오면
-        # 카톡 채널이 꺼졌거나 · 이름이 비었거나 · 방을 나간 줄뿐이다.
+        # 메일 · 문자로만 받거나 · 이름이 비었거나 · 방을 나간 줄뿐이다.
         detail = ("확인할 담당자가 없습니다 — 카톡방 이름이 적혀 있거나, 이름이 있고 "
-                  "카톡 채널이 켜진 투자사 담당자만 확인합니다")
+                  "메일 · 문자로만 받지 않는 투자사 담당자만 확인합니다")
         startup = sheet_owner.page_labels(db, contact_columns.PAGE_STARTUP)
         if conflicts:
             detail = (f"동명이인인데 방 이름까지 같아 구별되지 않습니다: "

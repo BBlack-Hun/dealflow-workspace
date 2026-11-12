@@ -8,8 +8,10 @@
 """
 from __future__ import annotations
 
+import pytest
+
 from app.models import SendItem, SendJob, SheetOwner, User, VcContact
-from app.services import vc_room_search
+from app.services import sheet_import, sheet_owner, vc_room_search
 
 from .conftest import DEMO_TOKEN, auth
 
@@ -104,17 +106,33 @@ def test_rows_with_a_room_name_still_check_that_name_first(logged_in, db, users)
 
 
 def test_rows_that_are_not_kakao_investors_are_not_searched(logged_in, db, users):
-    """카톡 채널이 아닌 줄 · 방을 나간 줄 · 이름이 빈 줄 · 스타트업 명단 줄은 이름으로
-    찾지 않는다 — 찾을 줄이 없으면 예전처럼 400."""
-    db.add(SheetOwner(label="스타트업 명단", user_id=1, layout="startup", is_hidden=1))
-    db.commit()
-    _row(db, "홍길동", "가나다벤처스", channel_kakao=0)
+    """메일로만 · 문자로만 받는 줄 · 방을 나간 줄 · 이름이 빈 줄 · 스타트업 명단 줄은
+    이름으로 찾지 않는다 — 찾을 줄이 없으면 예전처럼 400."""
+    _row(db, "홍길동", "가나다벤처스", channel_kakao=0, channel_email=1)
+    _row(db, "최하늘", "하늘인베스트", channel_kakao=0, channel_sms=1)
     _row(db, "김서연", "라마바파트너스", connect_stage="left_room")
     _row(db, "", "사아벤처스")
+    r = logged_in.post("/api/contacts/verify-rooms", json={})
+    assert r.status_code == 400
+    assert "메일 · 문자로만 받지 않는" in r.json()["detail"]
+
+    db.add(SheetOwner(label="스타트업 명단", user_id=1, layout="startup", is_hidden=1))
+    db.commit()
     _row(db, "박준호", "자차랩스", source_sheet="스타트업 명단")
     r = logged_in.post("/api/contacts/verify-rooms", json={})
     assert r.status_code == 400
     assert db.query(SendJob).count() == 0
+
+
+def test_rows_with_no_channel_set_yet_are_searched(logged_in, db, users):
+    """시트 가져오기는 `초대 완료` 줄에만 카톡을 켠다 — 채널 칸이 하나도 안 켜진 줄은
+    받는 길을 아직 안 정한 줄이라 찾는다(운영: 팀원 계정 46줄 중 31줄)."""
+    row = _row(db, "홍길동", "가나다벤처스", channel_kakao=0)
+    body = _queue(logged_in)
+    assert (body["total"], body["search"]) == (1, 1)
+    [item] = _claim(logged_in)
+    assert item["query"] == "홍길동 심사역"
+    assert db.get(SendItem, item["id"]).contact_id == row.id
 
 
 # ── 찾은 방을 어떻게 받나 — 방 이름이 빈 줄 ─────────────────────────────────
@@ -205,6 +223,62 @@ def test_an_agent_error_leaves_the_row_alone(logged_in, db, users):
     assert sent.status == "failed" and "카카오톡 메인 창" in sent.error
 
 
+# ── 확정하면 보낼 수 있는 줄로 — 연결 완료 · 카톡 켬(`vc_room_search._connect`) ─────
+#
+# 방 이름만 넣고 확인됨을 달면 단계가 `미착수` 그대로라 딜 소개 대상에 안 뜬다.
+
+TITLE = "홍길동 심사역님 가나다벤처스 딜 공유방"
+
+
+@pytest.mark.parametrize("stage", ["not_started", "in_progress"])
+def test_a_confirmed_room_makes_the_row_sendable(logged_in, db, users, stage):
+    row = _row(db, "홍길동", "가나다벤처스", connect_stage=stage)
+    assert not sheet_owner.can_send_to(row)
+    got, _item = _search_one(logged_in, db, row, [TITLE], verdict="verified")
+    assert (got.kakao_room_name, got.room_verified) == (TITLE, "verified")
+    assert sheet_import.CONNECT_LABELS[got.connect_stage] == "연결 완료"
+    assert sheet_owner.can_send_to(got)
+
+
+def test_a_confirmed_row_with_no_channel_set_turns_kakao_on(logged_in, db, users):
+    """방을 찾았다 = 카톡으로 받는다 — 채널을 아직 안 정한 줄은 카톡을 켠다."""
+    row = _row(db, "홍길동", "가나다벤처스", channel_kakao=0)
+    got, _item = _search_one(logged_in, db, row, [TITLE], verdict="verified")
+    assert (got.channel_kakao, got.connect_stage, got.room_verified) == (
+        1, "connected", "verified")
+    assert sheet_owner.can_send_to(got)
+
+
+def test_a_row_marked_left_while_searching_keeps_its_stage(logged_in, db, users):
+    """찾는 사이 `방 나감` 으로 고친 줄 — 방을 찾아도 확인됨 · 연결 완료를 달지 않는다
+    (`room_joined.set_verdict` 와 같은 판정)."""
+    row = _row(db, "홍길동", "가나다벤처스", channel_kakao=0)
+    _queue(logged_in, [row.id])
+    [item] = _claim(logged_in)
+    _fresh(db, VcContact, row.id).connect_stage = "left_room"
+    db.commit()
+    _report(logged_in, item["id"], "verified", candidates=[TITLE])
+    got = _fresh(db, VcContact, row.id)
+    assert got.connect_stage == "left_room" and got.room_verified != "verified"
+    assert got.channel_kakao == 0
+    assert not sheet_owner.can_send_to(got)
+
+
+@pytest.mark.parametrize("rooms", [
+    ["홍길동 심사역님 딜 공유방", "홍길동 심사역님 펀드 LP 방"],   # 여럿
+    ["홍길동 대표님 (판교 모임)"],                                  # 이름만 든 제목
+    [],                                                             # 못 찾음
+])
+def test_an_unconfirmed_row_keeps_its_stage_and_channels(logged_in, db, users, rooms):
+    row = _row(db, "홍길동", "가나다벤처스", channel_kakao=0)
+    got, item = _search_one(logged_in, db, row, rooms,
+                            verdict="ambiguous" if rooms else "not_found")
+    assert item.status == "failed"
+    assert (got.kakao_room_name, got.connect_stage, got.channel_kakao) == (
+        None, "not_started", 0)
+    assert not sheet_owner.can_send_to(got)
+
+
 # ── 적어 둔 이름으로 못 찾았다 → 같은 건이 이름으로 한 번 더 ──────────────────────
 
 def _written_then_missed(client, db, room="홍길동 심사역님 딜방 (옛 제목)"):
@@ -240,6 +314,8 @@ def test_the_written_name_found_by_name_search_is_verified(logged_in, db, users)
     _report(logged_in, again["id"], "ambiguous", candidates=[room, "홍길동 심사역님 펀드방"])
     got = _fresh(db, VcContact, row.id)
     assert (got.kakao_room_name, got.room_verified) == (room, "verified")
+    # 이름 찾기로 확인됐으니 보낼 수 있는 줄로(`_connect`) — 미착수였다.
+    assert got.connect_stage == "connected" and sheet_owner.can_send_to(got)
     sent = _fresh(db, SendItem, item_id)
     assert (sent.status, sent.room_name) == ("sent", room)
     assert _end_round(logged_in, job_id) == "done"
