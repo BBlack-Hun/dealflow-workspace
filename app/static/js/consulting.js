@@ -202,6 +202,11 @@
     // `기업명` 칸 밑의 IR 기업 연결 표시는 **링크**다 — 누르면 그리로 가야지
     // 칸이 입력칸으로 바뀌면 안 된다(consulting.html 의 `ir_named`).
     if (e.target.closest(".ir-link-sub")) return;
+    // IR 기업 현황에서 가져오는 칸(`_ir_cols.html`)은 읽기만 — 아래 남의 줄처럼 **말없이
+    // 막지 않는다.** 안 이은 새 줄에서 눌러도 아무 일이 없어 "써 넣을 수 없다" 로
+    // 읽혔다(11/12). 글자는 서버가 표에 실어 준 것(`data-ir-why`).
+    var ir = e.target.closest("td.ir-ro");
+    if (ir) { explainReadonly(ir, table.getAttribute("data-ir-why")); return; }
     var cell = e.target.closest("td.cell");
     if (!cell || cell === editing) return;
     // 남의 담당 줄은 **볼 수만** 있다. 서버가 이미 404 로 막지만
@@ -217,7 +222,10 @@
     // 열리는지 띄운다. 글자는 서버가 그 줄에 실어 준 것을 옮긴다
     // (`data-readonly-why` — 누구 줄인지는 서버가 안다).
     var tr = cell.closest("tr");
-    if (tr.hasAttribute("data-readonly")) { explainReadonly(cell, tr); return; }
+    if (tr.hasAttribute("data-readonly")) {
+      explainReadonly(cell, tr.getAttribute("data-readonly-why"));
+      return;
+    }
     hideReadonly();
     startEdit(cell);
   });
@@ -233,14 +241,14 @@
   // 않게 번호로 가린다(시계를 끄는 대신 — 이 표를 돌리는 검사 자리에는
   // `clearTimeout` 이 없다).
   var readonlySeq = 0;
-  function explainReadonly(cell, tr) {
+  function explainReadonly(cell, why) {
     if (!readonlyPop) {
       readonlyPop = document.createElement("div");
       readonlyPop.className = "readonly-pop";
       readonlyPop.setAttribute("role", "status");
       document.body.appendChild(readonlyPop);
     }
-    readonlyPop.textContent = tr.getAttribute("data-readonly-why")
+    readonlyPop.textContent = why
       || "볼 수만 있는 줄입니다 — 고칠 일이 있으면 담당자나 관리자에게 요청하세요.";
     readonlyPop.hidden = false;
     var box = cell.getBoundingClientRect();

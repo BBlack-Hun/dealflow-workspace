@@ -407,6 +407,7 @@
   {% set no_w = 44 %}
   <table class="grid-table sheet-table" id="cs-table"
          data-contract-sheet="{{ 1 if is_contract_sheet else 0 }}"
+         {% if ir_cols %}data-ir-why="{{ ir_why }}"{% endif %}
          style="--stick-a:{{ stick_lead }}px; --stick-b:{{ stick_lead + no_w }}px">
     <thead>
       <tr>

@@ -148,3 +148,38 @@ def test_투자컨설턴트_스타트업_탭에만_IR_칸이_선다(client, db, 
 
     contract = client.get("/consulting?sheet=" + quote("월간 계약 업무현황표")).text
     assert "ir-ro" not in contract
+
+
+def _ir_why(html: str) -> str:
+    m = re.search(r'<table[^>]*id="cs-table"[^>]*data-ir-why="([^"]*)"', html)
+    assert m, "IR 칸을 눌렀을 때 띄울 말이 표에 없습니다(`data-ir-why`)"
+    return m.group(1)
+
+
+def test_투자컨설턴트_IR_칸을_누르면_왜_못_고치는지_말이_실린다(client, db, users):
+    """11/12 신고 — IR 기업과 아직 안 이은 새 줄에서 `기업 한줄 소개`·`대분류` 같은 IR 칸을
+    눌러도 아무 일이 없어 `내용을 써 넣을 수 없다` 로 읽혔다. 줄이 읽기 전용일 때처럼
+    누른 자리에 이유를 띄운다(`consulting.js`) — 글자는 서버가 표에 싣는다.
+    잇는 화면(`/ir-link`)을 여는 사람에게는 [연결하기] 를, 못 여는 사람에게는 관리자를 가리킨다.
+    """
+    from fastapi.testclient import TestClient
+
+    from app.main import create_app
+    from app.models import ConsultingCompany, User
+    from app.services import auth as auth_svc
+
+    users["u1"].can_view_consulting = 1
+    db.add(User(id=72, name="컨설턴트샘플", phone="01000000072", role="consultant",
+                can_view_consulting=1, password_hash=auth_svc.hash_password(DEMO_PASSWORD)))
+    db.commit()
+    db.add(ConsultingCompany(user_id=72, company_name="없는샘플기업"))
+    db.commit()
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    member = _ir_why(client.get("/consulting?sheet=" + quote("스타트업")).text)
+    assert "IR 기업 현황" in member and "연결하기" in member, member
+
+    consultant = TestClient(create_app())
+    consultant.post("/login", data={"phone": "01000000072", "password": DEMO_PASSWORD})
+    alone = _ir_why(consultant.get("/consulting?sheet=" + quote("스타트업")).text)
+    assert "IR 기업 현황" in alone and "연결하기" not in alone, alone

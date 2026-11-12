@@ -1174,6 +1174,12 @@ def consulting_page(request: Request, db: Session = Depends(get_db),
         # 이어진 IR 기업의 칸을 **읽기만** — `이메일` 오른쪽(#83, 10/28 '추천대로' ·
         # `services/ir_readonly.py`). 계약 탭은 대표자 · 이메일 칸부터 안 서는 다른 표라 뺀다.
         "ir_cols": ([] if is_contract(db, selected) else ir_readonly.consulting_columns()),
+        # 그 칸을 누르면 띄울 말(`consulting.js`) — 11/12 신고: IR 기업과 안 이은 새 줄에서
+        # 눌러도 아무 일이 없어 `써 넣을 수 없다` 로 읽혔다. [연결하기] 는 잇는 화면을
+        # 여는 사람에게만 선다(위 `ir_badges` 와 같은 문).
+        "ir_why": "IR 기업 현황에서 가져오는 칸이라 여기서는 고칠 수 없습니다 — " + (
+            "IR 기업 현황에서 고치세요. 기업명 밑이 '연결 안 됨'이면 [연결하기]로 이어야 채워집니다."
+            if can_open(user, "/ir-link") else "고칠 일이 있으면 관리자에게 요청하세요."),
         "ir_values": ir_readonly.values(db, [r["ir_company_id"] for r in rows]),
         # `기업명` 칸 · [기업 추가] 칸에 띄울 IR 기업 후보 이름(`static/js/ir_company_hint.js`
         # — 스타트업 표 #85 와 같은 부품 · 같은 질의). 위 `ir_badges` 와 같은 문이다 —
