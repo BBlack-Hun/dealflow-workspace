@@ -11,13 +11,21 @@
 
   `data-ir` — 스타트업 표에서 기업명을 고쳐 새로 이어지면 `contacts.js` 가 응답의
   `ir_values` 로 그 자리에서 다시 채운다.
+
+  `edit` — 투자컨설턴트의 **이어진 줄**만 켠다(11/12 사용자 — 저장은 IR 기업 현황,
+  `routers/consulting.update_ir`). 그 표의 편집기(`consulting.js`)가 `td.cell` 을 열고 값은
+  `.cell-main` 에서 읽는다 — `data-field` 는 여전히 안 준다(그 표 칸이 아니라 IR 칸이다).
+  `why` — 그래도 안 여는 칸을 눌렀을 때 띄울 말(`consulting.js`).
 #}
-{% macro head(c, extra='') -%}
+{% macro head(c, extra='', note='읽기만 · 고치는 곳은 IR 기업 현황') -%}
 <th class="ir-ro{{ extra }}" style="width:{{ c.width }}px"
-    title="{{ c.label }} — 이어진 IR 기업 현황의 값입니다(읽기만 · 고치는 곳은 IR 기업 현황)">{{ c.label }}</th>
+    title="{{ c.label }} — 이어진 IR 기업 현황의 값입니다({{ note }})">{{ c.label }}</th>
 {%- endmacro %}
 
-{% macro cell(c, vals) -%}
+{% macro cell(c, vals, edit=false, choices='', why='') -%}
 {%- set v = (vals or {}).get(c.key, '') -%}
-<td class="ir-ro" data-ir="{{ c.key }}" title="{{ v }}"><div class="{{ 'clamp2' if c.kind == 'long' else 'ellipsis' }}">{{ v }}</div></td>
+<td class="ir-ro{% if edit %} cell{% if c.kind == 'long' %} multi{% endif %}{% endif %}" data-ir="{{ c.key }}" title="{{ v }}"
+{%- if edit and choices %} data-choices="{{ choices }}"{% endif %}{% if why %} data-why="{{ why }}"{% endif %}>
+{%- if edit %}<div class="cell-main">{{ v }}</div>
+{%- else %}<div class="{{ 'clamp2' if c.kind == 'long' else 'ellipsis' }}">{{ v }}</div>{% endif %}</td>
 {%- endmacro %}

@@ -156,10 +156,11 @@ def _ir_why(html: str) -> str:
     return m.group(1)
 
 
-def test_투자컨설턴트_IR_칸을_누르면_왜_못_고치는지_말이_실린다(client, db, users):
+def test_투자컨설턴트_안_이은_줄의_IR_칸을_누르면_왜_못_고치는지_말이_실린다(client, db, users):
     """11/12 신고 — IR 기업과 아직 안 이은 새 줄에서 `기업 한줄 소개`·`대분류` 같은 IR 칸을
     눌러도 아무 일이 없어 `내용을 써 넣을 수 없다` 로 읽혔다. 줄이 읽기 전용일 때처럼
-    누른 자리에 이유를 띄운다(`consulting.js`) — 글자는 서버가 표에 싣는다.
+    누른 자리에 이유를 띄운다(`consulting.js`) — 글자는 서버가 표에 싣는다. 이은 줄은
+    눌러 고친다(`tests/test_consulting_ir_edit.py`).
     잇는 화면(`/ir-link`)을 여는 사람에게는 [연결하기] 를, 못 여는 사람에게는 관리자를 가리킨다.
     """
     from fastapi.testclient import TestClient
@@ -177,9 +178,9 @@ def test_투자컨설턴트_IR_칸을_누르면_왜_못_고치는지_말이_실�
 
     client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
     member = _ir_why(client.get("/consulting?sheet=" + quote("스타트업")).text)
-    assert "IR 기업 현황" in member and "연결하기" in member, member
+    assert "이어지지 않은 줄" in member and "연결하기" in member, member
 
     consultant = TestClient(create_app())
     consultant.post("/login", data={"phone": "01000000072", "password": DEMO_PASSWORD})
     alone = _ir_why(consultant.get("/consulting?sheet=" + quote("스타트업")).text)
-    assert "IR 기업 현황" in alone and "연결하기" not in alone, alone
+    assert "이어지지 않은 줄" in alone and "관리자" in alone and "연결하기" not in alone, alone

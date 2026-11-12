@@ -574,6 +574,8 @@ WRITE_ROUTES = {
 
     ("POST", "/api/consulting"): WATCHED,
     ("PATCH", "/api/consulting/{company_id}"): WATCHED,
+    # 이어진 IR 기업의 칸 — 저장은 IR 기업 현황(11/12 · `update_ir`). 남의 기업을 고친다.
+    ("PATCH", "/api/consulting/{company_id}/ir"): WATCHED,
     ("DELETE", "/api/consulting/{company_id}"): WATCHED,
     ("POST", "/consulting/sheets/rename"): WATCHED,
     ("POST", "/consulting/sheets/add"): WATCHED,
@@ -923,6 +925,8 @@ def test_the_six_shared_routers_still_hold_the_forty_nine_paths(portal):
     # (`_write_routes` 가 `endpoint.__module__` 을 본다) 저 길도 여기로 온다.
     # 왜 파일과 주소가 갈라져 있는지는 그 라우트 위 주석에 있다.
     # `consulting` 의 열 번째는 [+ 탭 추가](`/consulting/sheets/add` — #215)다.
+    # 열한 번째는 이어진 IR 기업의 칸 고치기(`/api/consulting/{id}/ir` — 저장은 IR 기업
+    # 현황 · 11/12)다.
     # companies 의 여덟 번째가 **기업 강제 삭제**(`/force-delete`)다. 평범한
     # [삭제] 가 이력이 붙은 기업을 막는 것을 무시하는 길이라, 길을 따로 냈다 —
     # 같은 주소에 깃발 하나로 붙이면 잘못 눌렀을 때 그대로 지워진다.
@@ -947,7 +951,7 @@ def test_the_six_shared_routers_still_hold_the_forty_nine_paths(portal):
     # forecast 의 넷은 매출예상리스트 줄 추가 · 고치기 · 기업 고르기 · 지우기다(#46).
     # custom_columns 의 일곱은 관리자 `컬럼 관리` 여섯(붙이기 · 이름 · 순서 · 자리 ·
     # 숨김 · 삭제)과 표에서 추가 칸 값 적기 하나다.
-    assert counted == {"companies": 9, "ir": 18, "consulting": 10,
+    assert counted == {"companies": 9, "ir": 18, "consulting": 11,
                        "templates_crud": 7, "sourcing": 14, "contacts": 25,
                        "series_a": 5, "forecast": 4, "custom_columns": 7}
 

@@ -561,9 +561,10 @@
            필터를 안 세운다(계약 탭의 같은 칸과 같다 — 고를 것이 모이지 않는다). #}
         <th style="width:96px">성공보수율</th>
         {% endif %}
-        {# 이어진 IR 기업의 칸 — 읽기만(#83 · `_ir_cols.html`), 계약 넷(메타 탭) 바로 오른쪽.
-           계약 탭은 안 선다(`ir_cols` 가 빈다 · 이 `else` 쪽이기도 하다). #}
-        {% for c in ir_cols %}{{ irc.head(c) }}{% endfor %}
+        {# 이어진 IR 기업의 칸(#83 · `_ir_cols.html`), 계약 넷(메타 탭) 바로 오른쪽.
+           계약 탭은 안 선다(`ir_cols` 가 빈다 · 이 `else` 쪽이기도 하다).
+           이어진 줄에서는 눌러 고치고 IR 기업 현황에 저장된다(11/12 · `update_ir`). #}
+        {% for c in ir_cols %}{{ irc.head(c, note=('이어진 줄에서 고치면 IR 기업 현황에 저장됩니다' if c.key in ir_editable else '읽기만 · 고치는 곳은 IR 기업 현황')) }}{% endfor %}
         <th style="width:88px" data-filters="region:지역">지역<div class="th-filters"></div></th>
         <th style="width:120px">컨설팅 미팅일</th>
         {# **어떤 자리에서 만났는가** — 사용자 요청으로 `미팅일` 바로 오른쪽에
@@ -853,7 +854,13 @@
             data-choices="O,X">{{ r.contract_received }}</td>
         <td class="cell" data-field="success_fee">{{ r.success_fee }}</td>
         {% endif %}
-        {% for c in ir_cols %}{{ irc.cell(c, ir_values.get(r.ir_company_id)) }}{% endfor %}
+        {# **이어진 줄 · 고칠 수 있는 줄**에서만 연다(`update_ir` 이 같은 두 조건을 본다).
+           안 이은 줄은 칸이 비고, 누르면 왜 못 고치는지 뜬다(표의 `data-ir-why`). #}
+        {% set ir_open = r.editable and r.ir_company_id %}
+        {% for c in ir_cols %}{{ irc.cell(c, ir_values.get(r.ir_company_id),
+             edit=(ir_open and c.key in ir_editable),
+             choices=(series_choices if c.key == 'series' else ''),
+             why=(ir_fixed_why if ir_open and c.key not in ir_editable else '')) }}{% endfor %}
         <td class="cell" data-field="region">{{ r.region }}</td>
         <td class="cell" data-field="meeting_at">{{ r.meeting_at }}</td>
         {# 보기를 **골라서** 넣는다 — 옆 `카톡 연결 여부` 와 글자 하나까지 같은
