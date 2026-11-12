@@ -70,8 +70,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, object_session
 
 from .. import clock
-from ..models import (SOURCING_ROOM_TOPIC, SendItem, SendJob, SenderRoom,
-                      SourcingContact, User, VcContact)
+from ..models import (SENDER_ROOM_TOPIC, SOURCING_ROOM_TOPIC, SendItem, SendJob,
+                      SenderRoom, SourcingContact, User, VcContact)
 from . import edit_log, room_match, sourcing_buckets, sourcing_link, sourcing_sync
 # 줄의 상태 문구 · 확정 못 하는 까닭은 스타트업 [방 매칭] 과 **한 벌**이다 —
 # 두 벌이면 한쪽만 고친 날 두 [방 후보 찾기] 화면이 다른 말을 한다(PR #284 리뷰).
@@ -345,6 +345,61 @@ def picks(contact: SourcingContact) -> dict:
             "state_label": label,
             # 마지막 찾기가 발송기 오류로 끝났으면 그 사유(후보는 그 전 것 그대로).
             "error": last_error(contact)}
+
+
+#: 끝난 회차 — 화면이 따라가기를 멈추고 알림창을 띄운다(`sourcing_rooms.js`).
+_ENDED = ("done", "done_with_errors", "canceled")
+#: 오류가 카톡을 가리키면 덧붙이는 안내.
+KAKAO_HINT = "카톡 창을 열어 두고 다시 돌려 주세요"
+
+
+def search_summary(db: Session, job: SendJob) -> Optional[dict]:
+    """끝난 딜 소싱 [방 후보 찾기] 회차의 셈 — 화면이 끝날 때 한 번 띄우는 알림창이 쓴다
+    (사용자 11/12: "딜소싱 방 찾기 끝나면 alert 띄워줘" — `sourcing_rooms.js`).
+
+    줄마다 **지금 칸에 선 상태**로 센다 — 확정(`confirmed`) · 후보 고르기(`picks`) ·
+    못 찾음(`not_found`). 발송기 오류로 끝난 건(`apply_result` 의 오류 길)은 `failed`,
+    [중단]으로 안 돈 건은 `canceled`. 오류가 **모두 같은 까닭**이면 그 까닭(`reason`)과,
+    카톡을 가리키면 안내(`hint`)를 싣는다 — 카톡 창을 못 잡아 통째로 실패한 날 사람이
+    무엇을 할지 안다.
+
+    보내는 계정 회차(`SENDER_ROOM_TOPIC` — `sender_rooms.queue_sourcing`)는 그 계정 표의
+    상태로 센다. 그쪽은 발송기 오류를 따로 담지 않아(`sender_rooms.apply_result`) 오류도
+    `못 찾음` 으로 선다.
+
+    아직 안 끝났거나 딜 소싱 줄이 없는 회차는 `None` — 발송 진행 화면이 2초마다 묻는
+    자리(`routers/jobs.job_status`)라 끝난 뒤에만 센다.
+    """
+    if job.status not in _ENDED or job.topic not in (SOURCING_ROOM_TOPIC, SENDER_ROOM_TOPIC):
+        return None
+    items = [i for i in job.items if i.sourcing_contact_id is not None]
+    if not items:
+        return None
+    mine = None
+    if job.topic == SENDER_ROOM_TOPIC:
+        from . import sender_rooms   # 그쪽이 이 모듈을 부른다(`query_of`)
+
+        mine = sender_rooms.sourcing_view(db, job.user_id)
+    got = {"confirmed": 0, "picks": 0, "not_found": 0, "failed": 0, "canceled": 0}
+    errors = []
+    for item in items:
+        if item.status not in ("sent", "failed"):
+            got["canceled"] += 1
+            continue
+        if mine is not None:
+            state = (mine.get(item.sourcing_contact_id) or {}).get("state")
+        else:
+            contact = item.sourcing_contact
+            if item.status == "failed" and (contact is None or last_error(contact)):
+                got["failed"] += 1
+                errors.append(re.sub(r"^verify error:\s*", "", item.error or "").strip())
+                continue
+            state = picks(contact)["state"]
+        got[state if state in ("confirmed", "picks") else "not_found"] += 1
+    reason = errors[0] if errors and errors[0] and len(set(errors)) == 1 else ""
+    got["reason"] = reason
+    got["hint"] = KAKAO_HINT if ("카카오톡" in reason or "카톡" in reason) else ""
+    return got
 
 
 def confirm(contact: SourcingContact, title: str) -> SourcingContact:

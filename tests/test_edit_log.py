@@ -629,7 +629,7 @@ WRITE_ROUTES = {
     # 확정](공용 명단 줄의 방 이름). `services/sourcing_rooms.py`.
     ("POST", "/sourcing/rooms/search"): WATCHED,
     ("POST", "/sourcing/{row_id}/room-confirm"): WATCHED,
-    # 보내는 계정으로 연 화면의 [확정 거두기] — 그 계정 전용 제목(`edit_log.WATCHED
+    # 보내는 계정으로 연 화면의 [톡방 연결 끊기] — 그 계정 전용 제목(`edit_log.WATCHED
     # ["sender_rooms"]`). 명단의 방 이름은 안 건드린다(`sender_rooms.clear`).
     ("POST", "/sourcing/{row_id}/room-clear"): WATCHED,
     # 딜 소싱 › 시리즈 A 줄을 투자사 관리 현황 줄과 [이 분으로 확정](#28) — 공용 명단
@@ -940,7 +940,7 @@ def test_the_six_shared_routers_still_hold_the_forty_nine_paths(portal):
     # 11번째는 갈래 하나의 [저절로 잇기](`sourcing_sync.auto_link_all`)다.
     # 12번째는 [+ 탭 추가](`sourcing_buckets.create` — 사람이 없는 새 갈래)다.
     # 13번째는 관리자의 [탭 삭제](#78 — `sourcing_buckets.delete`, 사람이 0명인 탭만)다.
-    # 14번째는 보내는 계정 전용 방 제목의 [확정 거두기](`sender_rooms.clear` — 11/11)다.
+    # 14번째는 보내는 계정 전용 방 제목의 [톡방 연결 끊기](`sender_rooms.clear` — 11/11)다.
     # series_a 의 셋은 IR 기업 현황 메뉴의 `Series A 이상 딜 소싱` 탭을 더하기 ·
     # 고치기 · 지우기다(`routers/series_a.py`). 옆 두 탭과 같은 공용 화면이다.
     # 넷째는 `공유 심사역` 확정 · 해제(`/sharer` — Series A 딜 공유에서 이 딜을

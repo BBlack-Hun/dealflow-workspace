@@ -14,6 +14,9 @@
 //   ⑥ 다른 폼(딜 받음 등)은 건드리지 않는다
 //   ⑦ 보내는 계정이 확정(답에 `sender`) — 그 계정 전용 칸만 걷고 그 자리에 적는다.
 //      명단의 방 이름 칸 · `명단 이름:` 은 그대로
+//   ⑧ 찾기를 건 회차가 끝나면 알림창 **한 번**(사용자 11/12) — 2초마다 `/api/jobs/{id}`.
+//      끝난 뒤에는 더 묻지도 다시 띄우지도 않는다 · 화면을 새로 열면 안 묻는다 ·
+//      오류가 하나로 모이면 그 까닭 · 안내가 붙는다 · 취소는 `취소됨`
 //
 // 이름 · 방 제목은 가상값이다(공개 저장소).
 "use strict";
@@ -88,7 +91,7 @@ function setup(rows, opts) {
 
   const calls = [];
   const asked = [];
-  const t = { answer: true, reloads: 0 };
+  const t = { answer: true, reloads: 0, timers: [], alerts: [] };
   function FakeFormData(form) {
     this.pairs = form.querySelectorAll("input")
       .filter(function (i) { return i.getAttribute("name"); })
@@ -105,7 +108,9 @@ function setup(rows, opts) {
   };
   const ctx = {
     document: dom_.makeDocument(root), window: win, console: console, location: win.location,
-    setTimeout: function () { return 0; }, alert: function () {}, prompt: function () { return ""; },
+    // 타이머는 적어만 둔다 — 시험이 `tick` 으로 돌린다(찾기 따라가기 · 2초).
+    setTimeout: function (fn, ms) { t.timers.push({ fn: fn, ms: ms }); return 0; },
+    alert: function (m) { t.alerts.push(m); }, prompt: function () { return ""; },
     confirm: function (m) { asked.push(m); return t.answer; },
     FormData: FakeFormData, Event: FakeEvent,
     fetch: function (url, init) {
@@ -140,6 +145,14 @@ function reply(call, status, body) {
                  json: function () { return body === undefined ? Promise.reject(new Error("html")) : Promise.resolve(body); } });
 }
 function flush() { return new Promise(function (r) { setImmediate(r); }); }
+// 찾기 따라가기 타이머(2초)를 한 번 돌린다. 돈 수를 돌려준다.
+function tick(t) {
+  const due = t.timers.filter(function (x) { return x.ms === 2000; });
+  t.timers = t.timers.filter(function (x) { return x.ms !== 2000; });
+  due.forEach(function (x) { x.fn(); });
+  return due.length;
+}
+function jobCalls(t) { return t.calls.filter(function (c) { return /^\/api\/jobs\//.test(c.url); }); }
 
 function td(tr) { return tr.querySelector(".room-td"); }
 function noteOf(node) { const n = node.querySelector(".js-room-note"); return n ? n.textContent : ""; }
@@ -321,6 +334,80 @@ async function main() {
                        "✓ 나 방 — 가상 님 계정 전용 제목으로 확정했습니다",
                        "확정 글이 전용 칸 자리(맨 위)에 안 섰다");
     assert.strictEqual(tr.hasAttribute("data-no-room"), false, "툴바 찾기에 아직 실린다");
+  }
+
+  // --- ⑧ 찾기가 끝나면 알림창 한 번 ------------------------------------------------
+  {
+    const a = row(11, "홍길동");
+    const t = setup([a]);
+    assert.strictEqual(t.timers.length, 0, "찾기도 안 했는데 회차를 따라간다");
+    t.submit(a.querySelector(".js-room-search"));
+    reply(t.calls[0], 200, { ok: true, msg: "…", job_id: 7, ids: [11] });
+    await flush();
+    assert.strictEqual(tick(t), 1, "찾기를 건 회차를 안 따라간다");
+    const [first] = jobCalls(t);
+    assert.strictEqual(first.url, "/api/jobs/7");
+    reply(first, 200, { id: 7, status: "running", room_search: null });
+    await flush();
+    assert.deepStrictEqual(t.alerts, [], "도는 중인데 알림창이 떴다");
+    assert.strictEqual(tick(t), 1, "도는 중인데 그만 물었다");
+    reply(jobCalls(t)[1], 200, { id: 7, status: "done",
+      room_search: { confirmed: 1, picks: 2, not_found: 1, failed: 0, canceled: 0,
+                     reason: "", hint: "" } });
+    await flush();
+    assert.deepStrictEqual(t.alerts, [
+      "딜 소싱 방 찾기가 끝났습니다 — 확정 1 · 후보 고르기 2 · 못 찾음 1\n" +
+      "새로고침하면 칸에 결과가 보입니다"]);
+    // 끝난 뒤에는 더 묻지 않는다 — 다시 안 뜬다.
+    assert.strictEqual(tick(t), 0, "끝난 회차를 또 묻는다");
+    await flush();
+    assert.strictEqual(jobCalls(t).length, 2);
+    assert.strictEqual(t.alerts.length, 1, "알림창이 또 떴다");
+    assert.ok(a.hasAttribute("data-no-room"), "알림만 띄우고 줄은 서버가 다시 그린다");
+  }
+
+  // 툴바 찾기(보내는 계정 — 답에 `note`)도 따라간다 · 오류가 하나로 모이면 까닭과 안내.
+  {
+    const t = setup([row(11, "홍길동"), row(12, "김철수")]);
+    t.submit(t.tool);
+    reply(t.calls[0], 200, { ok: true, job_id: 9, ids: [11, 12], msg: "…",
+                             note: "가상 님 PC 의 카톡에서 2명의 방을 찾습니다(회차 #9)" });
+    await flush();
+    tick(t);
+    reply(jobCalls(t)[0], 200, { id: 9, status: "done_with_errors",
+      room_search: { confirmed: 0, picks: 0, not_found: 0, failed: 44, canceled: 0,
+                     reason: "카카오톡 메인 창을 앞으로 가져오지 못했습니다.",
+                     hint: "카톡 창을 열어 두고 다시 돌려 주세요" } });
+    await flush();
+    assert.deepStrictEqual(t.alerts, [
+      "딜 소싱 방 찾기가 끝났습니다 — 확정 0 · 후보 고르기 0 · 못 찾음 0 · 오류 44\n" +
+      "오류 44건 모두: 카카오톡 메인 창을 앞으로 가져오지 못했습니다.\n" +
+      "카톡 창을 열어 두고 다시 돌려 주세요"]);
+  }
+
+  // 까닭이 여럿이면 까닭 줄은 없다 · 취소는 `취소됨` · 볼 수 없는 회차(404)는 그만 묻는다.
+  {
+    const a = row(11, "홍길동");
+    const t = setup([a]);
+    t.submit(a.querySelector(".js-room-search"));
+    reply(t.calls[0], 200, { ok: true, job_id: 5, ids: [11] });
+    await flush();
+    tick(t);
+    reply(jobCalls(t)[0], 200, { id: 5, status: "canceled",
+      room_search: { confirmed: 0, picks: 0, not_found: 1, failed: 2, canceled: 3,
+                     reason: "", hint: "" } });
+    await flush();
+    assert.deepStrictEqual(t.alerts, [
+      "딜 소싱 방 찾기 취소됨 — 확정 0 · 후보 고르기 0 · 못 찾음 1 · 오류 2 · 취소 3"]);
+
+    t.submit(a.querySelector(".js-room-search"));
+    reply(t.calls[t.calls.length - 1], 200, { ok: true, job_id: 6, ids: [11] });
+    await flush();
+    tick(t);
+    jobCalls(t)[1].resolve({ ok: false, status: 404, json: function () { return Promise.resolve({}); } });
+    await flush();
+    assert.strictEqual(tick(t), 0, "볼 수 없는 회차를 계속 묻는다");
+    assert.strictEqual(t.alerts.length, 1);
   }
 
   // --- ⑥ 다른 폼은 그대로 — 예전처럼 보내진다 ---------------------------------------

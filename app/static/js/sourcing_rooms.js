@@ -35,6 +35,50 @@
       if (rowForm) note(rowForm, text);
     });
     if (!form.closest("tr")) note(form, d.msg || text);
+    follow(d.job_id);
+  }
+
+  // 찾기가 끝나면 알림창을 **한 번** 띄운다(사용자 11/12: "딜소싱 방 찾기 끝나면 alert
+  // 띄워줘"). **이 화면이 건 회차만** 따라간다 — 화면을 새로 열면 이미 끝난 회차에는
+  // 다시 안 뜬다. 상태는 발송 진행 화면과 같은 자리(`/api/jobs/{id}`)를 같은 간격
+  // (2초 — `progress.js`)으로 묻는다. 셈 · 까닭은 서버가 끝난 회차에만 싣는다
+  // (`room_search` — `services/sourcing_rooms.search_summary`).
+  var POLL_MS = 2000;
+  var ENDED = { done: 1, done_with_errors: 1, canceled: 1 };
+  var followed = {};
+
+  function endedText(d) {
+    var s = d.room_search;
+    var head = d.status === "canceled" ? "딜 소싱 방 찾기 취소됨" : "딜 소싱 방 찾기가 끝났습니다";
+    if (!s) return head;
+    var parts = ["확정 " + s.confirmed, "후보 고르기 " + s.picks, "못 찾음 " + s.not_found];
+    if (s.failed) parts.push("오류 " + s.failed);
+    if (s.canceled) parts.push("취소 " + s.canceled);
+    var text = head + " — " + parts.join(" · ");
+    if (s.reason) text += "\n오류 " + s.failed + "건 모두: " + s.reason;
+    if (s.hint) text += "\n" + s.hint;
+    if (s.confirmed || s.picks) text += "\n새로고침하면 칸에 결과가 보입니다";
+    return text;
+  }
+
+  function follow(jobId) {
+    if (!jobId || followed[jobId]) return;
+    followed[jobId] = true;
+    function later() { setTimeout(ask, POLL_MS); }
+    function ask() {
+      fetch("/api/jobs/" + jobId, { headers: { "Accept": "application/json" } })
+        .then(function (r) {
+          if (r.status === 404) return null;        // 볼 수 없는 회차 — 그만 묻는다
+          return r.json().catch(function () { return {}; });
+        })
+        .then(function (d) {
+          if (d === null) return;
+          if (d && ENDED[d.status]) { alert(endedText(d)); return; }
+          later();
+        })
+        .catch(later);
+    }
+    later();
   }
 
   // 확정 — 서버가 그리는 확정된 줄과 같게: 방 이름 칸에 제목, `방 없음` · 후보 · 이어받은
