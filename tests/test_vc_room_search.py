@@ -350,7 +350,7 @@ def test_a_missed_startup_row_is_not_searched_by_a_person_name(logged_in, db, us
     assert (sent.status, sent.room_name) == ("failed", "자차랩스 박준호 대표님")
 
 
-# ── 팀원 화면으로 보는 관리자 — 그 팀원 잡, 맡긴 발송기(정훈 PC)가 찾는다 ─────────
+# ── 팀원 화면으로 보는 관리자 — 그 팀원 잡, 맡긴 발송기(관리자 PC)가 찾는다 ─────────
 
 def test_admin_viewing_a_member_whose_agent_is_the_admins(u1_admin, logged_in, db, users):
     """팀 현황 `○○ 발송기로` 로 팀원 잡을 관리자 발송기에 맡겨 둔 경우(`send_via_user_id`).
