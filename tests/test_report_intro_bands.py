@@ -89,7 +89,7 @@ def _chips(html):
 def test_화면에_묶음_단추가_수와_함께_서고_전체가_기본(stage, client):
     _login(client)
     page = client.get("/report?month=2026-08").text
-    assert "소개 후보 — 8월에 아직 안 보낸 기업 6곳" in page
+    assert "소개 후보 — 8월 딜소개 하지 않은 기업 6곳" in page
     chips = _chips(page)
     assert [(name, n, on) for name, n, on, _href in chips] == [
         ("전체", 6, True), ("5억 이하", 2, False), ("5~10억", 1, False),

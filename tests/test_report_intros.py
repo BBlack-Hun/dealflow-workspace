@@ -109,7 +109,7 @@ def test_report_page_shows_the_table(logged, db, users):
 
     page = logged.get("/report?month=2026-08")
     assert page.status_code == 200
-    assert "8월 소개한 기업" in page.text and "샘플애그" in page.text
+    assert "8월 딜소개 한 기업" in page.text and "샘플애그" in page.text
     # 팀원은 `팀 전체` 를 달아도 제 것만 본다 — 남의 명단이 받은 샘플메디가 `소개한 기업` 에 없다
     # (내가 안 보낸 기업이라 아래 `소개 후보` 에는 선다 — #174).
     assert "<summary><b>샘플메디</b></summary>" not in \
@@ -119,7 +119,7 @@ def test_report_page_shows_the_table(logged, db, users):
 
     year = logged.get("/report?span=year&year=2026")
     assert year.status_code == 200
-    assert "2026년 소개한 기업" in year.text
+    assert "2026년 딜소개 한 기업" in year.text
 
 
 def _grid(ws):
@@ -133,9 +133,9 @@ def test_excel_gets_two_intro_sheets(logged, db, users):
     r = logged.get("/api/export/report.xlsx?span=year&year=2026")
     assert r.status_code == 200
     wb = openpyxl.load_workbook(io.BytesIO(r.content))
-    assert wb.sheetnames[-2:] == ["2026 소개한 기업", "2026 소개 상세"]
+    assert wb.sheetnames[-2:] == ["2026 딜소개 한 기업", "2026 소개 상세"]
 
-    summary = _grid(wb["2026 소개한 기업"])
+    summary = _grid(wb["2026 딜소개 한 기업"])
     # 기업명 바로 오른쪽 소개한 횟수(#165 — 본인 보기라 `본인 소개 횟수`) · 그 옆
     # `투자유치희망금액`(#118) · 계약여부 · 계약서 수신 여부(#122) —
     # 샘플애그는 금액 · 계약서 수신을 안 적어 빈칸이고 계약여부는 기본 `미계약` 이다.
@@ -150,8 +150,8 @@ def test_excel_gets_two_intro_sheets(logged, db, users):
 
     month = openpyxl.load_workbook(io.BytesIO(
         logged.get("/api/export/report.xlsx?month=2026-10").content))
-    assert month.sheetnames[-2:] == ["2026-10 소개한 기업", "2026-10 소개 상세"]
-    flat = [str(c) for row in _grid(month["2026-10 소개한 기업"]) for c in row]
+    assert month.sheetnames[-2:] == ["2026-10 딜소개 한 기업", "2026-10 소개 상세"]
+    flat = [str(c) for row in _grid(month["2026-10 딜소개 한 기업"]) for c in row]
     assert "이 기간에 소개한 기업이 없습니다." in flat
 
 
