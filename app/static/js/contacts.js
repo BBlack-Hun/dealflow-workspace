@@ -583,7 +583,12 @@
 
   function verify(ids, label) {
     if (!ids.length) { alert("확인할 담당자가 없습니다."); return; }
-    if (!confirm(label + " " + ids.length + "명의 카톡방 이름을 확인합니다.\n" +
+    // 찾는 순서는 서버가 정한다(`services/vc_room_search` — 적어 둔 방 이름 → 이름+직급
+    // → 이름). 여기서는 무엇이 일어나는지만 적는다.
+    if (!confirm(label + " " + ids.length + "명의 카톡방을 확인합니다.\n" +
+      "· 방 이름이 적힌 분 — 그 이름 그대로 확인하고, 못 찾으면 이름+직급 → 이름으로 다시 찾습니다" +
+      " (적어 둔 방 이름은 바꾸지 않습니다)\n" +
+      "· 방 이름이 없는 분 — 이름+직급 → 이름으로 찾아, 이 분 방이 분명하면 방 이름을 채웁니다\n" +
       "카카오톡이 켜져 있어야 하며, 확인 중에는 PC 조작을 멈춰주세요.\n" +
       "(문구는 전송하지 않습니다)")) return;
     fetch("/api/contacts/verify-rooms", {

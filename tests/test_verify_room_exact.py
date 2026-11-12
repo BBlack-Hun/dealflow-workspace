@@ -63,6 +63,21 @@ def _fresh(db, row_id):
     return db.get(VcContact, row_id)
 
 
+def _name_round(client, job_id, candidates=None):
+    """적어 둔 이름으로 못 찾은 건은 **이름+직급 → 이름으로 한 번 더** 찾는다(11/12 —
+    `services/vc_room_search.fall_back`). 회분을 끝냈다고 알리고 다시 물어 그 건들을
+    받아, 모두 `candidates` 로(없으면 못 찾음) 보고한다. 받은 건을 돌려준다."""
+    r = client.post(f"/api/agent/jobs/{job_id}/status", json={"status": "done"},
+                    headers=auth(DEMO_TOKEN))
+    assert r.status_code == 200 and r.json()["status"] == "queued", r.text
+    items = _claim(client)
+    for i in items:
+        assert i["room_name"] == "" and not i.get("exact")
+        _report(client, i["id"], "ambiguous" if candidates else "not_found",
+                candidates=candidates)
+    return items
+
+
 # ── 버그 1 — 비슷한 다른 방 하나가 걸려도 방 이름을 안 바꾸고, 확인됨도 아니다 ──
 
 def test_a_similar_room_found_first_does_not_rename_or_verify(logged_in, db, users):
@@ -70,10 +85,12 @@ def test_a_similar_room_found_first_does_not_rename_or_verify(logged_in, db, use
     mine = "가나다 홍길동 심사역님 딜 공유방"
     other = "가나다 홍길동 심사역님 딜 공유방 2기"
     row = _row(db, "홍길동", "가나다벤처스", mine)
-    _queue(logged_in)
+    job_id = _queue(logged_in)["job_id"]
     [item] = _claim(logged_in)
 
     _report(logged_in, item["id"], "verified", found_room=other, candidates=[other])
+    # 이름으로 다시 찾아도 그 비슷한 방 하나뿐이다 — 그래도 적어 둔 이름은 그대로.
+    _name_round(logged_in, job_id, candidates=[other])
 
     got = _fresh(db, row.id)
     assert got.kakao_room_name == mine, "확인이 적어 둔 방 이름을 바꿨다"
@@ -243,6 +260,8 @@ def test_whole_list_with_shifted_results_never_swaps_room_names(logged_in, db, u
     for prev, cur in zip(items[-1:] + items[:-1], items):
         _report(logged_in, cur["id"], "verified", found_room=prev["room_name"],
                 candidates=[prev["room_name"]])
+    # 다섯 건 모두 이름으로 한 번 더 찾는다 — 회분이 `paused` 로 멈추지 않고 큐로 간다.
+    assert len(_name_round(logged_in, body["job_id"])) == len(rows)
 
     for r in rows:
         got = _fresh(db, r.id)
