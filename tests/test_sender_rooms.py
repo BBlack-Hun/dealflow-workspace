@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import re
+from urllib.parse import unquote
 
 import pytest
 from sqlalchemy import select
@@ -564,6 +565,7 @@ def test_sender_sees_its_own_titles_on_the_sourcing_page(client, db, users, send
     assert 'data-testid="sourcing-sender-room"' in done and 'data-state="confirmed"' in done
     assert f"{me} 전용" in done and "💬 보내는 계정 홍소싱 방" in done
     assert f'action="/sourcing/{sender_view["room"].id}/room-clear"' in done
+    assert ">톡방 연결 끊기</button>" in done and "확정 거두기" not in done
     assert "명단 이름:" in done and SRC_OWN in done       # 명단의 방 이름은 아래 참고로
     assert "data-no-room" not in done.split(">", 1)[0]     # 이 계정 제목이 있다 — 안 찾는다
     assert "room-confirm" not in done
@@ -638,6 +640,7 @@ def test_sender_pick_and_clear_on_the_sourcing_page_keep_the_list(
     gone = client.post(f"/sourcing/{shared.id}/room-clear", data={"tab": GROUP},
                        follow_redirects=False)
     assert gone.status_code == 303
+    assert "톡방 연결을 끊었습니다" in unquote(gone.headers["location"])
     db.expire_all()
     assert sender_rooms.sourcing_rooms_for(db, users["u2"].id, [shared]) == {}
     assert db.get(SourcingContact, shared.id).kakao_room_name == SRC_OWN
