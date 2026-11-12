@@ -570,7 +570,9 @@ def test_지금_화면_내려받기는_보이는_칸_그대로다(db, users, log
     head, rows = _sheet(logged.get("/api/export/companies-view.xlsx"))
     # `소분류` 뒤에 매출 · 금액 칸이 낀다 — 해마다 이름이 바뀐다(#75).
     assert head == company_view.view_headers(revenue_years.columns())
-    assert head[:3] == ["NO", "기업명", "수신일"]
+    # 계약 칸 넷은 `기업명` 바로 뒤(i231) — 화면과 같은 자리.
+    assert head[:7] == ["NO", "기업명", "견적서 첨부 여부", "계약여부", "계약서 수신 여부",
+                        "성공보수율", "수신일"]
     # 아무 조건 없으면 표의 기본 차례(수신일 최신순, 날짜 없는 곳은 끝).
     assert [r[1] for r in rows] == ["샘플나루랩스", "샘플가온헬스", "샘플다온소재",
                                     "샘플라온푸드", "Alpha샘플"]

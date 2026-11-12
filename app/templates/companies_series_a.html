@@ -8,7 +8,7 @@
   시트 `Series A 이상 기업` 을 옮긴 표다. **한 줄은 딜 소싱으로 받은 딜 한 건**
   이고(`models.SeriesACompany`), 옆 두 탭(`ir_companies`)과 다른 표다. 그래서
   화면 파일도 따로다 — 옆 두 탭의 [수정] 창 · 소개 가능 판정이 이 표에는 안
-  맞는다(계약 두 칸은 0125 에 IR 표와 같은 보기로 더했다 — `이메일` 오른쪽). 같이 쓰는 것은 탭 줄(`_company_tabs.html`)과 표
+  맞는다(계약 두 칸은 0125 에 IR 표와 같은 보기로 더했다 — 지금은 계약년월과 함께 `기업명` 오른쪽, i234). 같이 쓰는 것은 탭 줄(`_company_tabs.html`)과 표
   부품 넷(`inline_edit.js` · `filters.js` · `table_sort.js` + 이 화면의
   `series_a.js`)이다.
 
@@ -128,6 +128,23 @@
       <tr>
         <th class="num stick stick-a" style="width:{{ no_w }}px">NO</th>
         <th class="stick stick-b" style="width:200px">기업명</th>
+        {# ── 계약 칸 셋 — **`기업명` 바로 오른쪽** (i234 · 11/12 팀원 요청) ──────────────
+           "Series A 이상 딜소싱 탭에서 > 기업명 컬럼 오른쪽으로 > 계약년월, 계약여부, 계약서수신
+           여부 컬럼 기업명 오른쪽으로 컬럼 이동해주세요". 예전 자리는 `이메일` 오른쪽이었다(0125 ·
+           0129). 칸 · 필터 열쇠 · 폭 · 고치는 길은 그대로이고 자리만 옮겼다(머리글은 이름 ·
+           칸은 `data-field` 로 찾는 부품들이라 자리에 기대는 곳이 없다). 고정 칸은 여전히
+           `NO` · `기업명` 둘이다. 추가 칸 기준점(`custom_columns._HAND_ANCHORS`)도 같은 차례다.
+           이 탭에는 엑셀 내려받기가 없다. #}
+        {# 계약여부 · 계약서 수신 여부(0125 · 10/28 요청 "이메일 오른쪽으로"). IR 기업 현황의
+           같은 두 칸과 **같은 보기 · 같은 폭 · 같은 필터 열쇠**다(`companies.html` 의 그 칸 주석 —
+           폭은 가장 긴 값 · 고른 뒤의 필터 단추에 맞췄다). IR 기업에 이어진 줄은 따라 고친다. #}
+        {# 계약년월(0129 · #122) — `계약여부` 왼쪽(사용자 요청). IR 기업 현황의 같은 칸과 같은 폭 ·
+           같은 규칙이고, IR 기업에 이어진 줄은 따라 고친다. #}
+        <th style="width:84px" title="YYYY-MM — 계약 완료로 바꾸면 비어 있을 때 그 달이 들어갑니다 · IR 기업에 이어진 줄은 함께 고쳐집니다 · 눌러서 수정">계약년월</th>
+        <th style="width:134px" data-filters="contract:계약여부"
+            title="IR 기업 현황의 계약여부와 같은 보기 · IR 기업에 이어진 줄은 함께 고쳐집니다 · 눌러서 수정">계약여부<div class="th-filters"></div></th>
+        <th style="width:148px" data-filters="received:계약서 수신 여부"
+            title="O · X · 비움(아직 안 정함) · IR 기업에 이어진 줄은 함께 고쳐집니다 · 눌러서 수정">계약서 수신 여부<div class="th-filters"></div></th>
         {# 메모 · 수정한 팀원 · 수정한 날짜(#142 — "기업명 컬럼 오른쪽에 메모 컬럼 삽입, 수정담당자명,
            수정일 컬럼"). 메모는 IR 기업 현황의 `메모` 와 같은 보기 · 같은 폭이다(오늘 날짜를 달고 연다 —
            `data-memo-date`). 뒤 두 칸은 앱이 적는 칸이라 눌러 고치지 않는다 — IR 기업 현황의 같은 두 칸과
@@ -164,16 +181,6 @@
         <th style="width:70px" title="{{ typed_tip }}">대표자명</th>
         <th style="width:104px" title="{{ typed_tip }}">연락처</th>
         <th style="width:170px" title="{{ typed_tip }}">이메일</th>
-        {# 계약여부 · 계약서 수신 여부(0125 · 10/28 요청 "이메일 오른쪽으로"). IR 기업 현황의
-           같은 두 칸과 **같은 보기 · 같은 폭 · 같은 필터 열쇠**다(`companies.html` 의 그 칸 주석 —
-           폭은 가장 긴 값 · 고른 뒤의 필터 단추에 맞췄다). IR 기업에 이어진 줄은 따라 고친다. #}
-        {# 계약년월(0129 · #122) — `계약여부` 왼쪽(사용자 요청). IR 기업 현황의 같은 칸과 같은 폭 ·
-           같은 규칙이고, IR 기업에 이어진 줄은 따라 고친다. #}
-        <th style="width:84px" title="YYYY-MM — 계약 완료로 바꾸면 비어 있을 때 그 달이 들어갑니다 · IR 기업에 이어진 줄은 함께 고쳐집니다 · 눌러서 수정">계약년월</th>
-        <th style="width:134px" data-filters="contract:계약여부"
-            title="IR 기업 현황의 계약여부와 같은 보기 · IR 기업에 이어진 줄은 함께 고쳐집니다 · 눌러서 수정">계약여부<div class="th-filters"></div></th>
-        <th style="width:148px" data-filters="received:계약서 수신 여부"
-            title="O · X · 비움(아직 안 정함) · IR 기업에 이어진 줄은 함께 고쳐집니다 · 눌러서 수정">계약서 수신 여부<div class="th-filters"></div></th>
         {# 필터 열쇠는 옆 탭과 같다(`sector` · `minor` · `series`) — 같은 칸을
            같은 주소(`?sector=…`)로 거른다. #}
         <th style="width:140px" data-filters="sector:대분류">대분류<div class="th-filters"></div></th>
@@ -246,6 +253,16 @@
           <div class="ir-link-sub muted sa-ir-link" data-testid="sa-ir-link"
                data-ir-link='{{ r.ir_link|tojson }}' hidden></div>
         </td>
+        {# 계약 칸 셋(i234) — 머리글과 같은 차례로 `기업명` 바로 뒤. #}
+        {# 칸에는 **말**이 보이고 저장되는 것은 열쇠다 — 저장 뒤 말은 응답(`contract_label`)이
+           준다(`series_a.js`). 보기는 늘 다 세운다(`data-choices` — IR 표와 같은 까닭). #}
+        <td class="cell" data-field="contract_ym">{{ r.contract_ym }}</td>
+        <td class="cell" data-field="contract_status" data-type="pick"
+            data-filter-key="contract"
+            data-choices="{{ contract_labels.values()|join(', ') }}">{{ r.contract_label }}</td>
+        <td class="cell" data-field="contract_received" data-type="pick"
+            data-filter-key="received"
+            data-choices="O,X">{{ r.contract_received }}</td>
         <td title="{{ r.memo }}">
           <div class="cell clamp2 keep-lines" data-field="memo" data-type="long" data-memo-date>{{ r.memo }}</div>
         </td>
@@ -262,15 +279,6 @@
         <td class="cell" data-field="ceo_name">{{ r.ceo_name }}</td>
         <td class="cell" data-field="ceo_phone">{{ r.ceo_phone }}</td>
         <td class="cell ellipsis" data-field="ceo_email" title="{{ r.ceo_email }}">{{ r.ceo_email }}</td>
-        {# 칸에는 **말**이 보이고 저장되는 것은 열쇠다 — 저장 뒤 말은 응답(`contract_label`)이
-           준다(`series_a.js`). 보기는 늘 다 세운다(`data-choices` — IR 표와 같은 까닭). #}
-        <td class="cell" data-field="contract_ym">{{ r.contract_ym }}</td>
-        <td class="cell" data-field="contract_status" data-type="pick"
-            data-filter-key="contract"
-            data-choices="{{ contract_labels.values()|join(', ') }}">{{ r.contract_label }}</td>
-        <td class="cell" data-field="contract_received" data-type="pick"
-            data-filter-key="received"
-            data-choices="O,X">{{ r.contract_received }}</td>
         <td title="{{ r.sector_major }}">
           <div class="cell clamp2" data-field="sector_major" data-type="pick"
                data-filter-key="sector">{{ r.sector_major }}</div>

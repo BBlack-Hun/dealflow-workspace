@@ -23,8 +23,9 @@ ROOT = Path(__file__).resolve().parent.parent
 # 앞으로 올 해는 `예상매출`(과제 169 — 검사의 올해는 2026, tests/conftest.py).
 LABELS = ["대표자명", "연락처", "이메일", "24년 매출", "25년 매출", "26년 매출",
           "27년 예상매출", "누적투자금액", "투자유치희망금액", "Pre Value"]
-#: `이메일` 바로 오른쪽의 계약 칸 둘(0125 · tests/test_series_a_contract.py) — 화면 차례.
-#: 그 왼쪽에 `계약년월`(0129 · #122 — tests/test_contract_ym.py)이 선다.
+#: 계약 칸 둘(0125 · tests/test_series_a_contract.py)과 그 왼쪽 `계약년월`(0129 · #122 —
+#: tests/test_contract_ym.py) — 화면 차례. 처음에는 `이메일` 바로 오른쪽이었고, i234(11/12)
+#: 부터는 `기업명` 바로 오른쪽이다.
 CONTRACT = ["계약년월", "계약여부", "계약서 수신 여부"]
 SHOWN = LABELS[:3] + CONTRACT + LABELS[3:]
 
@@ -47,9 +48,10 @@ def _head(html: str) -> list:
 
 
 def test_칸이_IR_기업_현황_차례로_선다(logged_in, deal):
-    """#87(10/29) — 기업 쪽 표는 IR 기업 현황 차례다: `수신일` 뒤에 대표자 묶음 · 계약 두 칸
-    (10/28 요청대로 `이메일` 바로 오른쪽), `소분류` 뒤에 매출 · 금액, 그다음 `투자라운드` →
-    `상세 내용`. 예전에는 이 칸들이 `투자라운드` 와 `상세 내용` 사이에 한 무리로 섰다."""
+    """#87(10/29) — 기업 쪽 표는 IR 기업 현황 차례다: `수신일` 뒤에 대표자 묶음, `소분류` 뒤에
+    매출 · 금액, 그다음 `투자라운드` → `상세 내용`. 예전에는 이 칸들이 `투자라운드` 와
+    `상세 내용` 사이에 한 무리로 섰다. 계약 칸 셋은 처음에 `이메일` 바로 오른쪽(10/28 요청)이었고
+    i234(11/12 팀원 요청)부터 `기업명` 바로 오른쪽이다."""
     from app.routers.series_a import TYPED
 
     html = logged_in.get("/companies?tab=series-a").text
@@ -57,9 +59,11 @@ def test_칸이_IR_기업_현황_차례로_선다(logged_in, deal):
     # `수신일` 바로 뒤는 `후속라운드 시작`(#98) · `IR 투자컨설팅 미팅일시`(#143 —
     # tests/test_series_a_memo_meeting.py) — 그 뒤부터.
     at = labels.index("IR 투자컨설팅 미팅일시")
-    end = at + 1 + len(LABELS[:3] + CONTRACT)
-    assert labels[at + 1:end] == LABELS[:3] + CONTRACT, labels
+    end = at + 1 + len(LABELS[:3])
+    assert labels[at + 1:end] == LABELS[:3], labels
     assert labels[end:end + 2] == ["대분류", "소분류"], labels
+    at = labels.index("기업명")
+    assert labels[at + 1:at + 1 + len(CONTRACT)] == CONTRACT, labels
     at = labels.index("소분류")
     money = LABELS[3:]
     assert labels[at + 1:at + 1 + len(money)] == money, labels
@@ -68,10 +72,11 @@ def test_칸이_IR_기업_현황_차례로_선다(logged_in, deal):
     row = re.search(r"<tr data-id=.*?</tr>", html, re.S).group(0)
     fields = re.findall(r'class="cell[^"]*" data-field="([^"]+)"', row)
     at = fields.index("consulting_meeting_at")
-    want = (list(TYPED[:3]) + ["contract_ym", "contract_status", "contract_received",
-                               "sector_major", "sector_minor"]
+    want = (list(TYPED[:3]) + ["sector_major", "sector_minor"]
             + list(TYPED[3:]) + ["series", "detail"])
     assert fields[at + 1:at + 1 + len(want)] == want, fields
+    at = fields.index("name")
+    assert fields[at + 1:at + 4] == ["contract_ym", "contract_status", "contract_received"], fields
 
 
 def test_표_폭이_칸_폭_합보다_넓다(logged_in, deal):
@@ -155,7 +160,9 @@ def test_추가_칸_자리_목록에도_선다():
 
     tab = svc.anchor_groups("companies")["Series A 이상 딜 소싱"]
     at = tab.index("IR 투자컨설팅 미팅일시")
-    assert list(tab[at + 1:at + 1 + len(LABELS[:3] + CONTRACT)]) == LABELS[:3] + CONTRACT
+    assert list(tab[at + 1:at + 1 + len(LABELS[:3])]) == LABELS[:3]
+    at = tab.index("기업명")
+    assert list(tab[at + 1:at + 1 + len(CONTRACT)]) == CONTRACT
     at = tab.index("소분류")
     assert list(tab[at + 1:at + 1 + len(LABELS[3:])]) == LABELS[3:]
 

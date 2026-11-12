@@ -164,6 +164,8 @@ def _heads(html: str, table: str) -> list:
 
 
 def test_IR_은_미팅제공일자_오른쪽_Series_A_는_계약여부_왼쪽(logged_in, db):
+    """IR 의 오른쪽 이웃이던 `계약여부` 는 i231(11/12)로 `기업명` 옆에 갔고 계약년월은 제자리다.
+    Series A 는 i234 로 셋이 함께 `기업명` 옆으로 가서 `계약여부` 왼쪽 그대로다."""
     from app.models import IrCompany, SeriesACompany
 
     db.add_all([IrCompany(name="샘플자리", contract_ym="2026-09"), SeriesACompany(name="샘플받음")])
@@ -171,7 +173,7 @@ def test_IR_은_미팅제공일자_오른쪽_Series_A_는_계약여부_왼쪽(lo
 
     heads = _heads(logged_in.get("/companies").text, "co-table")
     at = heads.index("계약년월")
-    assert heads[at - 1:at + 2] == ["미팅제공일자", "계약년월", "계약여부"], heads
+    assert heads[at - 1:at + 1] == ["미팅제공일자", "계약년월"], heads
     heads = _heads(logged_in.get("/companies?tab=series-a").text, "sa-table")
     assert heads[heads.index("계약년월") + 1] == "계약여부", heads
 

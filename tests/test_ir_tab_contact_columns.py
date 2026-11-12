@@ -52,7 +52,11 @@ def test_the_view_export_and_anchors_follow(logged, u1_admin):
     assert resp.status_code == 200
     ws = openpyxl.load_workbook(io.BytesIO(resp.content)).active
     head, row = [[c.value for c in r] for r in ws.iter_rows(max_row=2)]
-    assert head[2:10] == AFTER_RECEIVED
-    assert row[6:10] == ["김샘플", "010-0000-1234", "ceo@example.com", "샘플 헬스케어 플랫폼"]
-    ir_tab = custom_columns.anchor_groups("companies")["IR 기업 현황"]
-    assert list(ir_tab[1:9]) == AFTER_RECEIVED
+    # `기업명` 과 `수신일` 사이에 계약 칸 넷(i231)이 선다 — 그 뒤 차례는 그대로.
+    at = head.index("수신일")
+    assert at == head.index("기업명") + 5, head
+    assert head[at:at + 8] == AFTER_RECEIVED
+    assert row[at + 4:at + 8] == ["김샘플", "010-0000-1234", "ceo@example.com", "샘플 헬스케어 플랫폼"]
+    ir_tab = list(custom_columns.anchor_groups("companies")["IR 기업 현황"])
+    at = ir_tab.index("수신일")
+    assert ir_tab[at:at + 8] == AFTER_RECEIVED
