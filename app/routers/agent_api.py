@@ -242,6 +242,23 @@ def poll(
     db.commit()
 
     job = db.get(SendJob, candidate)
+    # ★ **내주기 직전에 실린 기업을 다시 본다**(딜 소개 · IR 자료 전달 —
+    #   `jobs._drop_blocked_companies`, [발송 시작] · 예약 풀림 · 재시도와 같은 판정).
+    #   19시 이후 · PC 꺼짐 · 하루 한도(`_settle` 이 다시 큐에 세운다)로 `queued` 인 채
+    #   밤을 넘긴 회차가 그사이 `딜소개 불가` 가 된 기업을 싣고 다음 날 그대로 나가면
+    #   안 된다. 걸리면 대기 건은 그 까닭으로 취소되고(나간 건은 그대로) 회차는 닫힌다
+    #   — 발송기에는 아무것도 안 준다. 다음 폴링이 다른 회차를 집는다.
+    from .jobs import _drop_blocked_companies   # 순환 import 를 피해 늦게 부른다
+
+    waiting = sum(1 for i in job.items if i.status == "pending")
+    _drop_blocked_companies(db, job)
+    if waiting and not any(i.status == "pending" for i in job.items):
+        job.status = "canceled"
+        job.finished_at = now_iso()
+        db.commit()
+        log.warning("회차 %s — 내주기 직전 다시 보니 딜소개 불가 기업이 실려 대기 %s건을 "
+                    "취소하고 닫습니다", job.id, waiting)
+        return Response(status_code=204)
     pending_items = _agent_items(job)
 
     # ★ 한 번에 내주는 건수의 상한은 **에이전트가 정한다** (`?cap=`).
