@@ -1255,10 +1255,10 @@ def companies(db: Session, *, others=None) -> List[dict]:
     기업은 **팀 공용**이다(`/companies` 화면도 담당으로 나누지 않는다).
     누구 담당이든 소개할 딜은 같은 목록에서 고른다.
 
-    `딜소개 불가` 로 표시된 기업만 빠진다. 이것은 판단이 아니라 **보내면 안
-    되는 곳**이고, 발송 화면이 이미 같은 이유로 목록에서 빼고 있다
+    `딜소개 불가` 기업만 빠진다(계약여부든 기업명 꼬리표든). 이것은 판단이 아니라
+    **보내면 안 되는 곳**이고, 발송 화면이 이미 같은 이유로 목록에서 빼고 있다
     (`routers/pages.py` 의 `deals_page`) — 여기 남겨 두면 보낼 수 없는 곳을
-    추천받는다. 판정은 그 화면이 쓰는 상수를 그대로 읽는다.
+    추천받는다. 판정은 그 화면과 같은 함수다(`companies.deal_blocked`).
 
     내용이 모자란 기업은 **감추지 않고** `introducible` 로 표시만 한다.
     다시 계산하지 않고 `IrCompany.introducible` 을 그대로 읽는다 — 여기서
@@ -1273,12 +1273,12 @@ def companies(db: Session, *, others=None) -> List[dict]:
     **금액은 구간으로 나간다**(`AMOUNT_FIELDS` · `amount_band`). 이름을 빼도
     숫자가 남으면 그 숫자로 특정된다 — 재 본 값은 `amount_band` 에 적어 두었다.
     """
-    from ..routers.companies import BLOCKED_CONTRACT, contract_key
+    from ..routers.companies import deal_blocked
 
     rows = db.execute(select(IrCompany).order_by(IrCompany.id)).scalars().all()
     out = []
     for c in rows:
-        if contract_key(c.contract_status) == BLOCKED_CONTRACT:
+        if deal_blocked(c):
             continue
         item = {"id": company_ref(c.id)}
         item.update(_fill(c, COMPANY_FIELDS, scrub_with=c,
