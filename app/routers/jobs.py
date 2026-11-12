@@ -11,7 +11,8 @@ from ..deps import agent_status, get_current_user, no_send_as_member
 from ..models import (STARTUP_MSG_KIND, STARTUP_SEND_KIND, SendItem, SendJob,
                       SourcingContact, User)
 from ..services import (automation_runner, ir_outreach, mail_sender, scheduled_send,
-                        send_guard, sourcing_msg, sourcing_sync, startup_monthly)
+                        send_guard, sourcing_msg, sourcing_rooms, sourcing_sync,
+                        startup_monthly)
 
 router = APIRouter(prefix="/api", tags=["jobs"])
 
@@ -89,6 +90,10 @@ def job_status(job_id: int, db: Session = Depends(get_db), user: User = Depends(
         # **2단계 자동화 회차**면 — 무엇을 왜 뺐나(중복 방지 · 조건) · 건 사이
         # 간격 · 지금 안 내려가는 까닭(`automation_runner.job_notes`).
         "automation": automation_runner.job_notes(db, job, hold=hold),
+        # **딜 소싱 [방 후보 찾기] 회차가 끝났으면** — 확정 · 후보 고르기 · 못 찾음 셈과
+        # 오류가 하나로 모이면 그 까닭. 그 화면이 끝날 때 알림창을 띄운다
+        # (`sourcing_rooms.js` · `sourcing_rooms.search_summary`). 다른 회차는 `None`.
+        "room_search": sourcing_rooms.search_summary(db, job),
         "items": [
             {
                 "id": i.id,

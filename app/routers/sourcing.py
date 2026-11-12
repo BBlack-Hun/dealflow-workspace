@@ -1167,7 +1167,7 @@ def confirm_room(request: Request, row_id: int, room: str = Form(""), tab: str =
 def clear_room(request: Request, row_id: int, tab: str = Form(""),
                db: Session = Depends(get_db),
                user: User = Depends(get_current_user)):
-    """[확정 거두기] — **보내는 계정 전용 제목**의 확정을 거둔다(`sender_rooms.clear`).
+    """[톡방 연결 끊기] — **보내는 계정 전용 제목**의 확정을 거둔다(`sender_rooms.clear`).
 
     그 계정은 다시 명단의 방 이름으로 보낸다. 명단의 방 이름은 안 건드린다 — 그쪽은
     `카톡방 이름` 칸을 고친다(그래서 보내는 계정이 아니면 이 길이 없다).
@@ -1176,8 +1176,8 @@ def clear_room(request: Request, row_id: int, tab: str = Form(""),
     if row is None:
         raise HTTPException(status_code=404, detail="찾을 수 없습니다")
     if not sender_rooms.is_sender(db, user):
-        return _answer(request, tab, "자동화를 보내는 계정 전용 제목만 거둘 수 있습니다 — "
+        return _answer(request, tab, "자동화를 보내는 계정 전용 톡방 연결만 끊을 수 있습니다 — "
                        "명단의 방 이름은 `카톡방 이름` 칸에서 고치세요", 400)
     sender_rooms.clear(db, user.id, row_id, sourcing=True)
-    return _answer(request, tab, f"{row.name} — {user.name} 님 계정 전용 방 제목의 확정을 "
-                   "거뒀습니다(명단의 방 이름으로 보냅니다)")
+    return _answer(request, tab, f"{row.name} — {user.name} 님 계정 전용 톡방 연결을 "
+                   "끊었습니다(명단의 방 이름으로 보냅니다)")

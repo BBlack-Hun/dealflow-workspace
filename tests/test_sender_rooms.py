@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import re
+from urllib.parse import unquote
 
 import pytest
 from sqlalchemy import select
@@ -564,6 +565,7 @@ def test_sender_sees_its_own_titles_on_the_sourcing_page(client, db, users, send
     assert 'data-testid="sourcing-sender-room"' in done and 'data-state="confirmed"' in done
     assert f"{me} 전용" in done and "💬 보내는 계정 홍소싱 방" in done
     assert f'action="/sourcing/{sender_view["room"].id}/room-clear"' in done
+    assert ">톡방 연결 끊기</button>" in done and "확정 거두기" not in done
     assert "명단 이름:" in done and SRC_OWN in done       # 명단의 방 이름은 아래 참고로
     assert "data-no-room" not in done.split(">", 1)[0]     # 이 계정 제목이 있다 — 안 찾는다
     assert "room-confirm" not in done
@@ -638,6 +640,7 @@ def test_sender_pick_and_clear_on_the_sourcing_page_keep_the_list(
     gone = client.post(f"/sourcing/{shared.id}/room-clear", data={"tab": GROUP},
                        follow_redirects=False)
     assert gone.status_code == 303
+    assert "톡방 연결을 끊었습니다" in unquote(gone.headers["location"])
     db.expire_all()
     assert sender_rooms.sourcing_rooms_for(db, users["u2"].id, [shared]) == {}
     assert db.get(SourcingContact, shared.id).kakao_room_name == SRC_OWN
@@ -691,3 +694,105 @@ def test_sender_search_takes_list_named_rows_without_its_own_title(
                        data={"tab": GROUP, "ids": str(sender_view["room"].id)}, headers=json_)
     assert none.status_code == 400
     assert "다 확인돼 있습니다" in none.json()["detail"]
+
+
+# ── 딜 소싱 [방 후보 찾기]가 끝나면 알림창 — 셈은 회차 조회에 실린다(11/12) ────────────
+#
+# 사용자: "딜소싱 방 찾기 끝나면 alert 띄워줘". 화면(`sourcing_rooms.js`)은 찾기를 건
+# 회차를 `/api/jobs/{id}` 로 따라가고, 끝나면 서버가 실어 준 셈(`room_search` —
+# `sourcing_rooms.search_summary`)으로 알림창을 띄운다.
+
+def _member_search(client, db, names):
+    from app.models import SendJob, SourcingContact
+
+    rows = []
+    for name in names:
+        row = SourcingContact(bucket=GROUP, name=name, firm="가나다벤처스", title="심사역",
+                              participation="참여")
+        db.add(row)
+        rows.append(row)
+    db.commit()
+    _login(client, "01000000001")
+    answer = client.post("/sourcing/rooms/search",
+                         data={"tab": GROUP, "ids": ",".join(str(r.id) for r in rows)},
+                         headers={"Accept": "application/json"})
+    assert answer.status_code == 200, answer.text
+    job = db.get(SendJob, answer.json()["job_id"])
+    return job, {i.sourcing_contact_id: i.id for i in job.items}, rows
+
+
+def _member_report(client, item_id, **body):
+    payload = {"status": "failed", "verify_result": "not_found"}
+    payload.update(body)
+    r = client.post(f"/api/agent/items/{item_id}/result", json=payload,
+                    headers=auth(DEMO_TOKEN))
+    assert r.status_code == 200, r.text
+
+
+def _end(client, job_id, token=DEMO_TOKEN):
+    r = client.post(f"/api/agent/jobs/{job_id}/status", json={"status": "done"},
+                    headers=auth(token))
+    assert r.status_code == 200, r.text
+
+
+def test_finished_member_search_counts_what_the_cells_now_show(client, db, users, team):
+    job, item, rows = _member_search(client, db, ["가확정", "나후보", "다없음", "라오류"])
+    one, two, none, broke = rows
+    # 끝나기 전에는 세지 않는다 — 화면이 아직 띄우지 않는다.
+    assert client.get(f"/api/jobs/{job.id}").json()["room_search"] is None
+
+    _member_report(client, item[one.id], status="sent", verify_result="verified",
+                   found_room="가확정 딜소싱", candidates=["가확정 딜소싱"])
+    _member_report(client, item[two.id], verify_result="ambiguous",
+                   candidates=["나후보 방 하나", "나후보 방 둘"])
+    _member_report(client, item[none.id])
+    _member_report(client, item[broke.id],
+                   error="verify error: 카카오톡 메인 창을 앞으로 가져오지 못했습니다.")
+    _end(client, job.id)
+
+    got = client.get(f"/api/jobs/{job.id}").json()
+    assert got["status"] == "done_with_errors"
+    assert got["room_search"] == {
+        "confirmed": 1, "picks": 1, "not_found": 1, "failed": 1, "canceled": 0,
+        # 오류가 하나로 모였다 — 그 까닭(발송기 머리말은 뗀다)과 카톡 안내.
+        "reason": "카카오톡 메인 창을 앞으로 가져오지 못했습니다.",
+        "hint": "카톡 창을 열어 두고 다시 돌려 주세요"}
+
+
+def test_mixed_errors_give_no_reason_and_canceled_rows_are_counted(client, db, users, team):
+    job, item, rows = _member_search(client, db, ["가오류", "나오류", "다남음"])
+    _member_report(client, item[rows[0].id], error="첫째 까닭")
+    _member_report(client, item[rows[1].id], error="둘째 까닭")
+    assert client.post(f"/api/jobs/{job.id}/cancel").status_code == 200
+
+    got = client.get(f"/api/jobs/{job.id}").json()
+    assert got["status"] == "canceled"
+    assert got["room_search"] == {"confirmed": 0, "picks": 0, "not_found": 0, "failed": 2,
+                                  "canceled": 1, "reason": "", "hint": ""}
+
+
+def test_finished_sender_search_counts_the_sender_table(client, db, users, team, sourcing):
+    """보내는 계정이 건 찾기 — 그 계정 표(`sender_rooms`)의 상태로 센다."""
+    from app.models import SendJob, SourcingContact
+
+    extra = SourcingContact(bucket=GROUP, name="마못찾", firm="가나다벤처스", title="심사역",
+                            participation="참여")
+    db.add(extra)
+    db.commit()
+    people = [sourcing["room"], sourcing["noroom"], extra]
+    _login(client, "01000000002")
+    answer = client.post("/sourcing/rooms/search",
+                         data={"tab": GROUP, "ids": ",".join(str(p.id) for p in people)},
+                         headers={"Accept": "application/json"})
+    job_id = answer.json()["job_id"]
+    job = db.get(SendJob, job_id)
+    item = {i.sourcing_contact_id: i.id for i in job.items}
+    _report(client, item[sourcing["room"].id], found_room=SRC_OWN, candidates=[SRC_OWN])
+    _report(client, item[sourcing["noroom"].id], verify_result="ambiguous", status="failed",
+            candidates=["곽 카톡 이빈방", "곽 카톡 이빈방 둘"])
+    _report(client, item[extra.id], verify_result="not_found", status="failed")
+    _end(client, job_id, OTHER_TOKEN)
+
+    got = client.get(f"/api/jobs/{job_id}").json()["room_search"]
+    assert got == {"confirmed": 1, "picks": 1, "not_found": 1, "failed": 0, "canceled": 0,
+                   "reason": "", "hint": ""}

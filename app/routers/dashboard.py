@@ -1754,7 +1754,7 @@ def sender_rooms_confirm(contact_id: int, sender_id: int = Form(0),
 def sender_rooms_clear(contact_id: int, sender_id: int = Form(0),
                        kind: str = Form(""), db: Session = Depends(get_db),
                        user: User = Depends(get_current_user)):
-    """확정 거두기 — 다시 담당 팀원의(딜 소싱이면 명단의) 제목으로 보낸다."""
+    """[톡방 연결 끊기] — 다시 담당 팀원의(딜 소싱이면 명단의) 제목으로 보낸다."""
     admin_only(user)
     from urllib.parse import quote
 
@@ -1763,7 +1763,7 @@ def sender_rooms_clear(contact_id: int, sender_id: int = Form(0),
     member = _room_sender_or_404(db, sender_id)
     sender_rooms.clear(db, member.id, contact_id, kind == "sourcing")
     return RedirectResponse(
-        f"/team/sender-rooms?sender={member.id}&msg={quote('확정을 거뒀습니다')}",
+        f"/team/sender-rooms?sender={member.id}&msg={quote('톡방 연결을 끊었습니다')}",
         status_code=303)
 
 
