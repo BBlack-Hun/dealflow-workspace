@@ -9,7 +9,7 @@
   · 채널 TOP 자동화 · LLM 추천 자료 · IR 요청 후보 이름 · IR 아웃리치에서 빠진다
 
 계약여부 값은 그대로 둔다(유료 계약 같은 사실이 사라진다). 꼬리표 없는 기업은 그대로다.
-스타트업 월간 발송(계약 기업에 주는 보고)은 계약여부로 고르는 그대로다.
+스타트업 월간 발송(계약 기업에 주는 보고)도 유료 계약이어도 빠진다(사용자 결정 2026-11-13).
 
 이름은 전부 지어낸 값이다(공개 저장소).
 """
@@ -241,13 +241,16 @@ def test_IR_요청_후보_이름에서_꼬리표_기업이_빠진다(db, seed):
     assert _company_names(db) == [seed["ok"].name]
 
 
-def test_월간_발송_대상은_계약여부로_고른다(db, seed):
-    """스타트업 월간 발송(A5)은 딜 소개가 아니라 **계약 기업에 주는 보고**다 — 이름 꼬리표로
-    빼지 않는다(대상은 `ir_monthly.contracted` 한 곳, 폐업만 이름으로 뺀다)."""
+def test_월간_발송_대상에서_꼬리표_기업은_유료여도_빠진다(db, seed):
+    """스타트업 월간 발송(A5)도 딜소개 불가면 막는다 — 사용자 결정 2026-11-13(처음엔 계약
+    기업에 주는 보고라 계약여부로만 골랐다). 대상은 `ir_monthly.contracted` 한 곳이고,
+    판정은 딜 소개와 같은 `deal_blocked` 다. 계약여부 값은 그대로다."""
     from app.services import ir_monthly
 
     ids = {c.id for c in ir_monthly.contracted(db)}
-    assert {seed["paid"].id, seed["ok"].id} <= ids
+    assert seed["ok"].id in ids
+    assert seed["paid"].id not in ids
+    assert seed["paid"].contract_status == "paid"
 
 
 # ── IR 아웃리치(안내 카톡) ───────────────────────────────────────────────────
