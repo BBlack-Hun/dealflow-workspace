@@ -37,6 +37,9 @@ EXPECTED_OPEN = {
     ("GET", "/api/consulting/{company_id}"),
     ("POST", "/api/consulting"),
     ("PATCH", "/api/consulting/{company_id}"),
+    # 자기 줄에 이어진 IR 기업의 칸(11/12 · `update_ir`) — IR 기업 현황 화면은 여전히 닫혀
+    # 있고, 이 길로는 표에 선 IR 칸만 그 줄을 고칠 수 있을 때 고친다.
+    ("PATCH", "/api/consulting/{company_id}/ir"),
     ("DELETE", "/api/consulting/{company_id}"),
     ("GET", "/api/export/consulting.xlsx"),
     # 관리자가 붙인 추가 칸의 값 적기 — 주소는 여러 화면이 같이 쓰고, 자기 화면

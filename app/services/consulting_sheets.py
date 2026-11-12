@@ -34,7 +34,9 @@ from typing import Dict, List, Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..models import ConsultingColumn, ConsultingCompany, ConsultingSheet
+from ..models import (ConsultingColumn, ConsultingCompany, ConsultingSheet,
+                      MonthlyColumnRun)
+from . import monthly_columns
 
 # ── 바뀌지 않는 열쇠 ────────────────────────────────────────────────────────
 #
@@ -149,6 +151,15 @@ def rename(db: Session, kind: str, label: str) -> Optional[ConsultingSheet]:
         select(ConsultingColumn).where(ConsultingColumn.sheet == before)
     ).scalars():
         column.sheet = after
+    # `이번 달 칸을 세웠다` 는 표시도 이름을 담는다(`monthly_columns.ensure_consulting`).
+    # 안 옮기면 바꾼 이름으로는 아직 안 세운 달이 되어, 사람이 지운 이번 달 칸이
+    # 되살아난다 — 투자사 명단 이름 바꾸기도 같은 것을 옮긴다(`sheet_owner`).
+    for run in db.execute(
+        select(MonthlyColumnRun).where(
+            MonthlyColumnRun.target == monthly_columns.CONSULTING,
+            MonthlyColumnRun.scope == before)
+    ).scalars():
+        run.scope = after
     sheet.label = after
     db.flush()
     return sheet

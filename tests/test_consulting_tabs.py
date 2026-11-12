@@ -122,6 +122,66 @@ def test_탭_이름을_바꾸면_그_탭의_줄이_따라온다(client, db, user
     assert "8월 마지막주 리마인드 톡 or TEL" in body
 
 
+def test_탭_이름을_바꾼_뒤에도_그_탭_줄을_고치고_더한다(client, db, users):
+    """11/12 신고(`기업 줄에 내용을 써 넣을 수 없다`) 직전에 첫 탭 이름이 바뀌어 있었다.
+
+    이름 바꾸기가 원인이 아님을 못 박는다 — 바꾼 뒤에도 그 탭 줄은 고칠 수 있게 그려지고,
+    칸 저장과 [기업 추가] 가 그대로 들어간다(탭 판단은 이름이 아니라 열쇠 `kind`).
+    """
+    from app.models import ConsultingCompany
+    from app.services.consulting_sheets import STARTUP
+
+    users["u1"].can_view_consulting = 1
+    db.add(ConsultingCompany(user_id=users["u1"].id, sheet="스타트업", position=1,
+                             company_name="샘플기업A"))
+    db.commit()
+    client.post("/login", data={"phone": users["u1"].phone,
+                                "password": DEMO_PASSWORD})
+    after = "샘플"
+    client.post("/consulting/sheets/rename", data={"kind": STARTUP, "label": after},
+                follow_redirects=False)
+    row = db.query(ConsultingCompany).filter_by(company_name="샘플기업A").one()
+
+    body = client.get("/consulting").text
+    tr = re.search(rf'<tr data-id="{row.id}"(.*?)>', body, re.S)
+    assert tr and "data-readonly" not in tr.group(1), "이름을 바꿨더니 내 줄이 읽기 전용입니다"
+    assert 'data-field="phone"' in body and 'data-field="deal_pitch"' in body, \
+        "이름을 바꿨더니 스타트업 탭 칸이 사라졌습니다"
+
+    r = client.patch(f"/api/consulting/{row.id}", json={"phone": "010-0000-0000"})
+    assert r.status_code == 200, r.text
+    r = client.post("/api/consulting", json={"company_name": "샘플기업B", "sheet": after})
+    assert r.status_code == 200, r.text
+    db.expire_all()
+    assert db.get(ConsultingCompany, row.id).phone == "010-0000-0000"
+    assert db.query(ConsultingCompany).filter_by(company_name="샘플기업B").one().sheet == after
+
+
+def test_탭_이름을_바꾸면_이번_달_칸_표시도_따라간다(client, db, users):
+    """`이번 달 칸을 이미 세웠다` 는 표시(`MonthlyColumnRun.scope`)도 탭 이름을 담는다.
+
+    안 옮기면 바꾼 이름으로는 아직 안 세운 달이 되어, 사람이 지운 이번 달 칸이 다음에
+    화면을 열 때 되살아난다. 투자사 명단 이름 바꾸기는 이미 옮긴다(`sheet_owner`).
+    """
+    from app.models import MonthlyColumnRun
+    from app.services import monthly_columns
+    from app.services.consulting_sheets import STARTUP, by_kind
+
+    users["u1"].can_view_consulting = 1
+    before = by_kind(db)[STARTUP].label
+    db.add(MonthlyColumnRun(target=monthly_columns.CONSULTING, scope=before,
+                            month="2026-11", labels="[]"))
+    db.commit()
+    client.post("/login", data={"phone": users["u1"].phone,
+                                "password": DEMO_PASSWORD})
+    client.post("/consulting/sheets/rename", data={"kind": STARTUP, "label": "샘플"},
+                follow_redirects=False)
+
+    db.expire_all()
+    assert [r.scope for r in db.query(MonthlyColumnRun).filter_by(
+        target=monthly_columns.CONSULTING)] == ["샘플"], "달 칸 표시가 옛 이름에 남았습니다"
+
+
 def test_빈_이름과_겹치는_이름은_받지_않는다(client, db, users):
     """이름 없는 탭은 누를 자리가 없고, 겹치면 두 탭의 줄이 섞인다."""
     from app.services.consulting_sheets import CONTRACT, STARTUP, by_kind
