@@ -153,6 +153,38 @@ def test_admin_cannot_pick_self_or_consultant(client, db, users, admin):
     assert '<option value="1"' in page and '<option value="7"' not in page
 
 
+def _picker_ids(page):
+    import re
+
+    form = page[page.index('data-testid="view-as-form"'):]
+    form = form[:form.index("</form>")]
+    return [int(v) for v in re.findall(r'<option value="(\d+)"', form)]
+
+
+def test_picker_follows_the_team_order(client, db, users):
+    """고르개 순서는 `VIEW_AS_ORDER`(운영 계정 id) — 이름·id 순이 아니다(i237).
+
+    목록에 없는 계정은 맨 뒤에 id 순으로 선다. 투자컨설턴트·꺼진 계정·나 자신은 빠진다.
+    """
+    from app.models import User
+    from app.services import auth as auth_svc
+
+    pw = auth_svc.hash_password(DEMO_PASSWORD)
+    users["u1"].role = "admin"
+    rows = [(4, "user", 1), (5, "user", 1), (8, "admin", 1), (9, "user", 1),
+            (10, "user", 1), (11, "user", 1), (12, "user", 1),
+            (3, "consultant", 1), (13, "user", 0)]
+    db.add_all([User(id=i, name=f"가짜{i}", phone=f"010000000{i:02d}", role=role,
+                     is_active=on, password_hash=pw) for i, role, on in rows])
+    db.commit()
+
+    _login(client, "01000000008")          # 목록에 없는 관리자 — 자기는 빠진다
+    assert _picker_ids(client.get("/").text) == [2, 1, 4, 10, 11, 5, 9, 12]
+
+    _login(client, "01000000001")          # 목록 둘째 관리자 — 목록 밖 관리자는 맨 뒤
+    assert _picker_ids(client.get("/").text) == [2, 4, 10, 11, 5, 9, 8, 12]
+
+
 # ── 2. 그 팀원 화면을 본다 ────────────────────────────────────────────────────
 
 def test_admin_sees_member_screens(client, db, users, admin):
