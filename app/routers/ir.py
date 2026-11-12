@@ -26,7 +26,7 @@ from ..services import (call_flags, cadence, flow, ir_attach, ir_no_meeting,
                         meeting_calendar, pipeline, sheet_owner)
 from . import followups
 from .data_io import _xlsx
-from .companies import BLOCKED_CONTRACT, contract_key
+from .companies import deal_blocked_clause
 from ..ui import base_ctx
 
 router = APIRouter(tags=["ir"])
@@ -50,20 +50,15 @@ def _company_names(db: Session) -> list:
     발송 화면(`routers/pages.py` 의 `deals_page`)이 목록에서 빼는 그 기업이다.
     "보내면 안 되는 곳" 이라 목록에 있는 것만으로 실수로 고를 수 있다는 것이
     거기 적힌 이유이고, 여기도 **고르는 자리**라 같은 이유가 그대로 선다.
-    값이 예전 말(`딜소개 불가`)로 적혀 있어도 걸러지도록 `contract_key` 를
-    지난다(`services/llm_brief.py` 가 같은 것을 부른다).
+    계약여부가 예전 말(`딜소개 불가`)로 적혀 있어도, 기업명에 꼬리표만 붙어
+    있어도 걸러진다 — 판정은 그 화면과 같은 조건이다(`companies.deal_blocked_clause`).
 
     **거르는 것이지 막는 것이 아니다.** 후보에 없는 이름을 손으로 적으면
     지금처럼 그대로 기록된다 — 서버는 이 목록을 모른다
     (`pipeline.resolve_request_names`).
     """
-    rows = db.execute(select(IrCompany.name, IrCompany.contract_status)).all()
-    names = {
-        (name or "").strip()
-        for name, contract in rows
-        if (name or "").strip() and contract_key(contract) != BLOCKED_CONTRACT
-    }
-    return sorted(names)
+    rows = db.execute(select(IrCompany.name).where(~deal_blocked_clause())).scalars()
+    return sorted({(name or "").strip() for name in rows if (name or "").strip()})
 
 
 def _owned_contact(db: Session, contact_id: int, user: User) -> VcContact:

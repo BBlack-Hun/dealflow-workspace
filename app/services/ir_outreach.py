@@ -34,7 +34,7 @@
 
 ## 누구에게 보낼 수 있는가 — 스타트업 안내 카톡의 규칙을 기업 줄로 옮긴다
 
-  · `딜소개 불가`(계약여부) — 언제나 뺀다(`companies.contract_key`).
+  · `딜소개 불가` — 계약여부든 기업명 꼬리표든 언제나 뺀다(`companies.deal_blocked`).
   · **폐업** — 이름에 `폐업` 이 든 기업(`ir_monthly.is_closed` — 월간 발송과 같은
     판정. 팀은 폐업을 계약여부가 아니라 이름 뒤 표시로 적는다).
   · 이어 둔 스타트업 명단 줄이 `검토중단` — 그 줄 주인이 멈춰 둔 대표다
@@ -186,10 +186,10 @@ def load(db: Session, ids: Iterable[int]) -> List[IrCompany]:
 
 
 def is_blocked(company: IrCompany) -> bool:
-    """`딜소개 불가` 로 적힌 기업 — 말과 값을 맞추는 자리는 IR 기업 현황과 같은 함수다."""
-    from ..routers.companies import BLOCKED_CONTRACT, contract_key
+    """`딜소개 불가` 기업 — 계약여부 또는 기업명 꼬리표(`companies.deal_blocked` 그대로)."""
+    from ..routers.companies import deal_blocked
 
-    return contract_key(company.contract_status) == BLOCKED_CONTRACT
+    return deal_blocked(company)
 
 
 def paused_links(db: Session, ids: Iterable[int]) -> Dict[int, str]:
