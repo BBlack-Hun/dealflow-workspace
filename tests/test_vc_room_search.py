@@ -146,9 +146,9 @@ def test_a_room_that_only_has_the_name_is_not_filled(logged_in, db, users):
 
 
 def test_a_shorter_name_inside_a_longer_name_is_not_filled(logged_in, db, users):
-    """`김민` 으로 찾으면 `김민수` 방이 걸린다 — 이름+직급(`김민심사역`)이 안 맞는다."""
-    row = _row(db, "김민", "가나다벤처스")
-    got, item = _search_one(logged_in, db, row, ["김민수 심사역님 딜방"], verdict="verified")
+    """`홍길` 로 찾으면 `홍길동` 방이 걸린다 — 이름+직급(`홍길심사역`)이 안 맞는다."""
+    row = _row(db, "홍길", "가나다벤처스")
+    got, item = _search_one(logged_in, db, row, ["홍길동 심사역님 딜방"], verdict="verified")
     assert not got.kakao_room_name and item.status == "failed"
 
 
