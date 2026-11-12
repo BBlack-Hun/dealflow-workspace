@@ -551,7 +551,7 @@ VALUE_FIELDS = frozenset({
     "ir_company_id",
 
     # 언제.
-    "requested_at", "delivered_at", "scheduled_at", "scheduled_time",
+    "requested_at", "delivered_at", "delivered_time", "scheduled_at", "scheduled_time",
     "done_at", "followup_due", "followup_at", "meeting_offered_at",
     "received_at", "contract_month", "card_registered_at", "effective_from",
     "founded_year", "last_login_at", "contract_done_at", "follow_round_month", "contract_ym",

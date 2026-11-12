@@ -2607,6 +2607,11 @@ class IrRequest(TimestampMixin, Base):
     # open(요청받음) | delivered(자료 전달함) | dropped(보내지 않기로 함)
     status: Mapped[str] = mapped_column(String, default="open")
     delivered_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # 전달한 **시각**(`HH:MM`, 0137) — 날짜는 위 `delivered_at`. 미팅의
+    # `scheduled_at` · `scheduled_time` 과 같은 짝이다. 업무 보고 상태 칸이
+    # `IR 자료 전달 완료 · 날짜 시각` 으로 읽는다(`report.request_status_note`).
+    # 그 전에 전달된 줄과 지난 날짜로 적힌 줄은 몇 시였는지 모르므로 비어 있다.
+    delivered_time: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
 

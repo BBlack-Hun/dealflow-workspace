@@ -796,17 +796,19 @@ def test_계약진행중을_표와_수정창에서_골라_저장한다(logged_in
     assert r.json()["blocked"] is False
 
 
-def test_표는_미팅제공일자를_계약여부_바로_앞에_세운다(logged_in, company):
-    """자리가 뜻이다(사용자 요청). 옆 칸의 두 상태가 곧 이 날짜를 묻는 말이라,
-    날짜를 먼저 읽고 상태를 읽는 차례로 서야 한 줄로 읽힌다."""
+def test_표는_미팅제공일자_오른쪽에_계약년월을_세운다(logged_in, company):
+    """예전에는 `미팅제공일자` → `계약년월` → `계약여부` 차례였다(사용자 요청 — 옆 칸의 두
+    상태가 곧 이 날짜를 묻는 말이라). i231(11/12 팀원 요청)로 `계약여부` 는 계약 칸 넷과
+    함께 `기업명` 옆으로 갔고, 요청에 없는 두 칸(`미팅제공일자` · `계약년월`)은 제자리다."""
     head = re.search(r"<thead>(.*?)</thead>", logged_in.get("/companies").text, re.S)
     assert head
     names = [re.sub(r"<[^>]+>", "", c).strip()
              for c in re.findall(r"<th\b[^>]*>(.*?)</th>", head.group(1), re.S)]
     assert "미팅제공일자" in names, names
-    # 사이에는 `계약년월`(0129 · #122 — "미팅제공일자 오른쪽에 계약년월")만 선다.
-    at = names.index("계약여부")
-    assert names[at - 2:at] == ["미팅제공일자", "계약년월"], names
+    # `계약년월`(0129 · #122 — "미팅제공일자 오른쪽에 계약년월")은 그대로 바로 오른쪽.
+    at = names.index("미팅제공일자")
+    assert names[at:at + 2] == ["미팅제공일자", "계약년월"], names
+    assert names[names.index("기업명") + 2] == "계약여부", names
 
 
 def test_미팅제공일자는_달력이_아니라_글자로_적는다(logged_in, db, company):
