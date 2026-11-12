@@ -186,7 +186,7 @@ def test_소개한_횟수는_기업명_바로_오른쪽(stage, client, db, users
     assert _intro_head(team)[:2] == ["기업명", "팀 소개 횟수"]
     wb = openpyxl.load_workbook(io.BytesIO(
         client.get("/api/export/report.xlsx?month=2026-08&scope=team").content))
-    grid = [list(r) for r in wb["2026-08 소개한 기업"].iter_rows(values_only=True)]
+    grid = [list(r) for r in wb["2026-08 딜소개 한 기업"].iter_rows(values_only=True)]
     assert next(r for r in grid if r and r[0] == "기업명")[:2] == ["기업명", "팀 소개 횟수"]
     assert next(r for r in grid if r and r[0] == TWIN)[1] == 2
 

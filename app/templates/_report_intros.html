@@ -83,7 +83,7 @@
 <section class="panel" id="intros">
   {# 머리는 월간 `N월 발송` 판과 같은 모양이다(이름 + 오른쪽 안내). 연간 합계표의
      판(`<h2><span>`)이 아니다 — 그 판들은 엑셀 `연간` 시트와 차례가 같아야 한다. #}
-  <h2 class="panel-title">{{ intro_label }} 소개한 기업
+  <h2 class="panel-title">{{ intro_label }} 딜소개 한 기업
     <span class="hint">{{ intro_companies.rows|length }}개사 · 투자사가 실제로 받은 것만 셉니다 · 기업명을 누르면 받은 투자사가 펼쳐집니다</span>
   </h2>
   {% if intro_companies.rows %}
@@ -154,7 +154,7 @@
   {% set band = band if band in intro_bands|map('first')|list else '' %}
   {% set left = intro_left|selectattr('band', 'equalto', band)|list if band else intro_left %}
   <div class="bucket" id="intro-left">
-    <h3 class="bucket-head">소개 후보 — {{ intro_label }}에 아직 안 보낸 기업 {{ intro_left|length }}곳
+    <h3 class="bucket-head">소개 후보 — {{ intro_label }} 딜소개 하지 않은 기업 {{ intro_left|length }}곳
       <span class="hint">투자유치희망금액(구간이면 아래값) 높은 순 · 금액을 모르는 곳은 맨 아래 · 이 달에 이 팀원이 안 보낸 소개 가능 기업</span>
     </h3>
     <nav class="quick-chips intro-bands" aria-label="투자유치희망금액으로 고르기" data-testid="intro-bands">

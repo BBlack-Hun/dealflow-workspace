@@ -1050,9 +1050,10 @@ def _intro_sheets(wb, tag: str, label: str, data: dict, who: str,
     got = data["intro_companies"]
     sub = f"{who} · {today.isoformat()} 뽑음 · 투자사가 실제로 받은 것만 셉니다"
 
-    sheet = _ReportSheet(wb.create_sheet(f"{tag} 소개한 기업"),
+    # 시트 이름은 화면 머리와 같은 말(#236) — `2026-08 딜소개 한 기업` 16자, 31자 제한 안.
+    sheet = _ReportSheet(wb.create_sheet(f"{tag} 딜소개 한 기업"),
                          [34, 14, 16, 16, 14, 14, 12, 12], 8)
-    sheet.title(f"{label} 소개한 기업  {len(got['rows'])}개사", sub)
+    sheet.title(f"{label} 딜소개 한 기업  {len(got['rows'])}개사", sub)
     sheet.blank()
     if not got["rows"]:
         sheet.note("이 기간에 소개한 기업이 없습니다.")
