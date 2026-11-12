@@ -43,6 +43,7 @@ from ..services import consulting_sheets as cs
 from ..services import custom_columns
 from ..services import consulting_status as status
 from ..services import monthly_columns
+from ..services import series_stage
 from ..services import sheet_owner
 from ..services import spreadsheet as sp
 from ..services import startup_handoff
@@ -50,6 +51,10 @@ from ..ui import base_ctx, menu_label
 # 계약을 부르는 말이 있는 곳. 여기에 다시 적지 않는다 —
 # `CONTRACT_DONE_CHOICES` 주석 참고(`routers/pages.py` 도 같은 방식이다).
 from .companies import CONTRACT_LABELS, checked_ym
+# IR 기업 칸을 고치는 **한 곳**(IR 기업 현황의 PATCH 가 쓰는 그것) — 이 표의 IR 칸도 같이
+# 지난다(`update_ir`). 따로 검증을 적으면 두 화면이 같은 칸에 다른 값을 담는다.
+from .companies import CompanyIn as IrCompanyIn
+from .companies import _assign as assign_ir
 # **줄을 새로 넣는 길은 저것 하나다.** 아래 `send_to_startup` 이 그대로 부른다 —
 # 왜 여기서 `VcContact(...)` 를 만들지 않는지는 `services/startup_handoff.py`
 # 첫머리에 적혀 있다.
@@ -1171,9 +1176,21 @@ def consulting_page(request: Request, db: Session = Depends(get_db),
         # 닫혀 있어 눌러도 갈 데가 없다(`deps.can_open`).
         "ir_badges": (_ir_badges(db, [r["id"] for r in rows])
                       if can_open(user, "/ir-link") else {}),
-        # 이어진 IR 기업의 칸을 **읽기만** — `이메일` 오른쪽(#83, 10/28 '추천대로' ·
-        # `services/ir_readonly.py`). 계약 탭은 대표자 · 이메일 칸부터 안 서는 다른 표라 뺀다.
+        # 이어진 IR 기업의 칸 — `이메일` 오른쪽(#83, 10/28 '추천대로' · `services/ir_readonly.py`).
+        # 계약 탭은 대표자 · 이메일 칸부터 안 서는 다른 표라 뺀다.
         "ir_cols": ([] if is_contract(db, selected) else ir_readonly.consulting_columns()),
+        # 그중 **이어진 줄에서 눌러 고치는 칸**(11/12 사용자 — 저장은 IR 기업 현황, `update_ir`).
+        # 고칠 수 있는 줄인지는 줄의 `editable` 하나다(`may_edit_row`).
+        "ir_editable": ir_readonly.consulting_editable(),
+        "series_choices": series_stage.CHOICES,
+        # **안 이은 줄**의 IR 칸을 누르면 띄울 말(`consulting.js`) — 11/12 신고: IR 기업과 안
+        # 이은 새 줄에서 눌러도 아무 일이 없어 `써 넣을 수 없다` 로 읽혔다. [연결하기] 는 잇는
+        # 화면을 여는 사람에게만 선다(위 `ir_badges` 와 같은 문).
+        "ir_why": "IR 기업과 이어지지 않은 줄이라 이 칸은 비어 있고 고칠 수 없습니다 — " + (
+            "기업명 밑 [연결하기]로 이으면 IR 기업 현황 값이 보이고 여기서 고칠 수 있습니다."
+            if can_open(user, "/ir-link") else "연결은 관리자에게 요청하세요."),
+        # 이은 줄이라도 안 여는 칸(`ir_readonly.CONSULTING_FIXED`)을 누르면 띄울 말.
+        "ir_fixed_why": "IR 자료(파일 이름)는 여기서 고치지 않습니다 — IR 기업 현황에서 정합니다.",
         "ir_values": ir_readonly.values(db, [r["ir_company_id"] for r in rows]),
         # `기업명` 칸 · [기업 추가] 칸에 띄울 IR 기업 후보 이름(`static/js/ir_company_hint.js`
         # — 스타트업 표 #85 와 같은 부품 · 같은 질의). 위 `ir_badges` 와 같은 문이다 —
@@ -1483,6 +1500,41 @@ def update_company(company_id: int, body: CompanyIn,
                        if (w := company_sync.slot(company, f, kinds))},
         }
     return out
+
+
+@router.patch("/api/consulting/{company_id}/ir")
+def update_ir(company_id: int, body: IrCompanyIn,
+              db: Session = Depends(get_db),
+              user: User = Depends(get_current_user)):
+    """이 줄에 이어진 IR 기업의 칸을 고친다 — **저장은 IR 기업 현황**(11/12 사용자).
+
+    #83 은 이 칸들을 읽기만 두었다 — 값이 IR 기업 한 곳에 있어야 두 벌로 안 갈린다
+    (`services/ir_readonly.py`). 그 한 곳은 그대로이고, 여기서도 **그 한 곳을** 고칠 뿐이다.
+
+    · 고칠 수 있는 사람은 **이 줄을 고칠 수 있는 사람**이다(`owned` — 자기 줄 · 관리자가 맡긴
+      담당자의 줄 · 관리자). 못 고치는 줄과 없는 줄은 같은 404 다.
+    · 저장은 IR 기업 현황의 PATCH 와 **같은 함수**(`companies._assign` — 금액 `억` 붙이기 ·
+      투자라운드 일곱 단계 · 핵심/TOP 모양)다. `딜 소개 문구` 따라 고치기와 수정 로그(고친
+      사람 = 이 요청의 로그인 계정)는 flush 걸이가 그 길과 똑같이 맡는다.
+    · 받는 칸은 이 표에 선 IR 칸뿐이다(`ir_readonly.consulting_editable`) — 이 길로 기업명 ·
+      담당자 · 계약여부 같은 다른 칸까지 고쳐지면 IR 화면의 권한을 우회하는 문이 된다.
+    · 안 이은 줄은 고칠 IR 기업이 없다 — 여기서 IR 기업을 만들지 않는다.
+
+    돌려주는 것은 그 IR 기업의 **화면 글자 전부**(`ir_readonly.values`)다. 한 칸을 고쳐도
+    `딜 소개 문구` 처럼 따라 바뀌는 칸이 있어서, 화면이 그 줄의 IR 칸을 이것으로 다시 적는다.
+    """
+    require_access(user)
+    row = owned(db, ConsultingCompany, company_id, user, "기업")
+    company = db.get(IrCompany, row.ir_company_id) if row.ir_company_id else None
+    if company is None:
+        raise HTTPException(status_code=400,
+                            detail="IR 기업과 이어지지 않은 줄입니다 — 먼저 IR 기업과 이으세요")
+    fields = body.model_fields_set
+    if not fields or not fields <= ir_readonly.consulting_editable():
+        raise HTTPException(status_code=400, detail="여기서 고칠 수 없는 칸입니다")
+    assign_ir(company, body)
+    db.commit()
+    return {"id": row.id, "ir": ir_readonly.values(db, [company.id]).get(company.id, {})}
 
 
 @router.delete("/api/consulting/{company_id}")

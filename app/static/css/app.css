@@ -2073,8 +2073,9 @@ td.row-acts > form + a { margin-left: 8px; }
 #intro-left .intro-pick-bar { justify-content: flex-start; margin: 4px 0 8px; }
 /* 소개 후보 금액 묶음 단추(#174) — 머리 바로 밑, [딜 소개] 줄 위. */
 #intro-left .intro-bands { margin: 4px 0 6px; }
-/* 이어진 IR 기업의 칸 — 읽기만(#83 · #85 · `_ir_cols.html`). 옅은 바탕으로 눌러 고치는
-   칸과 가른다(고치는 곳은 IR 기업 현황). */
+/* 이어진 IR 기업의 칸(#83 · #85 · `_ir_cols.html`). 옅은 바탕으로 이 표의 칸과 가른다 —
+   값은 IR 기업 현황에 있다. 투자컨설턴트의 이어진 줄에서는 눌러 고치되(11/12) 저장도
+   IR 기업 현황이라, 바탕은 그대로 둔다(고치면 IR 쪽이 바뀐다는 표시다). */
 th.ir-ro, td.ir-ro { background: #f7f9fc; }
 td.ir-ro { color: #475467; }
 

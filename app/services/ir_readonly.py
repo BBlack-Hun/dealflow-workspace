@@ -4,6 +4,10 @@
 (`ir_company_id` — `services/ir_link.py`)의 값을 그때그때 읽어 보여 준다. 값은 IR 기업 현황
 한 곳에 있어 두 벌이 갈릴 일이 없고, **고치는 곳은 IR 기업 현황**이다. 안 이은 줄은 빈칸이다.
 
+11/12 사용자: 투자컨설턴트에서 고쳐도 IR 기업 현황까지 바뀌어야 한다 — 그 표의 **이어진 줄**은
+이 칸들을 눌러 고친다(`consulting_editable`). 값은 여전히 IR 기업 한 곳에 있고, 저장은 IR 기업
+현황과 같은 함수를 지난다(`routers/consulting.update_ir`). 스타트업 명단(#85)은 읽기만 그대로다.
+
 칸 이름 · 차례 · 폭은 IR 기업 현황 표(`companies.html`) 그대로다 — 연도 매출 · 금액은
 `revenue_years.columns` 가 해마다 이름을 짓는다.
 
@@ -66,6 +70,19 @@ def consulting_columns() -> List[Column]:
             # 지역은 투자컨설턴트 표에 제 칸이 있다(따라 고치는 칸).
             + [_col(*c) for c in _STARTUP_TAIL if c[0] != "region"]
             + [_col(*c) for c in _IR_TAIL])
+
+
+#: 투자컨설턴트의 이어진 줄에서도 **안 여는** IR 칸 — 화면 글자가 `있음`/`없음` 으로 바꾼
+#: 값이라(`_text`) 그 글자로는 파일 이름을 고칠 수 없다. 파일 이름은 IR 기업 현황에서.
+CONSULTING_FIXED = {"ir_file_name"}
+
+
+def consulting_editable() -> set:
+    """투자컨설턴트 표에서 눌러 고치는 IR 칸(11/12 사용자 — 저장은 IR 기업 현황).
+
+    표에 선 칸 그대로다 — 여기 따로 목록을 적으면 연도 매출 칸이 해마다 바뀔 때 낡는다.
+    """
+    return {c.key for c in consulting_columns()} - CONSULTING_FIXED
 
 
 def _text(company: IrCompany, key: str) -> str:
