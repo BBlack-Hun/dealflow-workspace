@@ -70,6 +70,8 @@ def screen(db: Session, user: User) -> Optional[dict]:
         "rooms_href": ir_outreach.ROOMS_HREF,
         # 내가 세운 **아직 안 나간** 회차(보내는 계정 것이라 내 다른 목록에는 안 선다).
         "my_drafts": ir_outreach.drafts_by(db, user),
+        # 아직 찾는 중인 [카톡방 찾기·확인] 회차 — 진행 화면으로 가는 링크(11/13).
+        "room_checks": ir_outreach.open_room_checks(db),
     }
 
 
@@ -185,8 +187,9 @@ def check_rooms(body: RoomCheckIn, db: Session = Depends(get_db),
     적어 둔 방 이름이 확인 전이면 그 이름 그대로 대조하고, 없거나 못 찾은 곳은 회사명으로
     찾아 후보로만 담는다(`ir_outreach.room_task`). `queued` 로 선다 — 읽기만 한다.
 
-    진행 화면은 회차 주인(보내는 계정)과 관리자가 본다. 그 밖의 사람은 [대표 카톡방
-    맞추기] 로 보낸다(`rooms_href` — 거기서 찾은 시각 · 후보 · 상태가 줄마다 선다).
+    누른 사람은 진행 화면(`href`)으로 간다 — 회차는 보내는 계정 것이지만 IR 기업 방 찾기는
+    발송하는 팀원 누구나 본다(11/13 · `ir_outreach.may_view`). 줄마다 찾음 · 여럿 · 못 찾음이
+    서고, 끝나면 알림창이 뜨고 [대표 카톡방 맞추기](`rooms_href` — 이 회차의 기업)로 잇는다.
     """
     ids = list(dict.fromkeys(body.company_ids or []))
     if not ids:
@@ -209,7 +212,9 @@ def check_rooms(body: RoomCheckIn, db: Session = Depends(get_db),
                       f"{', '.join(made['conflicts'][:5])} — 카톡에서 방 이름을 서로 다르게 "
                       "바꾼 뒤 적어 주세요(다음에 누르면 회사명으로 찾습니다)")
         raise HTTPException(status_code=400, detail=detail)
-    viewable = job.user_id == user.id or user.role == "admin"
+    # 누른 사람은 진행 화면을 본다(11/13 — `ir_outreach.may_view`: IR 기업 방 찾기 회차는
+    # 발송하는 팀원 누구나). 거기서 줄마다 결과가 서고, 끝나면 알리고 맞추기 화면으로 잇는다.
+    viewable = ir_outreach.may_view(db, job, user)
     return {"job_id": job.id, "total": job.total,
             "exact": made["exact"], "search": made["search"],
             "conflicts": made["conflicts"],

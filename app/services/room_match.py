@@ -487,6 +487,52 @@ def verify_sent(item) -> bool:
     return True
 
 
+# ── 찾기 결과 — 맞추기 화면 · 진행 화면 · 끝날 때 알림창이 같은 말로 센다 (11/13) ──
+#
+# 사용자(11/13): "IR 기업 현황에서 방 찾기 확인을 했을 때 투자사 방 찾기처럼 별도의
+# 체크하는 화면이 있었으면 좋겠음. 그리고 방 찾기 완료 시 alert". 줄마다 **지금 칸에 선
+# 것**으로 가른다 — 후보는 투자사 방을 거른 뒤의 것(`drop_investor_rooms`, 화면에 서는
+# 그 후보)이라, 세는 곳과 보이는 곳이 갈리지 않는다.
+
+#: 갈래 → 화면 말. 차례가 곧 머리 셈의 차례다.
+FIND_LABELS = {
+    "busy": "찾는 중",
+    "verified": "확인됨",
+    "found": "찾음",
+    "many": "여럿",
+    "none": "못 찾음",
+    "never": "안 찾아봄",
+}
+
+
+def find_state(row, known: InvestorRooms, busy: bool = False) -> str:
+    """이 줄의 [카톡방 찾기·확인] 결과 갈래(`FIND_LABELS` 의 열쇠).
+
+    `row` 는 기업 줄(`IrCompany`)이거나 스타트업 명단 줄(`VcContact`)이다 — 둘 다 같은
+    칸(`kakao_room_name` · `room_verified` · `room_candidates`)을 쓴다.
+
+      · `verified` 방 이름이 있고 카톡에서 확인됨 — 할 일이 없다
+      · `found`    후보 하나 — 맞는지 보고 확정한다(서버는 저절로 안 넣는다)
+      · `many`     후보 둘 이상 — 하나를 골라 확정한다
+      · `none`     찾았는데 후보가 없다 · 적어 둔 이름으로 못 찾았다 — 카톡을 사람이 본다
+      · `never`    아직 찾아보지 않았다 — [카톡방 찾기·확인] 을 누르면 된다
+    """
+    if busy:
+        return "busy"
+    room = (row.kakao_room_name or "").strip()
+    if room and row.room_verified == "verified":
+        return "verified"
+    found = candidates(row)
+    shown, _ = drop_investor_rooms(found["rooms"], company_name(row), known)
+    if len(shown) > 1:
+        return "many"
+    if shown:
+        return "found"
+    if found["at"] or row.room_verified in ("not_found", "ambiguous"):
+        return "none"
+    return "never"
+
+
 # ── 화면이 읽는 것 ──────────────────────────────────────────────────────────
 
 def targets(db: Session, ids: Optional[Iterable[int]] = None) -> List[IrCompany]:
@@ -505,8 +551,12 @@ def targets(db: Session, ids: Optional[Iterable[int]] = None) -> List[IrCompany]
     return [by_id[i] for i in wanted if i in by_id]
 
 
-def rows(db: Session, ids: Optional[Iterable[int]] = None) -> dict:
+def rows(db: Session, ids: Optional[Iterable[int]] = None,
+         busy: Iterable[int] = ()) -> dict:
     """맞추기 화면이 읽는 것 — **계약 기업 전부, 한 판에**(`ids` 를 주면 그 기업들).
+
+    `busy` 는 아직 안 끝난 방 확인 회차에 실린 기업 id 다 — 그 줄은 `찾는 중` 으로
+    선다(`find_state`).
 
     ## 달을 안 받는다
 
@@ -529,8 +579,10 @@ def rows(db: Session, ids: Optional[Iterable[int]] = None) -> dict:
     """
     out = []
     known = investor_rooms(db)
+    busy = set(busy or ())
     for company in targets(db, ids):
         found = candidates(company)
+        find = find_state(company, known, company.id in busy)
         room = (company.kakao_room_name or "").strip()
         # ★ **이미 담겨 있는** 후보도 여기서 한 번 더 거른다. 거르기가 생기기
         #   전(0.11.2)에 담긴 투자사 방이 운영에 남아 있다 — 데이터를 고치지
@@ -555,6 +607,9 @@ def rows(db: Session, ids: Optional[Iterable[int]] = None) -> dict:
             "named_count": sum(1 for p in picks if p["has_name"]),
             # 투자사 방이라 **뺀** 후보 수(담을 때 뺀 것 + 지금 감춘 것).
             "investor_hidden": found["dropped"] + len(hidden),
+            # [카톡방 찾기·확인] 결과(11/13) — 찾음 · 여럿 · 못 찾음 …(`find_state`).
+            "find": find,
+            "find_label": FIND_LABELS[find],
         })
     return {
         "rows": out,
@@ -566,6 +621,9 @@ def rows(db: Session, ids: Optional[Iterable[int]] = None) -> dict:
         # 누르면 되고, 뒤는 카톡을 사람이 들여다봐야 한다.
         "never_searched": sum(1 for r in out if not r["searched_at"]),
         "with_candidates": sum(1 for r in out if r["candidates"]),
+        # 머리에 적는 찾기 결과 셈 — 없는 갈래는 안 싣는다(`FIND_LABELS` 차례).
+        "find_counts": [(FIND_LABELS[k], n) for k in FIND_LABELS
+                        if (n := sum(1 for r in out if r["find"] == k))],
     }
 
 

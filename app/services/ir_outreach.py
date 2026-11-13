@@ -169,6 +169,50 @@ def may_operate(db: Session, job: Optional[SendJob], user: Optional[User]) -> bo
     return job.user_id == user.id
 
 
+def is_room_check(db: Session, job: Optional[SendJob]) -> bool:
+    """IR 기업 줄의 **방 확인 회차**인가 — 건이 모두 기업 줄인 `verify_room`.
+
+    [카톡방 찾기·확인](`queue_rooms`)과 월간 발송 맞추기의 [카톡에서 방 찾기]가 세운다.
+    """
+    from ..routers.agent_api import VERIFY_KIND
+
+    if job is None or job.kind != VERIFY_KIND:
+        return False
+    rows = db.execute(select(SendItem.ir_company_id)
+                      .where(SendItem.job_id == job.id)).scalars().all()
+    return bool(rows) and all(r is not None for r in rows)
+
+
+def may_view(db: Session, job: Optional[SendJob], user: Optional[User]) -> bool:
+    """이 회차를 **볼** 수 있나 — 진행 화면 · 2초 폴링이 같은 판정을 지난다.
+
+    회차 주인 · 관리자 · 세운 사람(안내 카톡 — `made_by`)에 더해, **IR 기업 방 찾기
+    회차는 발송하는 팀원 누구나**다(11/13 — 사용자: "투자사 방 찾기처럼 별도의 체크하는
+    화면"). 그 회차는 보내는 계정 것이라 누른 팀원이 진행 화면을 못 보고 맞추기 화면으로
+    바로 갔다 — 찾는 동안 무엇이 되는지, 언제 끝나는지를 볼 데가 없었다. 실린 것은 IR 기업
+    (팀 공용 표)과 그 방 이름뿐이고, 맞추기 화면이 이미 누구에게나 같은 것을 보인다
+    (`routers/startup_send._rooms_guard`). **다루기**([중단] · 다시 확인)는 그대로
+    주인 · 관리자다(`may_operate`).
+    """
+    from ..deps import sends_deals
+
+    if job is None or user is None:
+        return False
+    if job.user_id == user.id or user.role == "admin" or made_by(db, job, user):
+        return True
+    return sends_deals(user) and is_room_check(db, job)
+
+
+def open_room_checks(db: Session) -> List[dict]:
+    """아직 안 끝난 IR 기업 방 찾기 회차 — 탭의 칸이 진행 화면 링크로 세운다(잊지 않게)."""
+    from ..routers.agent_api import VERIFY_KIND
+
+    jobs = db.execute(select(SendJob).where(
+        SendJob.kind == VERIFY_KIND, SendJob.status.in_(_OPEN_JOBS))
+        .order_by(SendJob.id)).scalars().all()
+    return [{"id": j.id, "total": j.total} for j in jobs if is_room_check(db, j)]
+
+
 def drafts_by(db: Session, user: User) -> List[dict]:
     """이 사람이 세운 **아직 안 나간** 안내 카톡 회차 — 탭이 링크로 세운다(잊지 않게)."""
     jobs = db.execute(
@@ -442,3 +486,8 @@ def _in_flight(db: Session, company_ids: List[int]) -> Dict[int, int]:
                SendItem.status.in_(_OPEN_ITEMS),
                SendItem.ir_company_id.in_(company_ids))).all()
     return {r.ir_company_id: r.job_id for r in rows}
+
+
+def busy_ids(db: Session, company_ids: Iterable[int]) -> set:
+    """아직 안 끝난 방 확인 회차에 실린 기업 id — 맞추기 화면이 `찾는 중` 으로 세운다."""
+    return set(_in_flight(db, list(company_ids)))
