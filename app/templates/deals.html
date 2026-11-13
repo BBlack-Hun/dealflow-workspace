@@ -634,6 +634,10 @@
            수는 지금 조건 안의 반응 없는 분이다 — 판정은 `services/no_reaction` 한 곳. #}
         <button type="button" class="linkbtn" id="select-noreact" aria-pressed="false"
                 title="반응 없는 분만 남기고 그분들을 고릅니다">반응 없는 담당자만 · {{ no_reaction_count }}명</button>
+        {# 그분들 전부를 전화 리마인드용 엑셀로(i246 — 성함 · 전화번호 · 회사명 …,
+           `data_io.export_no_reaction`). 거르기와 상관없이 위 처음 수 그대로다. #}
+        {% if no_reaction_count %}<a class="linkbtn" id="noreact-export" href="/api/export/no-reaction.xlsx" download
+           title="반응 없는 담당자 {{ no_reaction_count }}명의 성함 · 전화번호 · 회사명을 엑셀로 받습니다(전화 리마인드용)">엑셀</a>{% endif %}
       </span>
     </h2>
     {#

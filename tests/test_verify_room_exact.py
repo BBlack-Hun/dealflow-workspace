@@ -89,17 +89,26 @@ def test_a_similar_room_found_first_does_not_rename_or_verify(logged_in, db, use
     [item] = _claim(logged_in)
 
     _report(logged_in, item["id"], "verified", found_room=other, candidates=[other])
-    # 이름으로 다시 찾아도 그 비슷한 방 하나뿐이다 — 그래도 적어 둔 이름은 그대로.
-    _name_round(logged_in, job_id, candidates=[other])
 
+    # 대조(적어 둔 이름 그대로 찾기)는 **절대** 바꾸지 않는다 — 11/05 사고는 여기서 덮은 것이다.
     got = _fresh(db, row.id)
     assert got.kakao_room_name == mine, "확인이 적어 둔 방 이름을 바꿨다"
     assert got.room_verified != "verified"
     sent = db.get(SendItem, item["id"])
-    assert sent.room_name == mine
-    assert sent.status == "failed"
+    assert sent.status == "pending"          # 이름+직급 → 이름으로 한 번 더 찾으러 간다
     # 찾은 제목은 **참고로만** 남긴다 — 사람이 보고 고칠 수 있게.
     assert other in (sent.error or "")
+
+    # 이름으로 다시 찾아도 그 비슷한 방 둘만 나온다 — 어느 방인지 몰라 그대로 둔다.
+    _name_round(logged_in, job_id, candidates=[other, other + " (공지)"])
+    got = _fresh(db, row.id)
+    assert (got.kakao_room_name, got.room_verified) == (mine, "not_found")
+    sent = db.get(SendItem, item["id"])
+    assert (sent.room_name, sent.status) == (mine, "failed")
+    assert other in (sent.error or "")
+    # 이름으로 찾아 **하나만** 나와 이 분 방으로 분명하면 그 제목으로 바꾸는 것은 11/13
+    # 사용자 결정이다 — `tests/test_vc_room_search.py` 가 본다. 적어 둔 이름으로도, 이름+
+    # 직급으로도 그 이름의 방이 안 나왔다는 것은 카톡에 그 방이 없다는 뜻이다.
 
 
 def test_a_room_found_by_name_only_does_not_replace_the_typed_name(logged_in, db, users):
