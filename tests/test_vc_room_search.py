@@ -306,7 +306,8 @@ def test_a_missed_written_name_goes_back_for_a_name_search(logged_in, db, users)
 
 
 def test_the_written_name_found_by_name_search_is_verified(logged_in, db, users):
-    """적어 둔 이름 대조에서 놓쳤는데(결과가 늦게 읽힘 등) 이름으로 찾으니 그 방이 있다."""
+    """적어 둔 이름 대조에서 놓쳤는데(결과가 늦게 읽힘 등) 이름으로 찾으니 그 방이 있다 —
+    바꿀 것 없이 그대로 확인됨이다(같은 제목이 하나면 다른 제목이 함께 와도)."""
     room = "홍길동 심사역님 딜방 (옛 제목)"
     row, job_id, item_id = _written_then_missed(logged_in, db, room)
     _end_round(logged_in, job_id)
@@ -317,24 +318,139 @@ def test_the_written_name_found_by_name_search_is_verified(logged_in, db, users)
     # 이름 찾기로 확인됐으니 보낼 수 있는 줄로(`_connect`) — 미착수였다.
     assert got.connect_stage == "connected" and sheet_owner.can_send_to(got)
     sent = _fresh(db, SendItem, item_id)
-    assert (sent.status, sent.room_name) == ("sent", room)
+    assert (sent.status, sent.room_name, sent.error) == ("sent", room, None)
     assert _end_round(logged_in, job_id) == "done"
 
 
-def test_a_different_room_never_replaces_the_written_name(logged_in, db, users):
-    """이름+직급으로 하나만 찾아도 적어 둔 이름은 그대로다(11/05 ★) — 찾은 제목은 사유에."""
-    room = "홍길동 심사역님 딜방 (옛 제목)"
-    row, job_id, item_id = _written_then_missed(logged_in, db, room)
-    _end_round(logged_in, job_id)
-    [again] = _claim(logged_in)
-    found = "홍길동 심사역님 가나다벤처스 딜 공유방"
-    _report(logged_in, again["id"], "verified", candidates=[found])
-    got = _fresh(db, VcContact, row.id)
-    assert (got.kakao_room_name, got.room_verified) == (room, "not_found")
-    sent = _fresh(db, SendItem, item_id)
-    assert (sent.status, sent.room_name) == ("failed", room)
-    assert "찾지 못했습니다" in sent.error and found in sent.error
-    assert _end_round(logged_in, job_id) == "done_with_errors"
+# ── 적어 둔 이름이 카톡에 없다 → 이름으로 찾은 방이 이 분 방으로 분명하면 바꾼다(11/13) ──
+#
+# 사용자(11/13): "규칙에 따라서 방 이름을 찾게 되는데 찾아진 방이 있으면 그 방이름으로
+# 카톡방이름 대체해줘". 11/12 에는 덮어쓰지 않고 사유에 「찾은 방: …」만 남겼다. 막이는
+# 방 이름이 빈 줄을 채울 때와 같다(`vc_room_search._pick`).
+
+OLD = "홍길동 심사역님 딜방 (옛 제목)"
+
+
+def _search_after_miss(client, db, row, candidates, before_result=None):
+    """적어 둔 이름으로 못 찾은 줄 하나 → 같은 건을 이름으로 찾은 결과 `candidates` 보고.
+
+    `before_result(db)` 는 이름으로 찾는 건을 집어간 **뒤**, 결과가 오기 **전**에 돈다
+    (찾는 사이 사람이 줄을 고친 경우). (줄, 건, 회차 끝 상태)를 돌려준다.
+    """
+    job_id = _queue(client, [row.id])["job_id"]
+    [item] = _claim(client)
+    _report(client, item["id"], "not_found")
+    _end_round(client, job_id)
+    [again] = _claim(client)
+    assert again["id"] == item["id"] and again["room_name"] == ""
+    if before_result is not None:
+        before_result(db)
+    _report(client, again["id"], "verified" if len(candidates) == 1 else "ambiguous",
+            candidates=candidates)
+    end = _end_round(client, job_id)
+    return _fresh(db, VcContact, row.id), _fresh(db, SendItem, item["id"]), end
+
+
+def _room_logs(db, row_id):
+    import json
+
+    from app.models import EditLog
+
+    db.expire_all()
+    logs = db.query(EditLog).filter(EditLog.table_name == "vc_contacts",
+                                    EditLog.row_id == row_id).all()
+    return [(log, c) for log in logs for c in json.loads(log.changes_json)
+            if c["field"] == "kakao_room_name"]
+
+
+def test_a_written_name_missing_in_kakao_is_replaced_by_the_one_found_room(
+        logged_in, db, users):
+    """이름+직급이 든 방 하나 — 그 제목으로 바꾸고 확인됨 · 연결 완료(미착수였다)."""
+    row = _row(db, "홍길동", "가나다벤처스", OLD)
+    found = "홍길동 심사역님 딜 공유방"
+    got, sent, end = _search_after_miss(logged_in, db, row, [found])
+    assert (got.kakao_room_name, got.room_verified, got.kakao_joined) == (
+        found, "verified", "O")
+    assert got.connect_stage == "connected" and sheet_owner.can_send_to(got)
+    # 진행 화면: 카톡방 칸은 새 제목, 상태는 확인됨, 사유 칸에 바꾼 것 — 실패로 안 센다.
+    assert (sent.status, sent.room_name) == ("sent", found)
+    assert sent.error == f"방 이름을 찾은 제목으로 바꿈 (전: {OLD})"
+    assert end == "done"
+    # 자기 줄이라도 수정 로그에 전→후가 남는다 — 찾기를 건 계정 이름으로.
+    [(log, change)] = _room_logs(db, row.id)
+    assert (change["before"], change["after"]) == (OLD, found)
+    assert (log.actor_user_id, log.target_user_id, log.scope) == (1, 1, "mine")
+
+
+def test_the_firm_in_the_title_is_enough_to_replace(logged_in, db, users):
+    """직급이 시트와 달라도 회사명이 들었으면 바꾼다 — 빈 줄을 채울 때와 같다."""
+    row = _row(db, "홍길동", "가나다벤처스", OLD)
+    found = "가나다벤처스 홍길동 이사님 Deal 공유"
+    got, sent, _end = _search_after_miss(logged_in, db, row, [found])
+    assert (got.kakao_room_name, got.room_verified) == (found, "verified")
+    assert sent.status == "sent"
+
+
+@pytest.mark.parametrize("rooms,why", [
+    (["홍길동 대표님 (판교 모임)"], "이름만 든 제목"),
+    (["홍길동 심사역님 딜 공유방", "홍길동 심사역님 펀드 LP 방"], "여럿"),
+    (["홍길동 심사역님 딜 공유방", "홍길동 심사역님 딜 공유방"], "같은 제목의 방이 여럿"),
+])
+def test_an_unclear_room_does_not_replace_the_written_name(logged_in, db, users,
+                                                           rooms, why):
+    row = _row(db, "홍길동", "가나다벤처스", OLD)
+    got, sent, end = _search_after_miss(logged_in, db, row, rooms)
+    assert (got.kakao_room_name, got.room_verified, got.connect_stage) == (
+        OLD, "not_found", "not_started")
+    assert (sent.status, sent.room_name) == ("failed", OLD)
+    assert "찾은 방:" in sent.error and why in sent.error
+    assert all(r in sent.error for r in rooms)
+    assert end == "done_with_errors" and not _room_logs(db, row.id)
+
+
+def test_a_namesake_needs_the_firm_in_the_title_to_replace(logged_in, db, users):
+    """팀 명단에 같은 성함의 다른 회사 분 — 이름+직급이 맞아도 회사명이 없으면 안 바꾼다."""
+    _row(db, "홍길동", "다라인베스트", user_id=2)
+    row = _row(db, "홍길동", "가나다벤처스", OLD)
+    got, sent, _end = _search_after_miss(logged_in, db, row, ["홍길동 심사역님 딜 공유방"])
+    assert (got.kakao_room_name, got.room_verified) == (OLD, "not_found")
+    assert sent.status == "failed" and "같은 성함" in sent.error
+
+    title = "홍길동 심사역님 가나다벤처스 딜 공유방"
+    got, sent, _end = _search_after_miss(logged_in, db, row, [title])
+    assert (got.kakao_room_name, got.room_verified) == (title, "verified")
+
+
+def test_a_row_marked_left_while_searching_keeps_its_written_name(logged_in, db, users):
+    """찾는 사이 `방 나감` 으로 고친 줄 — 찾은 방이 분명해도 방 이름 · 단계를 그대로 둔다."""
+    row = _row(db, "홍길동", "가나다벤처스", OLD)
+
+    def leave(db):
+        _fresh(db, VcContact, row.id).connect_stage = "left_room"
+        db.commit()
+
+    got, sent, _end = _search_after_miss(logged_in, db, row, ["홍길동 심사역님 딜 공유방"],
+                                         before_result=leave)
+    assert (got.kakao_room_name, got.connect_stage) == (OLD, "left_room")
+    assert got.room_verified != "verified" and not sheet_owner.can_send_to(got)
+    assert sent.status == "failed" and "방 나감" in sent.error
+
+
+def test_a_name_edited_while_searching_is_not_overwritten(logged_in, db, users):
+    """찾는 사이 사람이 방 이름을 고쳤다 — 그 이름은 아직 대조도 안 했다. 옛 이름으로
+    찾은 결과로 덮지 않는다(`fall_back` 이 떠 둔 이름과 다르다)."""
+    row = _row(db, "홍길동", "가나다벤처스", OLD)
+    typed = "홍길동 심사역님 새 딜방"
+
+    def edit(db):
+        _fresh(db, VcContact, row.id).kakao_room_name = typed
+        db.commit()
+
+    got, sent, _end = _search_after_miss(logged_in, db, row, ["홍길동 심사역님 딜 공유방"],
+                                         before_result=edit)
+    assert got.kakao_room_name == typed and got.room_verified != "verified"
+    assert (sent.status, sent.room_name) == ("failed", typed)
+    assert "방 이름이 바뀌어" in sent.error
 
 
 def test_a_missed_startup_row_is_not_searched_by_a_person_name(logged_in, db, users):
@@ -446,15 +562,16 @@ def test_the_current_agent_walks_room_name_then_name_and_title_then_name(
 
     db.expire_all()
     job = db.get(SendJob, job_id)
-    assert job.status == "done_with_errors" and job.total == 3
+    assert job.status == "done" and job.total == 3
     # 1) 적어 둔 이름 그대로 있다 → 확인됨.
     assert db.get(VcContact, ok.id).room_verified == "verified"
-    # 2) 적어 둔 이름이 없다 → 이름+직급으로 찾은 방은 사유에만, 이름은 그대로.
+    # 2) 적어 둔 이름이 카톡에 없다 → 이름+직급으로 찾은 방 하나(이름+직급 · 회사명이
+    #    든 제목)로 방 이름을 바꾸고 확인됨(11/13 — 11/12 에는 사유에만 적었다).
     got = db.get(VcContact, old.id)
-    assert (got.kakao_room_name, got.room_verified) == ("박준호 이사님 딜방 (옛 제목)",
-                                                        "not_found")
+    assert (got.kakao_room_name, got.room_verified) == ("박준호 이사님 자차벤처스 Deal 공유",
+                                                        "verified")
     [item] = [i for i in job.items if i.contact_id == old.id]
-    assert "박준호 이사님 자차벤처스 Deal 공유" in item.error
+    assert item.status == "sent" and "박준호 이사님 딜방 (옛 제목)" in item.error
     # 3) 방 이름이 없다 → 이름+직급(홍길동 심사역)은 없고 이름으로 하나 → 회사명이 든
     #    제목이라 이 분 방으로 넣는다.
     got = db.get(VcContact, blank.id)
