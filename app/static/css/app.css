@@ -2473,8 +2473,12 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
                    background: var(--line); color: var(--muted); }
 .jump-bar a span.warn { background: #f6c344; color: #4a3400; font-weight: 700; }
 .jump-arrow { color: var(--line); }
-/* 이동 바에서 눌러 내려온 구역이 화면 위에 딱 붙지 않게 */
-#requests, #remind, #meetings, #reviews, #calls, #delivered { scroll-margin-top: 14px; }
+/* 딜 진행 관리 이동 바는 스크롤해도 화면 위에 붙어 있다(11/14 — 페이지가 너무 길다).
+   z-index 는 표 머리(3)보다 위, 상세 패널(39~)보다 아래. */
+.jump-bar.flow-jump { position: sticky; top: 0; z-index: 30; background: var(--panel);
+                      box-shadow: 0 2px 6px rgba(16,21,29,.08); }
+/* 이동 바에서 눌러 내려온 구역이 붙어 있는 바 밑에 가리지 않게 */
+#requests, #remind, #meetings, #reviews, #calls, #delivered { scroll-margin-top: 64px; }
 
 /* ── 연간 업무 보고 — 달 하나 = 월간 보고 한 벌 (10/17 회의 #38) ───────────
    달마다 월간 판 다섯 개가 이어지므로 **달과 달 사이**가 눈에 띄어야 한다 —

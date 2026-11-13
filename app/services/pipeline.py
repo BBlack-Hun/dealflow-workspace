@@ -63,6 +63,12 @@ MEETING_ASK_BY_HAND = "미팅 요청 — 카톡으로 직접 보냄"
 IR_REVIEW_KIND = "ir_review_request"
 IR_REVIEW_BY_HAND = "IR 자료 검토 요청 — 카톡으로 직접 보냄"
 
+#: 딜 진행 관리 「IR 전달기업」의 차례(11/14 사용자) — 자료 전달 **5~6일 뒤** 검토 요청,
+#: 검토 요청 **4~5일 뒤(또는 그 뒤)** 미팅 요청. 각 구간의 첫날부터 빨간 경보다.
+#: 업무 보고 · 자동화 A2 는 그대로 `IR_MEETING_ASK_DAYS`(전달 뒤 7일)를 본다.
+IR_REVIEW_ASK_DAYS = 5
+MEETING_AFTER_REVIEW_DAYS = 4
+
 # ── 딜 진행 관리의 **보이는 말** (10/17 회의 · 개선 과제 #35~#44) ──────────────
 #
 # 상태 코드(`open`·`delivered`)도, DB 값도, 주소도 그대로다 — **화면에 서는 말만**
@@ -276,6 +282,9 @@ def meeting_ask_state(db: Session, requests, *,
         days          마지막 전달일에서 **오늘까지 지난 날** (상한 없음)
         reviewed      IR 자료 검토 요청을 보냈는가(#79 — 앱 발송 · 손으로 보냄 표시)
         reviewed_at   보냈으면 그 날 (안 보냈으면 빈 글자)
+        review_days   검토 요청에서 오늘까지 지난 날 (안 보냈으면 None)
+        review_due    둘 다 안 보냈고 전달 뒤 `IR_REVIEW_ASK_DAYS` 가 됐다 — 검토 요청 차례
+        meeting_due   검토 요청 뒤 미팅 요청을 안 보냈고 `MEETING_AFTER_REVIEW_DAYS` 가 됐다
 
     `asked` · `overdue` 는 **미팅 요청**만 본다 — 업무 보고의 수 · 자동화 A2 가 그 뜻으로
     읽는다. 검토 요청을 보낸 줄의 경보를 거두는 것은 `/ir` 쪽이다(`request_rows`).
@@ -397,11 +406,14 @@ def meeting_ask_state(db: Session, requests, *,
             # `{기한}일 지남` 이라는 **고정된 말**만 떠서 8일째든 40일째든 같아
             # 보였다. 상한도 초기화도 없다 — 마지막 전달일에서 오늘까지다.
             days = max(0, (today - since).days)
+            # 검토 요청 뒤에도 날을 센다(11/14) — 미팅 요청을 언제 보낼지 보이게.
+            review_days = (max(0, (today - date.fromisoformat(review)).days)
+                           if review_ok else None)
         except ValueError:
             # 날짜가 깨진 줄 하나 때문에 화면이 죽지 않는다. 셀 수 없으면
             # 재촉하지도 않는다 — 근거 없는 경보가 제일 나쁘다.
             due = ""
-            days = None
+            days = review_days = None
         out[contact_id] = {
             "delivered_at": delivered,
             # 이 담당자가 자료를 받은 **요청 줄 수**. 사람 수와 줄 수가 왜
@@ -414,6 +426,11 @@ def meeting_ask_state(db: Session, requests, *,
             "days": days,
             "reviewed": review_ok,
             "reviewed_at": review if review_ok else "",
+            "review_days": review_days,
+            "review_due": bool(not ok and not review_ok and days is not None
+                               and days >= IR_REVIEW_ASK_DAYS),
+            "meeting_due": bool(not ok and review_days is not None
+                                and review_days >= MEETING_AFTER_REVIEW_DAYS),
         }
     return out
 
@@ -447,9 +464,10 @@ def delivered_notes(state: Optional[dict]) -> List[Tuple[str, str]]:
 
         IR 자료 검토 요청 완료 · 2026-09-10       ok
         회의실 미팅 톡 요청 보냄 완료 · 2026-09-12  ok   (`meeting_ask_note` 그대로)
+        회의실 미팅 톡 요청 미완료 · 검토 요청 후 3일  bad / warn  (검토 요청만 나갔으면)
         IR 자료 검토 요청 미완료 · 12일            bad / warn  (둘 다 아직이면 이 한 줄)
 
-    둘 다 안 보낸 줄의 날 수 · 빛깔은 미팅 요청 경보와 같은 자다(`IR_MEETING_ASK_DAYS`).
+    빛깔은 그 차례가 됐는가다 — `review_due`(전달 뒤 5일) · `meeting_due`(검토 요청 뒤 4일).
     """
     if not state:
         return []
@@ -458,11 +476,15 @@ def delivered_notes(state: Optional[dict]) -> List[Tuple[str, str]]:
         out.append((f"{LABEL_REVIEWED} · {state['reviewed_at']}", "ok"))
     if state["asked"]:
         out.append(meeting_ask_note(state))
+    elif state.get("reviewed"):
+        rd = state.get("review_days")
+        tail = f" · 검토 요청 후 {rd}일" if rd is not None else ""
+        out.append((f"{LABEL_NOT_ASKED}{tail}", "bad" if state["meeting_due"] else "warn"))
     if out:
         return out
     days = state.get("days")
     tail = f" · {days}일" if days is not None else ""
-    return [(f"{LABEL_NOT_REVIEWED}{tail}", "bad" if state["overdue"] else "warn")]
+    return [(f"{LABEL_NOT_REVIEWED}{tail}", "bad" if state["review_due"] else "warn")]
 
 
 def record_meeting_ask(db: Session, contact_id: int,
@@ -546,10 +568,12 @@ def request_rows(db: Session, user: User,
         row["meeting_asked"] = bool(st and st["asked"])
         row["meeting_asked_at"] = st["asked_at"] if st else ""
         row["meeting_ask_due"] = st["due"] if st else ""
-        # IR 자료 검토 요청을 보냈는가(#79). 보냈으면 빨간 경보를 거둔다 — 다음 일은
-        # 미팅 요청이고, 그 단추 · 전화 요청은 줄에 그대로 선다.
+        # IR 자료 검토 요청을 보냈는가(#79). 빨간 경보는 **지금 할 차례**가 된 줄이다
+        # (11/14) — 전달 뒤 5일 지난 검토 요청, 검토 요청 뒤 4일 지난 미팅 요청.
         row["reviewed"] = bool(st and st["reviewed"])
-        row["meeting_ask_overdue"] = bool(st and st["overdue"] and not st["reviewed"])
+        row["review_due"] = bool(st and st["review_due"])
+        row["meeting_due"] = bool(st and st["meeting_due"])
+        row["meeting_ask_overdue"] = row["review_due"] or row["meeting_due"]
         # 상태 칸에 서는 줄들(`IR 자료 검토 요청 완료 · 날짜` · `회의실 미팅 톡 요청
         # 보냄 완료 · 날짜` · `IR 자료 검토 요청 미완료 · 12일`)과 빛깔.
         row["ask_notes"] = delivered_notes(st)

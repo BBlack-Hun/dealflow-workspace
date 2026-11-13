@@ -115,3 +115,37 @@ def test_문구_관리와_발송_화면에_검토_요청이_선다(logged):
     assert "ir_review_request" in templates_crud.KIND_LABELS
     assert 'data-mode="ir_review"' in logged.get("/deals").text
     assert "IR 자료 검토 요청" in logged.get("/templates").text
+
+
+# ═══ 11/14 — 검토 요청 뒤 차례: 이름은 미팅 요청으로, 날은 계속 센다 ═════════════════
+
+def _review_marked(db, contact, days):
+    from app.models import ContactActivity
+    from app.services import pipeline
+
+    day = (date.today() - timedelta(days=days)).isoformat()
+    db.add(ContactActivity(contact_id=contact.id, kind=pipeline.IR_REVIEW_KIND,
+                           source="system", content=pipeline.IR_REVIEW_BY_HAND,
+                           happened_at=day, month=day[:7]))
+    db.commit()
+
+
+@pytest.mark.parametrize("days, level", [(3, "warn"), (4, "bad")])
+def test_검토_요청_뒤에는_이름이_미팅_요청으로_열리고_날을_센다(db, users, logged, days, level):
+    contact = _delivered(db, users, days=10)
+    _review_marked(db, contact, days)
+
+    body = logged.get("/ir").text
+    link = f'href="/deals?mode=meeting&contacts={contact.id}"\n                 title="이 투자사에 미팅 요청'
+    assert link in body, "검토 요청이 나간 심사역 이름이 미팅 요청으로 안 열린다"
+    assert f'href="/deals?mode=ir_review&contacts={contact.id}"' not in body
+    assert f'class="status-when {level}">회의실 미팅 톡 요청 미완료 · 검토 요청 후 {days}일' in body
+    assert ('class="overdue-row"' in body) == (level == "bad")
+    assert "회의실 미팅 톡 요청 미완료 1명" in body
+
+
+@pytest.mark.parametrize("days, level", [(4, "warn"), (5, "bad")])
+def test_검토_요청_차례는_전달_뒤_5일부터_빨갛다(db, users, logged, days, level):
+    _delivered(db, users, days=days)
+    body = logged.get("/ir").text
+    assert f'class="status-when {level}">IR 자료 검토 요청 미완료 · {days}일' in body

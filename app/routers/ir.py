@@ -115,6 +115,9 @@ def ir_page(request: Request, db: Session = Depends(get_db),
     ask_missing = {r["contact_id"] for r in delivered
                    if not (r["meeting_asked"] or r["reviewed"])}
     ask_overdue = {r["contact_id"] for r in delivered if r["meeting_ask_overdue"]}
+    # 검토 요청만 나가고 미팅 요청이 아직인 담당자(11/14 — 검토 요청 뒤에도 날을 센다).
+    meeting_waiting = {r["contact_id"] for r in delivered
+                       if r["reviewed"] and not r["meeting_asked"]}
 
     ctx = base_ctx(request, db, user, active="flow")
     # 담당자 고르기에 세울 사람들 — **맡은 사람 전부**(`my_contacts`)다.
@@ -148,9 +151,13 @@ def ir_page(request: Request, db: Session = Depends(get_db),
         "done_limit": max(20, sum(1 for r in done if r["meeting_ask_overdue"])),
         "meeting_ask_missing": len(ask_missing),
         "meeting_ask_overdue": len(ask_overdue),
-        # 화면 안내문이 "7일" 이라고 말할 때 쓰는 값. 코드와 화면이 다른
+        "review_due": len({r["contact_id"] for r in delivered if r["review_due"]}),
+        "meeting_waiting": len(meeting_waiting),
+        "meeting_due": len({r["contact_id"] for r in delivered if r["meeting_due"]}),
+        # 화면 안내문이 "5일" · "4일" 이라고 말할 때 쓰는 값. 코드와 화면이 다른
         # 숫자를 말하면 안 된다(`followup_days` 와 같은 방식).
-        "meeting_ask_days": pipeline.IR_MEETING_ASK_DAYS,
+        "review_ask_days": pipeline.IR_REVIEW_ASK_DAYS,
+        "meeting_after_review_days": pipeline.MEETING_AFTER_REVIEW_DAYS,
         "scheduled": [m for m in meetings if m["status"] == "scheduled"],
         "finished": [m for m in meetings if m["status"] != "scheduled"],
         "items": items,
