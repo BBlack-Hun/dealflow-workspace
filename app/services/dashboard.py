@@ -1098,7 +1098,10 @@ def admin_dashboard(db: Session, today: Optional[date] = None) -> dict:
     cutoff = (today - timedelta(days=REACTION_WINDOW_DAYS)).isoformat()
     month_prefix = today.strftime("%Y-%m")
 
-    users = db.execute(select(User).order_by(User.id)).scalars().all()
+    # 줄 순서는 `deps.TEAM_PAGE_ORDER`(i254) — 계정 표도, 이 `users` 에서 나오는
+    # 발송기 고르개 · 보내는 계정 고르개 · 팀원 카톡방도 같은 순서로 선다.
+    users = deps.in_account_order(db.execute(select(User)).scalars().all(),
+                                  deps.TEAM_PAGE_ORDER)
     # 팀 현황의 `전체 투자사` · 팀원별 담당 수 · 발송 가능 비율이 전부 여기서
     # 나온다. 투자사로 세지 않는 명단(스타트업 리마인드 등)과 감춘 줄을 여기서
     # 빼지 않으면, 사용자 대시보드는 걸러 세고 팀 현황만 안 걸러 세어 **화면마다

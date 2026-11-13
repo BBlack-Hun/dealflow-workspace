@@ -186,6 +186,19 @@ VIEW_AS_ORDER = (1, 4, 10, 11, 5, 9)
 # 고르개에서만 빠진다: 그 계정으로 로그인하는 것은 그대로다.
 VIEW_AS_HIDDEN = frozenset({2})
 
+# 팀 현황(`/team`)의 계정 줄 순서(i254) — 위 고르개 순서와 **다른 목록**이다.
+# 역시 **운영 계정 id** 로 적는다: 공용 관리자 · 백업 관리자 · 팀원 · 관리자 겸
+# 팀원 · 투자컨설턴트 둘 · 백업 계정 넷(고르개와 같은 차례).
+# 팀 현황 안의 다른 판(발송 안전장치 상한 · 발송기 맡기기 · 보내는 계정 고르개 ·
+# 팀원 카톡방)도 이 순서로 선다. 여기 없는 계정은 뒤에 id 순.
+TEAM_PAGE_ORDER = (2, 8, 4, 1, 6, 7, 10, 11, 5, 9)
+
+
+def in_account_order(users, order) -> list:
+    """`order`(계정 id 목록) 순으로 세운다 — 목록에 없는 계정은 뒤에 id 순."""
+    rank = {uid: i for i, uid in enumerate(order)}
+    return sorted(users, key=lambda u: (rank.get(u.id, len(rank)), u.id))
+
 
 def view_as_targets(db: Session, real: User) -> list:
     """밑틀의 팀원 고르개에 세울 사람들 — `VIEW_AS_ORDER` 순, 나머지는 뒤에 id 순.
@@ -195,9 +208,9 @@ def view_as_targets(db: Session, real: User) -> list:
     """
     if real.role != "admin":
         return []
-    rows = db.execute(select(User).where(User.is_active == 1)).scalars().all()
-    rank = {uid: i for i, uid in enumerate(VIEW_AS_ORDER)}
-    rows = sorted(rows, key=lambda u: (rank.get(u.id, len(rank)), u.id))
+    rows = in_account_order(
+        db.execute(select(User).where(User.is_active == 1)).scalars().all(),
+        VIEW_AS_ORDER)
     return [u for u in rows if u.id not in VIEW_AS_HIDDEN
             and (u.id == real.id or may_view_as(real, u))]
 
