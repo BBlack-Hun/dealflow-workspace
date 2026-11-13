@@ -12,7 +12,7 @@ from ..models import (STARTUP_MSG_KIND, STARTUP_SEND_KIND, IrCompany, SendItem, 
                       SourcingContact, User)
 from ..services import (automation_runner, ir_outreach, mail_sender, room_done,
                         scheduled_send, send_guard, sourcing_msg, sourcing_rooms,
-                        sourcing_sync, startup_monthly)
+                        sourcing_sync, startup_monthly, vc_room_search)
 
 router = APIRouter(prefix="/api", tags=["jobs"])
 
@@ -113,6 +113,9 @@ def job_status(job_id: int, db: Session = Depends(get_db), user: User = Depends(
                 # 으로 읽히면 고르기 전인데 맞춰진 줄 안다.
                 "result": results.get(i.id),
                 "error": i.error,
+                # 투자사 [방 연결 확인]이 찾았지만 확정 못 한 방 제목 — 사유 칸 아래에
+                # 제목마다 단추가 선다(`vc_room_search.pick_view` · `pick_room`). 없으면 None.
+                "room_pick": vc_room_search.pick_view(job, i),
                 "retry_count": i.retry_count,
                 "sent_at": i.sent_at,
             }
@@ -489,6 +492,87 @@ def resume_pending(job_id: int, background: BackgroundTasks,
         raise HTTPException(status_code=400, detail="이어 보낼 대기 건이 없습니다")
     pending_items = _screen_auto(db, job, pending_items)
     return _requeue(db, job, pending_items, background)
+
+
+# ── 찾은 방 후보 고르기 — 투자사 [방 연결 확인] (11/13) ──────────────────────────
+#
+# 사용자: "방 찾기를 했을 때 찾아진 방이 … 사유에 나오게 되는데, 자동으로 연결 안 해 줄
+# 거면 그걸 클릭해서 카톡방에 입력 후 해당 투자사만 재검사". 진행 화면 사유 칸 아래의
+# 후보 단추(`vc_room_search.pick_view`)가 부른다. 새 길을 짓지 않는다 — 방 이름은 수정
+# 창이 고치는 길(`contacts.update_contact`)로, 다시 확인은 [방 연결 확인]
+# (`contacts.verify_rooms`)을 그 한 줄로 부른다. 아무것도 보내지 않으니 발송 시간과 무관하다.
+
+
+class RoomPickIn(BaseModel):
+    """누른 후보 제목 — 건에 담아 둔 제목 중 하나여야 한다(`vc_room_search.pickable`)."""
+
+    title: str
+
+
+@router.post("/jobs/{job_id}/items/{item_id}/room-pick",
+             dependencies=[Depends(no_send_as_member)])
+def pick_room(job_id: int, item_id: int, body: RoomPickIn,
+              db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """후보 제목을 그 줄 방 이름으로 넣고 **그 한 줄만** 새 방 확인 회차로 다시 본다.
+
+    · 다루는 사람 — 회차를 다룰 수 있고(`_job_or_404`) 그 줄을 고칠 수 있는 사람
+      (`contacts._owned` 와 같은 판정: 줄 주인 · 관리자). 다시 확인은 **줄 주인 계정**
+      카톡에서 찾으므로(`verify_rooms` 는 제 명단만 싣는다) 그 줄이 지금 다른 팀원 명단에
+      있으면 막는다 — 관리자는 '팀원 화면으로 보기'로 그 팀원 화면에서 누른다
+      (`deps.VIEW_AS_OPEN_PATHS`).
+    · 찾을 때의 방 이름과 지금 방 이름이 다르면 **덮지 않는다** — 그 사이 사람이 고쳤다.
+    · 한 번에 한 후보 — 고른 건에는 단추 대신 다시 확인 회차 링크가 선다(`mark_picked`).
+    · 수정 로그 — 자기 줄이어도 남긴다(`edit_log.always`). 기계가 찾은 제목으로 적어 둔
+      방 이름을 바꾸는 일이라 #537 의 저절로 바꾸기와 같은 규칙이다.
+    """
+    from ..deps import may_manage_team_contacts
+    from ..services import edit_log, room_name, sheet_owner
+    from .contacts import ContactIn, VerifyRequest, update_contact, verify_rooms
+
+    job = _job_or_404(db, job_id, user)
+    item = db.get(SendItem, item_id)
+    if item is None or item.job_id != job.id:
+        raise HTTPException(status_code=404, detail="건 없음")
+    want = room_name.title_key(body.title)
+    title = next((r for r in vc_room_search.pickable(item)
+                  if want and room_name.title_key(r) == want), None)
+    if title is None:
+        raise HTTPException(status_code=409,
+                            detail="이 건에서 고를 수 있는 찾은 방이 아닙니다 — 이미 골랐거나 "
+                                   "다시 확인 중입니다. 화면을 새로 고쳐 보세요")
+    contact = item.contact
+    if not (contact.user_id == user.id or may_manage_team_contacts(user)):
+        raise HTTPException(status_code=403,
+                            detail="이 줄을 고칠 수 있는 사람(줄 주인 · 관리자)만 넣을 수 있습니다")
+    if contact.user_id != user.id:
+        raise HTTPException(status_code=403,
+                            detail="이 줄은 지금 다른 팀원 명단에 있습니다 — 그 팀원 카톡에서 "
+                                   "확인해야 해서, '팀원 화면으로 보기'로 그 팀원 화면에서 넣어 주세요")
+    now = (contact.kakao_room_name or "").strip()
+    if room_name.title_key(now) != room_name.title_key(vc_room_search.started_from(item)):
+        raise HTTPException(status_code=409,
+                            detail=f"찾은 뒤 그 사이 방 이름이 바뀌어 덮지 않았습니다(지금: '{now}') — "
+                                   "그 이름이 맞는지 [방 연결 확인]으로 다시 확인하세요")
+    if not vc_room_search.searchable(contact, sheet_owner.hidden_labels(db)):
+        raise HTTPException(status_code=409,
+                            detail="이 줄은 지금 방 확인 대상이 아닙니다(방 나감 · 참여 안 함 · "
+                                   "메일 · 문자로만 받음 · 투자사 명단 밖) — 넣지 않았습니다")
+
+    edit_log.always(contact)
+    update_contact(contact.id, ContactIn(kakao_room_name=title), db, user)
+    try:
+        queued = verify_rooms(VerifyRequest(contact_ids=[contact.id]), db, user)
+    except HTTPException as exc:
+        # 방 이름은 이미 들어갔다(되돌리지 않는다 — 사람이 고른 제목이다). 왜 못 세웠는지를
+        # 그 자리에 남긴다(동명이인인데 방 이름까지 같음 등).
+        note = f"방 이름은 넣었지만 다시 확인을 세우지 못했습니다 — {exc.detail}"
+        vc_room_search.mark_picked(item, title, None, note)
+        db.commit()
+        return {"ok": True, "title": title, "job_id": None, "note": note}
+    vc_room_search.mark_picked(item, title, queued["job_id"])
+    db.commit()
+    return {"ok": True, "title": title, "job_id": queued["job_id"],
+            "href": f"/jobs/{queued['job_id']}"}
 
 
 @router.get("/agent-status")

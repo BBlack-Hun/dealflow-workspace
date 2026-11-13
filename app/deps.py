@@ -222,6 +222,8 @@ def doer(user: User) -> User:
 # 내주는 자리(`agent_api.poll`)와 발송 목록을 만드는 자리가 그대로 본다.
 VIEW_AS_OPEN_PATHS = {
     "/api/contacts/verify-rooms",          # 투자사 관리 현황 [방 연결 확인]
+    # 그 진행 화면의 찾은 방 후보 — 방 이름을 넣고 그 한 줄만 [방 연결 확인](11/13).
+    "/api/jobs/{job_id}/items/{item_id}/room-pick",
     "/sourcing/rooms/search",              # 딜 소싱 [방 후보 찾기]
     "/api/startup-rooms/search",           # 스타트업 [방 후보 찾기](11/02)
     "/api/deals/queue",                    # 딜 소개 예약 큐 — 늘 딜 소개

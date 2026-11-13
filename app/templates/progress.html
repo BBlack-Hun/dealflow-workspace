@@ -141,6 +141,11 @@
   불일치 건은 카카오톡에서 방 제목을 확인한 뒤 <a href="/contacts">내 투자사</a> 상세에서
   방 이름을 고치고 다시 확인하세요. 방 제목이 다르면 그 담당자에게는 <b>발송이 되지 않습니다</b>
   (엉뚱한 방으로 가지는 않습니다).
+  {% if not readonly %}
+  {# 찾았지만 확정 못 한 방 제목은 사유 아래에 단추로 선다(`vc_room_search.pick_view` · 11/13). #}
+  <br>사유 아래에 <b>찾은 방 제목 단추</b>가 있으면, 맞는 방을 눌러 그 제목을 방 이름에 넣고
+  <b>그 분만 다시 확인</b>할 수 있습니다.
+  {% endif %}
 </div>
 {% endif %}
 
@@ -157,6 +162,8 @@
 <script>
   window.DEALFLOW_JOB_ID = {{ job_id }};
   window.DEALFLOW_JOB_VERIFY = {{ 'true' if verify else 'false' }};
+  {# 찾은 방 후보 단추 — 투자사 [방 연결 확인]을 다루는 사람에게만(조회만 하는 화면에는 없다). #}
+  window.DEALFLOW_JOB_PICK = {{ 'true' if (verify and not room_search and not readonly) else 'false' }};
 </script>
 <script src="{{ asset('js/progress.js') }}"></script>
 {% endif %}

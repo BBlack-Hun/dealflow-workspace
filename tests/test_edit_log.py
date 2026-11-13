@@ -642,6 +642,10 @@ WRITE_ROUTES = {
     ("POST", "/sourcing/vc-auto-link"): WATCHED,
 
     ("POST", "/api/contacts/verify-rooms"): WATCHED,
+    # 방 확인 진행 화면의 찾은 방 후보(11/13) — 그 줄 방 이름을 수정 창과 같은 길
+    # (`update_contact`)로 고치고 그 한 줄만 [방 연결 확인]을 세운다. 자기 줄이어도 남긴다
+    # (`edit_log.always` — 기계가 찾은 제목으로 적어 둔 이름을 바꾸는 일).
+    ("POST", "/api/jobs/{job_id}/items/{item_id}/room-pick"): WATCHED,
     ("POST", "/api/contacts/assign"): WATCHED,
     ("POST", "/api/contacts/{contact_id}/transfer"): WATCHED,
     # 딜 제안 관리의 [반응 없음에서 빼기] · [되돌리기](11/11) — 줄 하나의 칸
