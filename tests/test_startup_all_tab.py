@@ -208,7 +208,7 @@ def test_the_investor_all_tab_is_unchanged(world):
     # 팀원의 투자사 `전체` 는 #29 에서 `내 명단 N명 · 팀 전체 M명` 이 됐다 — 그
     # 밖(달 칸 · 명단 칸 · 내려받기)은 그대로다.
     assert re.search(r'class="sheet-tab active" href="/contacts\?sheet=all"[^>]*>\s*'
-                     r'전체 <span[^>]*>내 명단 1명 · 팀 전체 1명</span>', tabs), tabs
+                     r'전체 <span[^>]*>내 명단 1명 / 확인 0 · 팀 전체 1명</span>', tabs), tabs
     assert "list-view-line" not in html and "data-f-list_label" not in html
     assert "엑셀 내려받기" in html
     assert "샘플가기업" not in html

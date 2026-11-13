@@ -314,8 +314,9 @@ def test_찾기_확인은_보내는_계정_잡_하나에_대조와_찾기를_섞
     [job] = _jobs(db)
     assert (job.kind, job.status, job.user_id) == ("verify_room", "queued", 2)
     assert (d["exact"], d["search"], d["skipped"]) == (1, 2, 3)
-    # 진행 화면을 못 보는 사람은 맞추기 화면으로 — 고른 기업으로 연다.
-    assert d["href"] == ""
+    # 누른 팀원은 진행 화면으로 간다(11/13 — 회차는 보내는 계정 것이지만 본다).
+    # 끝난 뒤 고르는 자리는 맞추기 화면 — 고른 기업으로 연다.
+    assert d["href"] == f"/jobs/{job.id}"
     assert d["rooms_href"].startswith("/deals/startup-ir/rooms?ids=")
     rooms = {i.ir_company_id: i.room_name for i in job.items}
     assert rooms == {seeded["typed"].id: ROOM_TYPED, seeded["noroom"].id: "",
@@ -840,3 +841,320 @@ def test_이어_둔_줄의_다른_팀원_몫이_받은_것도_센다(db, seeded,
     d = _preview(_login(client), _ids(seeded, "typed")).json()
     assert d["ready_ids"] == []
     assert "윤서아 님 명단에서" in d["skipped"][0]["reason"]
+
+
+# ── 7. 방 찾기 뒤 — 진행 화면 · 끝날 때 알림 · 맞추기 화면에서 확정 (11/13) ─────
+#
+# 사용자: "IR 기업 현황에서 방 찾기 확인을 했을 때 투자사 방 찾기처럼 별도의 체크하는
+# 화면이 있었으면 좋겠음. 그리고 방 찾기 완료 시 alert". 투자사 [방 연결 확인]처럼 누른
+# 사람이 진행 화면을 보고(줄마다 찾음 · 여럿 · 못 찾음), 끝나면 알림 뒤 맞추기 화면에서
+# 후보를 하나 골라 [확정] 한다.
+
+def _check(me, seeded, *keys):
+    res = me.post("/api/ir-rooms/check", json={"company_ids": _ids(seeded, *keys)})
+    assert res.status_code == 200, res.text
+    return res.json()
+
+
+def _report(me, item_id, **body):
+    res = me.post(f"/api/agent/items/{item_id}/result", headers=auth(OTHER_TOKEN), json=body)
+    assert res.status_code == 200, res.text
+
+
+def test_누른_팀원이_진행_화면을_본다_다루기는_그대로(db, seeded, client):
+    me = _login(client)              # 보내는 계정도 관리자도 아니다
+    d = _check(me, seeded, "noroom", "typed")
+    body = me.get(d["href"]).text
+    assert "해당 잡을 찾을 수 없습니다" not in body
+    assert "<h1>카톡방 찾기·확인</h1>" in body
+    assert "윤서아 계정 PC 의 카톡에서 찾습니다" in body
+    assert "조회만 가능합니다" in body and "보내는 계정의 회차라" in body
+    assert "관리자로서 보고 있는" not in body
+    assert 'id="room-pick-link" data-label="대표 카톡방 맞추기"' in body
+    assert f'/deals/startup-ir/rooms?ids={seeded["noroom"].id},{seeded["typed"].id}' in body
+    assert "/api/export/jobs/" not in body, "받을 수 없는 엑셀 단추가 섰다"
+    assert me.get(f"/api/jobs/{d['job_id']}").status_code == 200
+    # [중단] · 다시 확인은 그대로 회차 주인 · 관리자다.
+    assert me.post(f"/api/jobs/{d['job_id']}/cancel").status_code == 404
+
+
+def test_보내는_계정의_다른_방_확인은_그대로_못_본다(db, seeded, client):
+    """넓힌 것은 **건이 모두 IR 기업 줄인** 방 확인 회차뿐이다 — 그 계정이 자기 투자사
+    명단에 건 [방 연결 확인]은 남이 못 본다."""
+    from app.models import SendItem, SendJob, VcContact
+
+    contact = VcContact(user_id=2, name="한투자", firm="샘플벤처스", kakao_room_name="한투자 방")
+    job = SendJob(user_id=2, kind="verify_room", status="done", total=1)
+    db.add_all([contact, job])
+    db.flush()
+    db.add(SendItem(job_id=job.id, contact_id=contact.id, room_name="한투자 방",
+                    message="", status="sent"))
+    db.commit()
+    me = _login(client)
+    assert me.get(f"/api/jobs/{job.id}").status_code == 404
+    assert "해당 잡을 찾을 수 없습니다" in me.get(f"/jobs/{job.id}").text
+
+
+def test_끝나면_찾음_여럿_못_찾음을_세고_줄마다_결과를_적는다(db, seeded, client):
+    from app.models import IrCompany
+
+    extra = IrCompany(name="마마랩스", contact_name="오대표")
+    db.add(extra)
+    db.commit()
+    seeded["extra"] = extra
+    me = _login(client)
+    d = _check(me, seeded, "typed", "noroom", "notfound", "extra")
+    job_id = d["job_id"]
+    [job] = _jobs(db)
+    item_of = {i.ir_company_id: i.id for i in job.items}
+
+    _report(me, item_of[seeded["typed"].id], status="sent", verify_result="verified",
+            found_room=ROOM_TYPED, candidates=[ROOM_TYPED])
+    # 투자사 방은 후보에 안 든다(지금 규칙 그대로) — 남은 둘이라 `여럿`.
+    _report(me, item_of[seeded["noroom"].id], status="failed", verify_result="ambiguous",
+            candidates=["최수진 대표 차카타랩스", "차카타랩스 투자유치방",
+                        "차카타벤처스 심사역 , 강민준 팀장"])
+    _report(me, item_of[seeded["notfound"].id], status="sent", verify_result="verified",
+            found_room="다다랩스 대표방", candidates=["다다랩스 대표방"])
+    # 아직 안 끝났다 — 알림 글을 싣지 않는다(언제 띄우나는 화면이 정한다).
+    mid = me.get(f"/api/jobs/{job_id}").json()
+    assert mid["room_done"] is None
+    _report(me, item_of[extra.id], status="failed", verify_result="not_found", candidates=[])
+    res = me.post(f"/api/agent/jobs/{job_id}/status", headers=auth(OTHER_TOKEN),
+                  json={"status": "done"})
+    assert res.status_code == 200, res.text
+
+    got = me.get(f"/api/jobs/{job_id}").json()
+    assert got["status"] == "done_with_errors"
+    assert got["room_done"] == {
+        "sentence": "방 찾기가 끝났습니다 — 찾음 1 · 여럿 1 · 못 찾음 1 · 확인됨 1",
+        "pick": True}
+    results = {i["id"]: i["result"] for i in got["items"]}
+    assert results[item_of[seeded["typed"].id]] == "확인됨"
+    assert results[item_of[seeded["noroom"].id]] == "여럿(후보 2)"
+    # 후보 하나를 찾은 건 — 건은 `sent` 지만 고르기 전이라 `확인됨` 이 아니다.
+    assert results[item_of[seeded["notfound"].id]] == "찾음"
+    assert results[item_of[extra.id]] == "못 찾음"
+
+
+def test_발송_회차에는_끝날_때_알림이_없다(db, seeded, client):
+    from app.models import SendJob
+
+    me = _login(client)
+    job_id = _send(me, _ids(seeded, "ok")).json()["job_id"]
+    job = db.get(SendJob, job_id)
+    job.status = "done"
+    db.commit()
+    got = me.get(f"/api/jobs/{job_id}").json()
+    assert got["room_done"] is None
+    assert all(i["result"] is None for i in got["items"])
+
+
+def test_투자사_방_연결_확인은_확인됨_불일치로_센다(db, seeded, client):
+    from app.models import SendItem, SendJob, VcContact
+
+    a = VcContact(user_id=1, name="가심사", firm="샘플벤처스", kakao_room_name="가심사 방")
+    b = VcContact(user_id=1, name="나심사", firm="샘플벤처스", kakao_room_name="나심사 방")
+    job = SendJob(user_id=1, kind="verify_room", status="done_with_errors", total=2)
+    db.add_all([a, b, job])
+    db.flush()
+    db.add_all([SendItem(job_id=job.id, contact_id=a.id, room_name="가심사 방", message="",
+                         status="sent"),
+                SendItem(job_id=job.id, contact_id=b.id, room_name="나심사 방", message="",
+                         status="failed")])
+    db.commit()
+    got = _login(client).get(f"/api/jobs/{job.id}").json()
+    assert got["room_done"] == {"sentence": "방 연결 확인이 끝났습니다 — 확인됨 1 · 불일치 1",
+                                "pick": False}
+    assert all(i["result"] is None for i in got["items"]), "투자사 줄은 상태 말을 안 바꾼다"
+
+
+def test_맞추기_화면에_찾기_결과가_서고_투자사_방은_빠진다(db, seeded, client):
+    from app.clock import now_iso
+    from app.models import IrCompany
+    from app.services import room_match
+
+    me = _login(client)
+    room_match.save_candidates(seeded["noroom"], [
+        "최수진 대표 차카타랩스", "차카타벤처스 심사역 , 강민준 팀장"], at=now_iso(),
+        query="차카타랩스")
+    # 칸에 든 글자가 후보와 같으면 그 후보가 처음부터 골라져 선다.
+    seeded["noroom"].kakao_room_name = "최수진 대표 차카타랩스"
+    room_match.save_candidates(seeded["notfound"], [], at=now_iso(), query="다다랩스")
+    seeded["fresh"] = IrCompany(name="바바랩스")         # 한 번도 안 찾아봄
+    db.add(seeded["fresh"])
+    db.commit()
+    _check(me, seeded, "typed")        # 찾는 중
+    ids = ",".join(str(i) for i in _ids(seeded, "noroom", "notfound", "typed", "ok2", "fresh"))
+    body = me.get(f"/deals/startup-ir/rooms?ids={ids}").text
+
+    assert 'data-testid="room-find-summary"' in body
+    for label in ("찾는 중 <b>1곳</b>", "확인됨 <b>1곳</b>", "찾음 <b>1곳</b>",
+                  "못 찾음 <b>1곳</b>", "안 찾아봄 <b>1곳</b>"):
+        assert label in body, label
+    for state in ("busy", "verified", "found", "none", "never"):
+        assert f'data-find="{state}"' in body, state
+    assert "차카타벤처스" not in body, "투자사 방이 후보로 섰다"
+    assert "투자사 방 1개는 후보에서 뺐습니다" in body
+    assert 'class="chip room-pick named picked"' in body
+    assert 'aria-pressed="true"' in body
+    assert body.count('class="linkbtn room-confirm"') == 5
+    assert 'type="button" class="linkbtn room-confirm"' in body, (
+        "줄의 [확정] 이 전송 단추면 글자 칸의 Enter 가 맨 윗줄만 넣는다")
+    assert "고른 것 확정 (5줄 중 바뀐 줄)" in body
+
+
+def test_맞추기_화면_줄의_확정은_그_줄만_넣고_수정_기록이_남는다(db, seeded, client):
+    import json as _json
+
+    from app.clock import now_iso
+    from app.models import EditLog
+    from app.services import room_match
+
+    pick = "최수진 대표 차카타랩스"
+    room_match.save_candidates(seeded["noroom"], [pick, "차카타랩스 단톡"], at=now_iso(),
+                               query="차카타랩스")
+    db.commit()
+    me = _login(client)
+    ids = f'{seeded["noroom"].id},{seeded["typed"].id}'
+    res = me.post("/deals/startup-ir/rooms", headers={"Accept": "application/json"}, data={
+        "ids": ids, "company_ids": [seeded["noroom"].id, seeded["typed"].id],
+        "rooms": [pick, "고쳐 본 글자"], "only": str(seeded["noroom"].id)})
+    assert res.status_code == 200, res.text
+    d = res.json()
+    assert d["ok"] and d["room"] == pick
+    assert (d["state"], d["state_label"], d["find"], d["find_label"]) == (
+        "verified", "확인됨", "verified", "확인됨")
+    db.expire_all()
+    assert (seeded["noroom"].kakao_room_name, seeded["noroom"].room_verified) == (pick, "verified")
+    assert seeded["typed"].kakao_room_name == ROOM_TYPED, "[확정] 을 안 누른 줄이 들어갔다"
+
+    logs = db.query(EditLog).filter_by(table_name="ir_companies",
+                                       row_id=seeded["noroom"].id).all()
+    assert logs, "공용 표의 방 이름을 바꿨는데 수정 기록이 없다"
+    log = logs[-1]
+    assert (log.actor_user_id, log.method, log.path) == (1, "POST", "/deals/startup-ir/rooms")
+    fields = {c["field"]: c for c in _json.loads(log.changes_json)}
+    assert fields["kakao_room_name"].get("after") == pick
+
+
+def test_줄의_확정은_적혀_있던_후보_제목도_확인됨으로_올린다(db, seeded, client):
+    from app.clock import now_iso
+    from app.services import room_match
+
+    title = "최수진 대표 차카타랩스"
+    room_match.save_candidates(seeded["noroom"], [title], at=now_iso(), query="차카타랩스")
+    seeded["noroom"].kakao_room_name = title           # 손으로 적어 둔 같은 글자 · 확인 전
+    db.commit()
+    me = _login(client)
+    res = me.post("/deals/startup-ir/rooms", headers={"Accept": "application/json"}, data={
+        "ids": str(seeded["noroom"].id), "company_ids": [seeded["noroom"].id],
+        "rooms": [title], "only": str(seeded["noroom"].id)})
+    d = res.json()
+    assert d["state"] == "verified" and "확인됨으로 확정" in d["msg"]
+    # 한꺼번에 [고른 것 확정] 은 바뀐 줄만 — 그대로인 줄을 몰래 올리지 않는다.
+    seeded["notfound"].kakao_room_name = "다다랩스 방"
+    room_match.save_candidates(seeded["notfound"], ["다다랩스 방"], at=now_iso(), query="다다랩스")
+    db.commit()
+    me.post("/deals/startup-ir/rooms", data={
+        "ids": str(seeded["notfound"].id), "company_ids": [seeded["notfound"].id],
+        "rooms": ["다다랩스 방"]})
+    db.expire_all()
+    assert seeded["notfound"].room_verified == "not_found"
+
+
+def test_줄의_확정도_투자사_방은_확인됨으로_안_올린다(db, seeded, client):
+    """거르기가 생기기 전에 담긴 투자사 방 후보를 글자로 보내와도 확인되지 않는다
+    (`room_match.verify_picked` — 화면에 서는 후보만 근거다)."""
+    from app.clock import now_iso
+    from app.services import room_match
+
+    investor = "다다벤처스 이사님 , 강민준 팀장"
+    room_match.save_candidates(seeded["notfound"], [investor], at=now_iso(), query="다다랩스")
+    db.commit()
+    res = _login(client).post("/deals/startup-ir/rooms", headers={"Accept": "application/json"},
+                              data={"ids": str(seeded["notfound"].id),
+                                    "company_ids": [seeded["notfound"].id],
+                                    "rooms": [investor], "only": str(seeded["notfound"].id)})
+    d = res.json()
+    assert d["state"] != "verified"
+    assert "직접 적은 1곳" in d["msg"]
+
+
+def test_찾는_중인_회차가_칸에_링크로_선다(db, seeded, client):
+    me = _login(client)
+    d = _check(me, seeded, "noroom")
+    page = me.get("/companies").text
+    assert 'data-testid="irm-room-checks"' in page
+    assert f'<a href="/jobs/{d["job_id"]}">#{d["job_id"]} · 1곳</a>' in page
+
+
+def _node(name):
+    import shutil
+    import subprocess
+    from pathlib import Path
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip(f"node 미설치 — 브라우저 로직 검사 생략(호스트에서 `node tests/js/{name}`)")
+    js = Path(__file__).resolve().parent / "js" / name
+    done = subprocess.run([node, str(js)], capture_output=True, text=True, timeout=60)
+    assert done.returncode == 0, done.stdout + done.stderr
+
+
+def test_끝날_때_알림은_node_로_잰다():
+    """`tests/js/progress_room_done_test.js` — 진행 중 → 끝남일 때만 한 번 · 이미 끝난
+    회차 · 발송 회차엔 없음 · 고를 화면이 있으면 묻고 간다."""
+    _node("progress_room_done_test.js")
+
+
+def test_가짜_화면이_진행_화면_맞추기_화면과_같은_이름을_쓴다(db, seeded, client):
+    """가짜 화면 위 검사는 이름을 바꿔도 통과한다 — 그려지는 화면에 그 이름이 있는가."""
+    from pathlib import Path
+
+    from app.clock import now_iso
+    from app.services import room_match
+
+    room_match.save_candidates(seeded["noroom"], ["최수진 대표 차카타랩스"], at=now_iso(),
+                               query="차카타랩스")
+    db.commit()
+    here = Path(__file__).resolve().parent / "js"
+    me = _login(client)
+    d = _check(me, seeded, "noroom")
+    progress = me.get(d["href"]).text
+    js = (here / "progress_room_done_test.js").read_text(encoding="utf-8")
+    for token in ("room-pick-link", "data-label", "log-body"):
+        assert token in progress and token in js, token
+    rooms = me.get(d["rooms_href"]).text
+    js = (here / "startup_room_test.js").read_text(encoding="utf-8")
+    for token in ("room-confirm", "room-state", "room-find", "room-match-error",
+                  "aria-pressed", 'name="ids"', 'action="/deals/startup-ir/rooms"'):
+        assert token in rooms, f"맞추기 화면에서 {token} 가 사라졌다"
+    for token in ("room-confirm", "room-state", "room-find", "room-match-error",
+                  "aria-pressed", '"ids"', "/deals/startup-ir/rooms"):
+        assert token in js, f"가짜 화면이 {token} 를 안 쓴다"
+
+
+def test_스타트업_명단_줄의_찾기도_같은_말로_센다(db, seeded, client):
+    """[방 매칭]의 [카톡방 찾기·확인](스타트업 명단 줄 · `ROOM_SEARCH_TOPIC`)도 같은 진행
+    화면이다 — 같은 셈 · 같은 결과 말, 고르는 화면은 [방 매칭]."""
+    from app.clock import now_iso
+    from app.models import ROOM_SEARCH_TOPIC, SendItem, SendJob, VcContact
+    from app.services import room_match
+
+    row = VcContact(user_id=1, source_sheet="스타트업 · 강민준", name="백대표", firm="자자랩스")
+    job = SendJob(user_id=1, kind="verify_room", topic=ROOM_SEARCH_TOPIC, status="done", total=1)
+    db.add_all([row, job])
+    db.flush()
+    room_match.save_candidates(row, ["백대표 대표 자자랩스", "자자랩스 공지방"], at=now_iso(),
+                               query="자자랩스")
+    db.add(SendItem(job_id=job.id, contact_id=row.id, room_name="", message="",
+                    status="failed"))
+    db.commit()
+    me = _login(client)
+    got = me.get(f"/api/jobs/{job.id}").json()
+    assert got["room_done"] == {"sentence": "방 찾기가 끝났습니다 — 찾음 0 · 여럿 1 · 못 찾음 0",
+                                "pick": True}
+    assert got["items"][0]["result"] == "여럿(후보 2)"
+    page = me.get(f"/jobs/{job.id}").text
+    assert 'id="room-pick-link" data-label="방 매칭"' in page

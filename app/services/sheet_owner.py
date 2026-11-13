@@ -1337,6 +1337,7 @@ def sheet_rows(db: Session, contacts: List[VcContact],
     가려내는 자리(`routers/data_io.py`)는 주지 않는다.
     """
     from . import contact_columns
+    from .dashboard import room_confirmed   # 순환 임포트라 함수 안에서
 
     settings = settings_map(db)
     names = {
@@ -1347,11 +1348,21 @@ def sheet_rows(db: Session, contacts: List[VcContact],
     # 줄 단위로 감춘 사람은 탭 건수에서도 빠져야 한다 — 탭에 32라고 적혀
     # 있는데 표에는 열여섯 줄이면 어느 쪽이 맞는지 알 수 없다.
     shown: Dict[str, int] = {}
+    # 카톡방 확인이 끝난 줄(`dashboard.room_confirmed` — 방 확인 `확인됨`) — 탭에
+    # `131명 / 확인 98` 로 같이 적는다(11/13). 감춘 줄과 안 감춘 줄을 따로 센다:
+    # `?hidden=1` 로 감춘 줄을 함께 보는 탭은 표에 그 줄까지 뜬다(`routers/pages`).
+    # 같은 훑기에서 센다 — 탭마다 다시 묻지 않는다.
+    confirmed: Dict[str, int] = {}
+    hidden_confirmed: Dict[str, int] = {}
     for c in contacts:
+        ok = room_confirmed(c)
         for label in labels_of(c.source_sheet):
             total[label] = total.get(label, 0) + 1
             if not c.is_hidden:
                 shown[label] = shown.get(label, 0) + 1
+            if ok:
+                into = hidden_confirmed if c.is_hidden else confirmed
+                into[label] = into.get(label, 0) + 1
             if c.connect_stage == "connected":
                 connected[label] = connected.get(label, 0) + 1
 
@@ -1381,6 +1392,8 @@ def sheet_rows(db: Session, contacts: List[VcContact],
             # 감춘 줄이 몇인지 탭에서 드러나야 한다. 안 드러나면 시트에서
             # 그랬듯 "없는 기업" 으로 읽힌다.
             "hidden_rows": total.get(label, 0) - shown.get(label, 0),
+            "confirmed": confirmed.get(label, 0),
+            "hidden_confirmed": hidden_confirmed.get(label, 0),
             "connected": connected.get(label, 0),
             "owner_id": uid,
             "owner": names.get(uid, "") if uid else "",

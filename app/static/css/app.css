@@ -3197,6 +3197,12 @@ a.guard-go:hover { background: #1e4fd0; text-decoration: none; }
 .room-pick.draft { border-style: dashed; color: var(--muted);
                    background: #fff; }
 
+/* **고른 후보**(11/13) — 줄마다 하나만 선다(`startup_room.js`). 칸에 든 글자가 곧 고른
+   것이라, 어느 후보를 넣었는지가 눈으로 보여야 [확정] 을 누를 수 있다. */
+.room-pick.picked { border-color: var(--green); color: var(--green); background: #eafaf0;
+                    font-weight: 600; }
+.room-pick.picked::before { content: "✓ "; }
+
 @media (max-width: 720px) {
   /* 폰에서는 표가 가로로 밀린다(`.table-wrap`). 그 안에서 칸이 화면보다 넓게
      벌어지지 않게 최소폭을 줄인다 — 표 폭은 `.table-wrap .grid-table` 의

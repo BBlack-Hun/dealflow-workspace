@@ -1,5 +1,8 @@
 """#29 — 투자사 관리 현황 `전체` 의 숫자: 팀원에게는 `내 명단 N명 · 팀 전체 M명`.
 
+11/13 부터 표에 뜨는 쪽(관리자의 수 · 팀원의 내 명단)에 `/ 확인 K`(카톡방 확인됨)가
+붙는다 — `tests/test_contacts_tab_counts.py`.
+
 운영 숫자: 관리자가 보는 팀 전체(`sheet_owner.managed(team_wide=True)`)가 766,
 팀원 한 사람의 명단이 248. 팀원 화면의 `전체` 에는 248 이 떠 있었고, 사용자는
 거기서 766("전체 인원")을 기대했다.
@@ -86,7 +89,7 @@ def _all_tab(html: str) -> str:
 
 def test_a_member_sees_both_counts(world):
     tab = _all_tab(_login("01000000001").get("/contacts").text)
-    assert "내 명단 2명 · 팀 전체 5명" in tab, tab
+    assert "내 명단 2명 / 확인 0 · 팀 전체 5명" in tab, tab
     assert "표에는 내 명단이 보입니다" in tab, "무엇이 표에 뜨는지 풍선말이 없다"
 
 
@@ -95,7 +98,7 @@ def test_the_team_total_is_the_admins_number(db, world):
     from app.services import sheet_owner
 
     admin_tab = _all_tab(_login(ADMIN_PHONE).get("/contacts?sheet=all").text)
-    said = re.search(r"전체 <span>(\d+)</span>", admin_tab)
+    said = re.search(r"전체 <span[^>]*>(\d+)명 / 확인 \d+</span>", admin_tab)
     assert said, admin_tab
     assert int(said.group(1)) == 5
     assert sheet_owner.team_total(db) == 5
@@ -106,7 +109,7 @@ def test_the_team_total_is_the_admins_number(db, world):
 def test_the_admin_keeps_one_number(world):
     tab = _all_tab(_login(ADMIN_PHONE).get("/contacts").text)
     assert "팀 전체" not in tab and "내 명단" not in tab, tab
-    assert re.search(r"전체 <span>5</span>", tab), tab
+    assert re.search(r"전체 <span[^>]*>5명 / 확인 0</span>", tab), tab
 
 
 def test_the_members_table_does_not_change(world):
@@ -124,7 +127,7 @@ def test_the_count_ignores_what_the_admin_does_not_count(db, world):
 
     assert sheet_owner.team_total(db) == 5
     tab = _all_tab(_login("01000000002").get("/contacts").text)
-    assert "내 명단 3명 · 팀 전체 5명" in tab, tab
+    assert "내 명단 3명 / 확인 0 · 팀 전체 5명" in tab, tab
 
 
 def test_a_member_still_gets_only_their_rows(db, world, users):

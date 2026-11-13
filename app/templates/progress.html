@@ -4,7 +4,7 @@
 <header class="page-head">
   <h1>{% if room_search %}카톡방 찾기·확인{% elif verify %}방 연결 확인{% else %}발송 진행{% endif %}</h1>
   {% if readonly %}
-  <p class="hint">👁 <b>조회만 가능합니다</b> — 관리자로서 보고 있는 다른 사람의 회차입니다.</p>
+  <p class="hint">👁 <b>조회만 가능합니다</b> — {{ readonly_why }}.</p>
   {% endif %}
   {% if pc_note %}<p class="hint" data-testid="pc-note">🖥 {{ pc_note }}</p>{% endif %}
   <p class="muted">
@@ -45,9 +45,13 @@
      발송 중에는 progress.js 가 감춘다: 나가고 있는 건을 되살리면 두 번 간다. #}
   <button type="button" id="resume-btn" class="secondary-btn" hidden data-send{% if proxy_job %}="proxy"{% endif %}>{% if verify %}남은 건 이어 확인{% else %}이어 보내기{% endif %}</button>
   {% endif %}
+  {% if export_ok %}
   <a class="secondary-btn" href="/api/export/jobs/{{ job_id }}.xlsx" download>엑셀 내려받기</a>
+  {% endif %}
   {% if room_search %}
-  <a href="{{ rooms_href }}" class="linkbtn">후보 고르기 — 방 매칭으로</a>
+  {# 찾은 후보를 보고 확정하는 화면 — 이 회차의 줄로 연다. 찾기가 끝나면 progress.js 가
+     이 링크를 강조하고 **그리로 갈지 한 번 묻는다**(`room_done` · 11/13). #}
+  <a href="{{ rooms_href }}" class="linkbtn" id="room-pick-link" data-label="{{ rooms_label }}">결과 보고 확정 — {{ rooms_label }}으로</a>
   {% elif verify %}
   <a href="/contacts" class="linkbtn">내 투자사로</a>
   {% else %}
@@ -126,15 +130,22 @@
 <div class="warn-box" data-testid="room-search-note">
   방 이름이 적힌 곳은 <b>그 이름 그대로</b> 확인합니다 — 글자까지 같은 방이 있으면
   <b>확인됨</b> 입니다. 방 이름이 없는 곳에서 찾은 방 제목은 <b>후보</b>로만 담깁니다 —
-  방 이름은 저절로 바뀌지 않습니다. <a href="{{ rooms_href }}">방 매칭</a> 화면에서 맞는
-  방을 눌러 <b>확정</b>하면 안내 카톡을 보낼 수 있습니다. 후보가 없는 곳은 카톡에서 방
+  방 이름은 저절로 바뀌지 않습니다. <a href="{{ rooms_href }}">{{ rooms_label }}</a> 화면에서 맞는
+  방을 골라 <b>확정</b>하면 안내 카톡을 보낼 수 있습니다. 후보가 없는 곳은 카톡에서 방
   제목을 복사해 거기서 직접 적어 주세요.
+  <br>아래 상태 칸은 줄마다 <b>찾음</b>(후보 하나) · <b>여럿</b>(후보 둘 이상) · <b>못 찾음</b> ·
+  <b>확인됨</b>(적어 둔 이름 그대로 있음)입니다. 찾기가 끝나면 이 화면이 알려 줍니다.
 </div>
 {% elif verify %}
 <div class="warn-box">
   불일치 건은 카카오톡에서 방 제목을 확인한 뒤 <a href="/contacts">내 투자사</a> 상세에서
   방 이름을 고치고 다시 확인하세요. 방 제목이 다르면 그 담당자에게는 <b>발송이 되지 않습니다</b>
   (엉뚱한 방으로 가지는 않습니다).
+  {% if not readonly %}
+  {# 찾았지만 확정 못 한 방 제목은 사유 아래에 단추로 선다(`vc_room_search.pick_view` · 11/13). #}
+  <br>사유 아래에 <b>찾은 방 제목 단추</b>가 있으면, 맞는 방을 눌러 그 제목을 방 이름에 넣고
+  <b>그 분만 다시 확인</b>할 수 있습니다.
+  {% endif %}
 </div>
 {% endif %}
 
@@ -151,6 +162,8 @@
 <script>
   window.DEALFLOW_JOB_ID = {{ job_id }};
   window.DEALFLOW_JOB_VERIFY = {{ 'true' if verify else 'false' }};
+  {# 찾은 방 후보 단추 — 투자사 [방 연결 확인]을 다루는 사람에게만(조회만 하는 화면에는 없다). #}
+  window.DEALFLOW_JOB_PICK = {{ 'true' if (verify and not room_search and not readonly) else 'false' }};
 </script>
 <script src="{{ asset('js/progress.js') }}"></script>
 {% endif %}

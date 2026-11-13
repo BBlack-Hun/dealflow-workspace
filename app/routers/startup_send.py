@@ -56,11 +56,11 @@ from typing import List, Optional
 from urllib.parse import quote
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..deps import get_current_user, no_send_as_member, templates
+from ..deps import _wants_json, get_current_user, no_send_as_member, templates
 from ..models import IrCompany, SendItem, SendJob, User
 from ..services import (cadence, ir_monthly, ir_outreach, room_match, scheduled_send,
                         send_window, startup_monthly, startup_send)
@@ -299,7 +299,9 @@ def rooms_page(
     picked = _ids(ids)
     sender = db.get(User, startup_send.sender_id(db))
     ctx = base_ctx(request, db, user, "su" if picked else ACTIVE)
-    ctx.update(room_match.rows(db, picked))
+    # 아직 찾고 있는 기업은 `찾는 중` 으로 선다(11/13 — 결과 칸 · 머리 셈).
+    busy = ir_outreach.busy_ids(db, room_match.company_ids(db, picked))
+    ctx.update(room_match.rows(db, picked, busy))
     ctx.update({
         "label": startup_send.LABEL,
         "msg": msg,
@@ -318,13 +320,20 @@ def rooms_page(
 
 @router.post("/deals/startup-ir/rooms", include_in_schema=False)
 def save_rooms(
+    request: Request,
     company_ids: List[int] = Form(default=[]),
     rooms: List[str] = Form(default=[]),
     ids: str = Form(""),
+    only: str = Form(""),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """[저장] — 줄마다 적힌 방 제목을 **바뀐 것만** 넣는다.
+    """[고른 것 확정] — 줄마다 적힌 방 제목을 **바뀐 것만** 넣는다.
+
+    줄의 [확정](11/13)은 같은 자리에 `only`(그 기업 번호)를 실어 **그 줄만** 넣는다 —
+    화면 스크립트가 부르면(`Accept: application/json`) 새로고침 없이 그 줄만 고친다
+    (`startup_room.js` — 딜 소싱에서 새로고침 때문에 잇달아 못 누르던 일과 같은 까닭).
+    수정 기록은 저장 요청이 남긴다(`services/edit_log` — `ir_companies` 는 공용 표다).
 
     ## 왜 폼 하나로 받나
 
@@ -355,30 +364,72 @@ def save_rooms(
     """
     _rooms_guard(db)
     picked = _ids(ids)
+    as_json = _wants_json(request)
     if len(company_ids) != len(rooms):
-        return _back_rooms("보낸 줄이 어긋났습니다 — 화면을 새로 열고 다시 저장하세요", picked)
-    if not company_ids:
-        return _back_rooms("저장할 줄이 없습니다", picked)
+        return _rooms_answer(as_json, "보낸 줄이 어긋났습니다 — 화면을 새로 열고 다시 저장하세요",
+                             picked, 400)
+    pairs = list(zip(company_ids, rooms))
+    if only.strip():
+        # 줄의 [확정] — 그 기업 줄만. 짝지은 두 목록에서 그 번호의 짝을 고른다.
+        pairs = [(c, r) for c, r in pairs if str(c) == only.strip()]
+    if not pairs:
+        return _rooms_answer(as_json, "저장할 줄이 없습니다", picked, 400)
 
     allowed = set(room_match.company_ids(db, picked))
     known = room_match.investor_rooms(db)
-    changed, unknown = 0, 0
-    for company_id, value in zip(company_ids, rooms):
+    changed, verified, unknown, kept = 0, 0, 0, 0
+    company = None
+    for company_id, value in pairs:
         if company_id not in allowed:
             unknown += 1
             continue
         company = db.get(IrCompany, company_id)
-        if company is not None and room_match.set_room(company, value):
+        if company is None:
+            continue
+        if room_match.set_room(company, value):
             changed += 1
             # 카톡 후보에서 고른 제목이면 확인됨 + 카톡 연결 여부 O(i130).
-            room_match.verify_picked(company, known)
+            verified += room_match.verify_picked(company, known)
+        elif only.strip() and company.room_verified != "verified":
+            # 줄의 [확정] 인데 글자는 그대로다 — 이미 적혀 있던 제목이 후보 그대로면 사람이
+            # 그 줄을 눌러 고른 것이라 확인됨으로 올린다(근거는 같은 함수 — 후보 그대로).
+            kept += room_match.verify_picked(company, known)
     db.commit()
 
-    parts = [f"{changed}곳의 방 제목을 넣었습니다" if changed else "바뀐 줄이 없습니다"]
+    parts = [f"{changed}곳의 방 제목을 넣었습니다" if changed
+             else "적혀 있던 방을 확인됨으로 확정했습니다" if kept else "바뀐 줄이 없습니다"]
+    if changed and changed != verified:
+        # 후보에 없는 글자(직접 적은 것)는 확인 전이다 — 그 말이 없으면 확정된 줄 안다.
+        parts.append((f"후보에서 고른 {verified}곳은 확인됨 · " if verified else "")
+                     + f"직접 적은 {changed - verified}곳은 [카톡방 찾기·확인] 으로 "
+                     "확인해야 보냅니다")
     if unknown:
         parts.append(f"{'이 화면에 없던' if picked else '계약 기업이 아닌'} "
                      f"{unknown}줄은 넣지 않았습니다")
+    if as_json:
+        if unknown and not (changed or kept):
+            return JSONResponse({"detail": " · ".join(parts)}, status_code=400)
+        out = {"ok": True, "msg": " · ".join(parts), "changed": changed + kept}
+        if company is not None and len(pairs) == 1:
+            # 그 줄의 지금 상태 — 화면이 확인 칸 · 결과 칸만 고친다.
+            find = room_match.find_state(company, known)
+            room = (company.kakao_room_name or "").strip()
+            state = company.room_verified or room_match.UNVERIFIED
+            out.update({"room": room, "state": state,
+                        # 칸을 비웠으면 화면이 그리는 말과 같게(`카톡방 이름 없음`).
+                        "state_label": (room_match.STATE_LABELS.get(state, state) if room
+                                        else startup_send.NO_ROOM),
+                        "find": find, "find_label": room_match.FIND_LABELS[find]})
+        return JSONResponse(out)
     return _back_rooms(" · ".join(parts), picked)
+
+
+def _rooms_answer(as_json: bool, why: str, picked: Optional[List[int]],
+                  status: int) -> Response:
+    """막혔을 때의 답 — 화면 스크립트에는 JSON, 폼에는 되돌아가며 적는 말."""
+    if as_json:
+        return JSONResponse({"detail": why}, status_code=status)
+    return _back_rooms(why, picked)
 
 
 @router.post("/deals/startup-ir/rooms/search", include_in_schema=False,
