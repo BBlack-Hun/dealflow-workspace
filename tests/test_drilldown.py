@@ -324,3 +324,52 @@ def test_empty_address_reads_a_colleague_at_the_same_firm(db, users, data):
     a = [r for r in rows if r["심사역 이름"] == "심사역가"]
     assert a and all(r["회사주소"] == "서울 어딘가 1" for r in a), "제 주소가 있으면 그대로"
 
+
+# ── i242 — 관리자 대시보드의 카톡방 연결 상태 · 내 투자사 선호도 팀 전체 합계 ──
+
+def test_admin_rooms_and_requesters_sum_the_team(client, db, users, data):
+    from app.services import dashboard
+
+    mine = dashboard.user_dashboard(db, users["u1"])
+    users["u2"].role = "admin"
+    db.commit()
+    team = dashboard.user_dashboard(db, users["u2"])
+
+    def total(d):
+        return sum(r["count"] for r in d["rooms"])
+
+    assert (total(mine), total(team)) == (2, 3), "내 명단 2명 + 남의 명단 1명"
+    # 남의 줄은 딜 제안 관리(본인 담당분만)로 체크해 보낼 수 없다 — 투자사 관리 현황 전체 탭.
+    assert all(r["href"].startswith("/contacts?sheet=all&") for r in team["rooms"])
+    names = {r["name"] for r in team["top_requesters"]}
+    assert names == {"심사역가", "심사역나", "남의심사역"}
+    assert "남의심사역" not in {r["name"] for r in mine["top_requesters"]}
+
+    _login(client, "01000000002")
+    body = client.get("/").text
+    rooms = body.split("카톡방 연결 상태", 1)[1].split("</h2>", 1)[0]
+    pref = body.split("내 투자사 선호", 1)[1].split("</h2>", 1)[0]
+    assert "팀 전체 합계" in rooms and "팀 전체 합계" in pref
+    # 몇 명까지 볼지 바꿔도(새로고침 없이 부르는 API) 같은 모집단이다.
+    api = client.get("/api/dashboard/top-requesters?top=10").json()["rows"]
+    assert {r["name"] for r in api} == names
+
+
+def test_view_as_dashboard_is_the_members_own(client, db, users, data):
+    """관리자가 팀원 화면으로 보면 반응 · 카톡방 · 선호 모두 **그 팀원 것**이다 — 팀 합계는
+    관리자 본인 화면에서만(역할만 관리자인 보기용 사본이 팀 합계를 그리던 것을 막는다)."""
+    from app.models import User
+    from app.services import auth as auth_svc
+
+    db.add(User(id=9, name="관리자", phone="01000000009", role="admin",
+                password_hash=auth_svc.hash_password(DEMO_PASSWORD)))
+    db.commit()
+    _login(client, "01000000009")
+    assert 'key=ir_contacts&amp;scope=team"' in client.get("/").text
+    client.post("/account/view-as", data={"member_id": users["u1"].id, "next": "/"},
+                follow_redirects=False)
+    body = client.get("/").text
+    assert "팀 전체 합계" not in body
+    assert 'href="/reactions/list?key=ir_contacts"' in body
+    api = client.get("/api/dashboard/top-requesters?top=10").json()["rows"]
+    assert {r["name"] for r in api} == {"심사역가", "심사역나"}

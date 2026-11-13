@@ -389,9 +389,10 @@
     </p>
   </section>
 
+  {# 관리자는 팀원 딜 소개 명단을 다 합친 수(i242 · `dashboard.team_view` — 반응 패널과 같은 판정). #}
   <section class="panel">
-    <h2 class="panel-title">카톡방 연결 상태
-      <a class="linkbtn" href="/contacts">내 투자사</a>
+    <h2 class="panel-title">카톡방 연결 상태{% if reaction_team %} <span class="hint">팀 전체 합계</span>{% endif %}
+      <a class="linkbtn" href="{{ '/contacts?sheet=all' if reaction_team else '/contacts' }}">{{ '팀 투자사' if reaction_team else '내 투자사' }}</a>
     </h2>
     {% if rooms %}
     <div class="stack-bar">
@@ -420,8 +421,9 @@
       다음 회차에 **누구를 먼저 챙길지**는 말해 주지 않았다.
       자료를 달라고 한 횟수가 곧 관심의 크기다.
     #}
+    {# 관리자는 팀원 명단을 다 합친 순위(i242) — 반응 패널과 같은 모집단. #}
     <h2 class="panel-title">내 투자사 선호
-      <span class="hint">IR 자료를 많이 요청한 순</span>
+      <span class="hint">IR 자료를 많이 요청한 순{% if reaction_team %} · 팀 전체 합계{% endif %}</span>
       {# 몇 명이 걸렸는지 보여야 한다 — 50명으로 놓고 12명만 나오면
          "왜 적지" 가 아니라 "요청한 사람이 12명" 이라는 뜻이다. #}
       <span class="count-pill {% if top_requesters %}on{% endif %}"
