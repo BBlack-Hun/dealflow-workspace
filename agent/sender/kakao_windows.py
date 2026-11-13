@@ -705,6 +705,11 @@ class KakaoDesktopSender(Sender):
             log.info("맨 위 방 제목을 후보로: %r (query=%r)", title, query)
             return [title]
         finally:
+            # (0.11.15) Enter 뒤 새로 뜬 카톡 창이 아직 있으면 — 여럿이라 못 골랐거나,
+            #   고르기 전에 터졌거나, 닫기가 안 먹었다 — 그것도 닫는다. Enter 전부터 떠
+            #   있던 창(사람이 열어 둔 같은 방 창 포함)은 `before` 에 있어 건드리지 않는다.
+            if pressed and self._close_fresh_chats(win, before, main_title):
+                refocused = False
             # 검색창 닫기 — ★ 카톡 메인 창이 앞에 있을 때만 Esc 를 누른다.
             #   키를 누른 뒤에는 무엇이 앞에 왔는지 모르니 다시 확인한다.
             if pressed and not refocused:
@@ -715,6 +720,27 @@ class KakaoDesktopSender(Sender):
             else:
                 log.warning("맨 위 방을 닫은 뒤 카톡 포커스를 못 잡아 검색창을 "
                             "닫지 않았습니다(키 입력 안 함)")
+
+    def _close_fresh_chats(self, win, before, main_title: str) -> bool:
+        """`before`(Enter 직전 창 목록)에 없던 **카톡 프로세스의** 창을 닫는다 (0.11.15).
+        하나라도 닫으러 갔으면 True. 카톡 프로세스를 모르면 아무것도 닫지 않는다.
+        **던지지 않는다** — 후보 찾기 결과는 그대로다."""
+        try:
+            pid = self._window_pid(win)
+            after = self._top_windows() if pid else None
+            if after is None:
+                return False
+            # 프로세스를 모르는 창(pid 0)까지 닫지 않게 **같은 pid** 만 남긴다.
+            left = [(hwnd, title) for hwnd, title
+                    in fresh_windows(before, after, pid=pid, exclude_titles=(main_title,))
+                    if tuple(after[hwnd])[1:2] == (pid,)]
+            for hwnd, title in left:
+                log.info("방 확인으로 연 채팅창이 남아 닫습니다: %r", _clip(title))
+                self._close_chat_window(hwnd, title)
+            return bool(left)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("방 확인으로 연 채팅창을 닫다 실패했습니다(결과는 그대로): %s", exc)
+            return False
 
     def _close_chat_window(self, hwnd, title: str) -> None:
         """방금 연 채팅창 **하나만** 닫는다. 앞에 있으면 Esc, 아니면 WM_CLOSE."""
@@ -2460,6 +2486,19 @@ def pick_new_window(before: dict, after: dict, *, pid: int = 0,
       **고르지 않는다**(None) — 어느 것인지 모르는데 아무거나 고르지 않는다
     돌려주는 값: `(hwnd, 제목)` 또는 None.
     """
+    fresh = fresh_windows(before, after, pid=pid, exclude_titles=exclude_titles)
+    if not fresh:
+        return None
+    for hwnd, title in fresh:
+        if foreground and hwnd == foreground:
+            return (hwnd, title)
+    return fresh[0] if len(fresh) == 1 else None
+
+
+def fresh_windows(before: dict, after: dict, *, pid: int = 0,
+                  exclude_titles=()) -> List[tuple]:
+    """열기 전·후 창 목록을 견줘 **새로 뜬 창 전부** `[(hwnd, 제목)]` — 고르는 규칙은
+    `pick_new_window`, 남은 것 닫기는 `_close_fresh_chats` 가 쓴다 (0.11.15)."""
     skip = {nfc(t).strip() for t in exclude_titles if t}
     fresh = []
     for hwnd, info in (after or {}).items():
@@ -2475,12 +2514,7 @@ def pick_new_window(before: dict, after: dict, *, pid: int = 0,
         if pid and wpid and wpid != pid:
             continue
         fresh.append((hwnd, title))
-    if not fresh:
-        return None
-    for hwnd, title in fresh:
-        if foreground and hwnd == foreground:
-            return (hwnd, title)
-    return fresh[0] if len(fresh) == 1 else None
+    return fresh
 
 
 def _uia_info(ctrl) -> dict:
