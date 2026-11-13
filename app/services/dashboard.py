@@ -442,6 +442,16 @@ def _reaction_summary(db: Session, contact_ids: List[int],
     return got
 
 
+def team_view(user: User) -> bool:
+    """대시보드를 **팀 전체 합계**로 그리는가 — 반응(#175) · 카톡방 연결 상태 · 내 투자사
+    선호(i242) 세 패널이 이 하나를 읽는다.
+
+    관리자면 그렇다. 단 **팀원 화면으로 보는 중**(`viewed_by` — `deps._acting`)이면 아니다:
+    그 사본은 역할만 관리자 것이라, 역할만 보면 팀원 화면에 팀 합계가 섰다(#175 이후).
+    """
+    return deps.may_manage_team_contacts(user) and getattr(user, "viewed_by", None) is None
+
+
 def reaction_ids(db: Session, user: User, *, team_wide: bool = False) -> List[int]:
     """반응 칸의 **모집단** — 팀원은 내 명단(`sheet_owner.my_contacts`), 관리자가 팀
     전체를 보면 팀 투자사 전부(`sheet_owner.managed(team_wide=True)` — 권한은 거기서
@@ -615,10 +625,6 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None,
     sheet_scope = deal_sheet_scope(db, sending)
 
     rooms = Counter(_room_state(c) for c in sending)
-    # 상태별로 **누구인지**까지 들고 있어야 눌러서 갈 곳을 만들 수 있다.
-    room_ids: Dict[str, List[int]] = {}
-    for c in sending:
-        room_ids.setdefault(_room_state(c), []).append(c.id)
     sendable = sum(rooms[state] for state in _SENDABLE_ROOM)
 
     companies = db.execute(select(IrCompany)).scalars().all()
@@ -713,7 +719,7 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None,
     upcoming = cadence.upcoming_send_dates(db, today)
     next_send = upcoming[0]
 
-    react_team = deps.may_manage_team_contacts(user)
+    react_team = team_view(user)
     react_ids = reaction_ids(db, user, team_wide=True) if react_team else ids
 
     return {
@@ -736,15 +742,7 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None,
         "next_send": next_send,
         "days_left": (next_send - today).days,
         "upcoming": upcoming,
-        "rooms": [
-            {"state": s, "label": ROOM_LABELS[s][0], "level": ROOM_LABELS[s][1],
-             "count": rooms.get(s, 0),
-             "percent": round(rooms.get(s, 0) * 100 / (len(sending) or 1)),
-             "href": _room_href(s, room_ids.get(s, []), sheet_scope)}
-            for s in ("verified", "unverified", "failed", "missing",
-                      "email", "sms", "no_channel")
-            if rooms.get(s, 0)
-        ],
+        "rooms": _room_panel(db, user, sending, sheet_scope, react_team),
         "blockers": blockers,
         # 연결 작업은 발송과 다른 일이라 따로 보여준다.
         "pipeline": _pipeline_view(sending, waiting, sheet_scope),
@@ -757,8 +755,9 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None,
         # 화면에는 안 띄우지만 값은 남긴다 — 발송 대상 판정이 이 기준을 쓰고,
         # 대시보드와 투자사 목록의 수가 어긋난 적이 있어 테스트가 지키고 있다.
         "sendable": sendable,
-        # 관리자는 **팀원 것을 모두 합친 수**(#175) — 모집단은 `reaction_ids` 한 곳이고,
-        # 숫자를 누르면 뜨는 목록(`/reactions/list?scope=team`)도 같은 것을 읽는다.
+        # 관리자는 **팀원 것을 모두 합친 수**(#175 · `team_view`) — 모집단은 `reaction_ids`
+        # 한 곳이고, 숫자를 누르면 뜨는 목록(`/reactions/list?scope=team`)도 같은 것을 읽는다.
+        # 화면은 이 값 하나로 반응 · 카톡방 연결 상태 · 내 투자사 선호에 `팀 전체 합계` 를 단다.
         "reactions": _reaction_summary(db, react_ids),
         # 미팅 결과 칸(#183)도 같은 모집단 — 관리자 화면에서 옆 칸과 범위가 갈리면 안 된다.
         "meeting_results": meeting_results(db, react_ids),
@@ -770,13 +769,36 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None,
         "stages": _distribution([s for c in contacts for s in _split_csv(c.stages)]),
         "sectors": _distribution([s for c in contacts for s in _split_csv(c.sectors)]),
         # 다음 회차에 누구를 먼저 챙길지 — 자료를 달라고 한 횟수가 관심의 크기다.
-        "top_requesters": top_requesters(db, ids, limit=top_n),
+        # 관리자는 팀원 명단을 다 합친 순위(i242) — 반응 칸과 같은 모집단(`react_ids`).
+        "top_requesters": top_requesters(db, react_ids, limit=top_n),
         # `내 투자사 선호` 에 한 번도 안 걸린 분 ≠ 반응 없는 분이다(딜소개 전 · 미팅만 있는
         # 분이 섞인다). 그래서 따로 세지 않고 딜 제안 관리와 같은 한 벌의 수를 적는다 —
         # 누르면 [반응 없는 담당자만] 이 켜진 채 열린다(#213 · `no_reaction.listed`).
         "no_reaction_count": len(no_reaction.listed(db, user)),
         "recent_batches": recent_batches(db, user_id=user.id),
     }
+
+
+def _room_panel(db: Session, user: User, sending: List[VcContact], sheet_scope: str,
+                team: bool) -> List[dict]:
+    """`카톡방 연결 상태` 패널 — 갈래별 수 · 비율 · 눌러 갈 곳.
+
+    관리자(`team_view`)면 **팀원 딜 소개 명단을 다 합친 수**다(i242). 그때 눌러 갈 곳은
+    투자사 관리 현황 `전체` 탭(관리자는 팀 전체가 뜬다)이다 — 보낼 수 있는 갈래를 딜 제안
+    관리로 체크해 보내던 길은 본인 담당분만 고를 수 있어 남의 줄이 안 걸린다.
+    """
+    pool = sheet_owner.deal_list_contacts(db, user, team_wide=True) if team else sending
+    # 상태별로 **누구인지**까지 들고 있어야 눌러서 갈 곳을 만들 수 있다.
+    ids: Dict[str, List[int]] = {}
+    for c in pool:
+        ids.setdefault(_room_state(c), []).append(c.id)
+    return [
+        {"state": s, "label": ROOM_LABELS[s][0], "level": ROOM_LABELS[s][1],
+         "count": len(ids[s]), "percent": round(len(ids[s]) * 100 / (len(pool) or 1)),
+         "href": room_href(s) if team else _room_href(s, ids[s], sheet_scope)}
+        for s in ("verified", "unverified", "failed", "missing", "email", "sms", "no_channel")
+        if ids.get(s)
+    ]
 
 
 # 패널에 이름을 몇 명까지 세울지. '오늘 보낼 리마인드'(5명)와 같은 수다 —

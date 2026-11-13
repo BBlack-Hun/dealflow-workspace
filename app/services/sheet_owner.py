@@ -383,7 +383,8 @@ def can_send_to(contact: VcContact) -> bool:
     return is_connected(contact) and not is_paused(contact) and not sms_only(contact)
 
 
-def deal_list_contacts(db: Session, user: User) -> List[VcContact]:
+def deal_list_contacts(db: Session, user: User, *,
+                       team_wide: bool = False) -> List[VcContact]:
     """**딜 소개를 보내기로 한 명단**에 올라 있는 내 담당자 — 발송의 모집단.
 
     딜 제안 관리의 목록도, 대시보드의 `연결 진행 중인 명단` 도 여기서 시작한다.
@@ -392,9 +393,12 @@ def deal_list_contacts(db: Session, user: User) -> List[VcContact]:
 
     여기까지는 **연결 상태를 보지 않는다.** 아직 연결 중인 사람도 이 명단
     사람이고, 대시보드는 바로 그 사람들을 보여 줘야 한다.
+
+    `team_wide` — 팀원 모두의 명단(관리자 대시보드 `카톡방 연결 상태` · i242). 권한은
+    `managed` 가 다시 본다. 발송 쪽(`recipients`)은 그대로 본인 담당분만이다.
     """
     off = off_deal_labels(db)
-    return [c for c in managed(db, user) if on_deal_list(c, off)]
+    return [c for c in managed(db, user, team_wide=team_wide) if on_deal_list(c, off)]
 
 
 def recipients(db: Session, user: User) -> List[VcContact]:

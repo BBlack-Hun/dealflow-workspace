@@ -74,13 +74,10 @@ def top_requesters_api(db: Session = Depends(get_db),
                        user: User = Depends(get_current_user), top: int = dash.TOP_DEFAULT):
     """'내 투자사 선호' 목록만. 개수를 바꿀 때 대시보드 전체를 다시 그리면
     스크롤이 맨 위로 튀고, 이 목록 하나 보려고 나머지를 다 기다린다."""
-    from ..services import sheet_owner
-    from ..services.dashboard import top_requesters
-
     top_n = dash.clamp_top(top)
-    # 담당은 명단(시트) 단위다 — 화면과 같은 범위여야 수가 맞는다.
-    ids = [c.id for c in sheet_owner.my_contacts(db, user)]
-    return {"rows": top_requesters(db, ids, limit=top_n)}
+    # 화면과 같은 범위여야 수가 맞는다 — 팀원은 내 명단, 관리자는 팀 전체(i242 · `team_view`).
+    ids = dash.reaction_ids(db, user, team_wide=dash.team_view(user))
+    return {"rows": dash.top_requesters(db, ids, limit=top_n)}
 
 
 def _todo_owner(db: Session, user: User, member: int) -> User:

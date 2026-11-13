@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from ..clock import now_iso
 from ..db import get_db
 from ..deps import agent_status, get_current_user, no_send_as_member
-from ..models import (STARTUP_MSG_KIND, STARTUP_SEND_KIND, SendItem, SendJob,
+from ..models import (STARTUP_MSG_KIND, STARTUP_SEND_KIND, IrCompany, SendItem, SendJob,
                       SourcingContact, User)
 from ..services import (automation_runner, ir_outreach, mail_sender, scheduled_send,
                         send_guard, sourcing_msg, sourcing_rooms, sourcing_sync,
@@ -138,7 +138,8 @@ def _requeue(db: Session, job: SendJob, items: list[SendItem],
     단 딜 소싱 글 회차는 나가는 순간 참여를 다시 보고(`_drop_not_taking_part`),
     스타트업 월간 발송은 회차를 세운 뒤 그 달 글을 받은 기업을 뺀다(`_drop_already_received`).
     스타트업 안내 카톡은 막는 규칙과 방 이름을 다시 본다(`_drop_outreach_unsendable`).
-    딜 소개 · IR 자료 전달은 실린 기업이 딜소개 불가가 됐는지 본다(`_drop_blocked_companies`).
+    딜 소개 · IR 자료 전달 · 스타트업 월간 발송은 실린 기업이 딜소개 불가가 됐는지 본다
+    (`_drop_blocked_companies`).
     """
     for item in items:
         item.status = "pending"
@@ -224,12 +225,25 @@ def _drop_blocked_companies(db: Session, job: SendJob) -> None:
     취소한다. 글은 이미 굳어 있어(기업 여럿이 한 글에 든다) 그 기업만 뺄 수 없다 —
     다시 고르게 둔다. 실린 기업이 없는 회차(문구만 나가는 종류)는 그대로.
 
-    **딜 소개 · IR 자료 전달만 본다.** 스타트업 월간 발송(A5)은 딜 소개가 아니라
-    계약 기업에 주는 보고라 계약여부로 고른 그대로 나간다 — 묶음에 그 기업이 실려도
-    여기서 막지 않는다. 다른 종류도 같다(이 판정이 맡는 일이 아니다).
+    **스타트업 월간 발송(A5 · 손 발송)도 본다**(사용자 결정 2026-11-13 — 딜소개 불가면
+    월간 보고도 막는다, 유료 계약이어도). 건 하나가 기업 하나라(`SendItem.ir_company_id`)
+    회차 전체가 아니라 **그 기업의 대기 건만** 취소한다. 고르는 자리는
+    `ir_monthly.contracted` 가 이미 같은 판정으로 뺀다 — 여기는 세운 뒤에 막힌 경우다.
+    다른 종류는 그대로(이 판정이 맡는 일이 아니다).
 
     발송기가 큐에 선 회차를 받아 가는 자리(`agent_api.poll`)도 이 함수를 부른다.
     """
+    from .companies import deal_blocked   # 순환 import 를 피해 늦게 부른다
+    from .deals import blocked_note
+
+    if job.kind == STARTUP_SEND_KIND:
+        for item in job.items:
+            company = (db.get(IrCompany, item.ir_company_id)
+                       if item.status == "pending" and item.ir_company_id else None)
+            if company is not None and deal_blocked(company):
+                item.status = "canceled"
+                item.error = f"{blocked_note(company)} — 나가기 전에 다시 보고 뺐습니다"
+        return
     if job.kind not in ("deal_intro", "ir_delivery"):
         return
     if not job.batch_id:
@@ -237,8 +251,6 @@ def _drop_blocked_companies(db: Session, job: SendJob) -> None:
     from sqlalchemy import select
 
     from ..models import DealBatchCompany
-    from .companies import deal_blocked   # 순환 import 를 피해 늦게 부른다
-    from .deals import blocked_note
 
     rows = db.execute(select(DealBatchCompany)
                       .where(DealBatchCompany.batch_id == job.batch_id)

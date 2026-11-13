@@ -4,10 +4,12 @@
 (`jobs._drop_blocked_companies`). 그 뒤에 남은 빈틈 셋이다 — 계약 `blocked` 도 똑같이
 새던 자리다.
 
-1. **딜 소개 · IR 자료 전달만 본다.** 실린 기업이 `딜소개 불가` 여도 스타트업 월간
-   발송(A5 — 계약 기업에 주는 보고)처럼 다른 종류의 회차는 그대로 나간다. 일부 나간
-   딜 소개 회차를 이어 보내면 **나간 건은 그대로**, 대기 건만 취소된다. 예약이 풀릴 때
-   전부 빠졌으면 "예약 발송 — N명" 이라고 말하지 않는다.
+1. **딜 소개 · IR 자료 전달 · 스타트업 월간 발송만 본다.** 다른 종류의 회차는 그대로
+   나간다. 스타트업 월간 발송(A5 · 손 발송)은 처음엔 막지 않았는데, 사용자 결정
+   (2026-11-13 — 딜소개 불가면 월간 보고도 막는다, 유료여도)으로 **그 기업의 건만**
+   취소한다(건 하나가 기업 하나). 일부 나간 딜 소개 회차를 이어 보내면 **나간 건은
+   그대로**, 대기 건만 취소된다. 예약이 풀릴 때 전부 빠졌으면 "예약 발송 — N명" 이라고
+   말하지 않는다.
 2. **발송기가 회차를 받아 갈 때 다시 본다**(`agent_api.poll`). 19시 이후 · PC 꺼짐 ·
    하루 한도(`_settle` 이 다시 큐에 세운다)로 `queued` 인 채 밤을 넘긴 회차가 그사이 막힌
    기업을 싣고 다음 날 그대로 나가지 않는다.
@@ -238,7 +240,9 @@ def test_예약이_풀리면_실제로_올린_수를_말한다(client, db, seed,
     ("test_send", False), ("verify_room", False),
 ])
 def test_실린_기업으로_막는_것은_딜소개와_IR_전달뿐이다(db, users, kind, dropped):
-    """회차 묶음에 막힌 기업 줄이 있어도 **딜 소개 · IR 자료 전달**만 취소한다."""
+    """회차 **묶음**에 막힌 기업 줄이 있어도 **딜 소개 · IR 자료 전달**만 취소한다.
+    스타트업 월간 발송은 묶음이 아니라 건의 기업(`ir_company_id`)을 본다 — 아래
+    `test_꼬리표_붙은_유료_기업의_월간_발송은_나가기_전에_빠진다`."""
     from app.models import DealBatch, DealBatchCompany, IrCompany, SendItem, SendJob
     from app.routers.jobs import _drop_blocked_companies
 
@@ -279,8 +283,9 @@ def monthly(client, db, users):
     return {"company": company, "month": month}
 
 
-def test_꼬리표_붙은_유료_기업의_월간_발송은_취소되지_않고_나간다(client, db, monthly):
-    """A5 는 딜 소개가 아니라 계약 기업에 주는 보고다 — 이름 꼬리표로 막지 않는다."""
+def test_꼬리표_붙은_유료_기업의_월간_발송은_나가기_전에_빠진다(client, db, monthly):
+    """딜소개 불가면 월간 보고도 막는다(사용자 결정 2026-11-13 — 유료 계약이어도).
+    회차를 세운 뒤 이름에 꼬리표가 붙으면 [발송 시작] 에서 그 건이 까닭과 함께 빠진다."""
     from app.models import SendJob
 
     made = client.post("/deals/startup-ir/send", follow_redirects=False, data={
@@ -292,15 +297,42 @@ def test_꼬리표_붙은_유료_기업의_월간_발송은_취소되지_않고_
     _block(db, monthly["company"], "name")
 
     res = client.post(f"/api/jobs/{job.id}/start")
-    assert res.status_code == 200 and res.json()["requeued"] == 1, res.text
+    assert res.status_code == 200 and res.json()["requeued"] == 0, res.text
     job = _fresh(db, job.id)
-    assert job.status == "queued"
-    assert [i.status for i in job.items] == ["pending"]
+    assert job.status == "canceled"
+    assert _all_canceled_for_block(job.items)
+    assert _poll(client).status_code == 204
 
-    # 발송기가 받아 갈 때도 그대로 내준다.
+
+def test_발송기가_받아_갈_때_막힌_기업의_월간_건만_빼고_남긴다(client, db, monthly):
+    """큐에 선 월간 회차가 받아 가기 전에 한 기업이 막히면 **그 건만** 취소되고(커밋된다)
+    나머지 기업 건은 그대로 내준다 — 건 하나가 기업 하나라 회차를 통째로 닫지 않는다."""
+    from app.models import IrCompany, IrRequest, SendJob, VcContact
+
+    other = IrCompany(name="샘플넷째", contract_status="free",
+                      kakao_room_name="샘플넷째 대표님")
+    contact = VcContact(user_id=1, name="샘플마", firm="샘플마파트너스")
+    db.add_all([other, contact])
+    db.flush()
+    db.add(IrRequest(user_id=1, contact_id=contact.id, company_id=other.id,
+                     company_name=other.name, requested_at=f"{monthly['month']}-04"))
+    db.commit()
+    made = client.post("/deals/startup-ir/send", follow_redirects=False, data={
+        "month": monthly["month"], "company_ids": [monthly["company"].id, other.id],
+        "title": "샘플 월간"})
+    assert made.status_code == 303, made.text
+    job = db.execute(select(SendJob)).scalars().one()
+    assert client.post(f"/api/jobs/{job.id}/start").json()["requeued"] == 2
+    _block(db, monthly["company"], "name")
+
     got = _poll(client)
     assert got.status_code == 200 and got.json()["job_id"] == job.id
-    assert got.json()["kind"] == "startup_ir"
+    assert [i["room_name"] for i in got.json()["items"]] == ["샘플넷째 대표님"]
+    job = _fresh(db, job.id)
+    by_company = {i.ir_company_id: i for i in job.items}
+    assert by_company[monthly["company"].id].status == "canceled"
+    assert "딜소개 불가" in by_company[monthly["company"].id].error
+    assert by_company[other.id].status == "pending"
 
 
 # ── 3. 채널 TOP 자동화 ────────────────────────────────────────────────────────

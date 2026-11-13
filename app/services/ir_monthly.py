@@ -60,6 +60,10 @@ from .sheet_import import normalize_company_name
 #
 # **폐업한 기업은 계약여부와 상관없이 뺀다**(사용자 결정 2026-10-31). 팀은 폐업을
 # 계약여부 칸이 아니라 이름 뒤 표시(`[26년 3월 폐업함]`)로 적는다 — `is_closed`.
+#
+# **딜소개 불가 기업도 계약여부와 상관없이 뺀다**(사용자 결정 2026-11-13 — 유료 계약이어도).
+# 판정은 딜 소개와 같은 함수다(`routers/companies.deal_blocked` — 계약여부 `딜소개 불가`
+# 또는 기업명 꼬리표). 계약여부 값은 그대로 둔다.
 CONTRACTED = ("free", "paid", "free_meet_planned", "free_meet_done")
 
 # 못 맞춘 까닭. 화면에 그대로 뜬다 — 숫자만 보여 주면 무엇을 고쳐야 할지 모른다.
@@ -397,22 +401,26 @@ def is_closed(company: IrCompany) -> bool:
 
 
 def contracted(db: Session) -> List[IrCompany]:
-    """문서를 받는 기업 — `CONTRACTED` 에 들고 **폐업이 아닌** 곳만, 이름 순.
+    """문서를 받는 기업 — `CONTRACTED` 에 들고 **폐업도 딜소개 불가도 아닌** 곳만, 이름 순.
 
-    무엇이 대상인지는 **위 `CONTRACTED` 한 줄과 `is_closed` 가 정한다.** 여기서
-    조건을 다시 적지 않는다."""
-    from ..routers.companies import contract_key   # 순환 import 를 피해 늦게 부른다
+    무엇이 대상인지는 **위 `CONTRACTED` 한 줄과 `is_closed` · `deal_blocked` 가 정한다.**
+    여기서 조건을 다시 적지 않는다."""
+    # 순환 import 를 피해 늦게 부른다
+    from ..routers.companies import contract_key, deal_blocked
 
     rows = db.execute(select(IrCompany).order_by(IrCompany.name)).scalars().all()
     return [c for c in rows
-            if contract_key(c.contract_status) in CONTRACTED and not is_closed(c)]
+            if contract_key(c.contract_status) in CONTRACTED
+            and not is_closed(c) and not deal_blocked(c)]
 
 
 def uncontracted(db: Session) -> List[IrCompany]:
-    """받는 기업도 `딜소개 불가` 도 아닌 나머지 전부, 이름 순 — **보기만 한다**(#93).
+    """받는 기업도 계약여부 `딜소개 불가` 도 아닌 나머지 전부, 이름 순 — **보기만 한다**(#93).
 
-    미계약 · 빈칸 · 계약검토중 · 계약진행중 · 목록에 없는 글자 · **폐업**이 다 든다.
-    문서·카톡·발송은 이것을 읽지 않는다 — 받는 기업은 위 `contracted()` 하나다."""
+    미계약 · 빈칸 · 계약검토중 · 계약진행중 · 목록에 없는 글자 · **폐업** · **기업명에
+    `딜소개 불가` 꼬리표**(계약여부는 유료여도)가 다 든다. 계약여부가 `딜소개 불가` 인
+    기업은 전처럼 안 든다. 문서·카톡·발송은 이것을 읽지 않는다 — 받는 기업은 위
+    `contracted()` 하나다."""
     from ..routers.companies import BLOCKED_CONTRACT, contract_key
 
     sent = {c.id for c in contracted(db)}
@@ -494,14 +502,20 @@ def overview(db: Session, month: str) -> dict:
         })
     # 계약 안 한 기업 중 그 달 말까지 요청이 쌓인 곳 — **보기만 한다**(#93).
     # `rows` 에 섞지 않는다: 섞으면 `sendable` 을 지나 대표 카톡방으로 나간다.
-    # 폐업 기업은 요청이 없어도 남긴다 — 대상 목록에서 말없이 사라지면 왜 빠졌는지
-    # 물을 데가 없다. 계약여부 옆에 `· 폐업` 을 붙여 까닭을 보인다(엑셀도 이 값).
+    # 폐업 · 딜소개 불가(기업명 꼬리표) 기업은 요청이 없어도 남긴다 — 대상 목록에서 말없이
+    # 사라지면 왜 빠졌는지 물을 데가 없다. 계약여부 옆에 `· 딜소개 불가` · `· 폐업` 을
+    # 붙여 까닭을 보인다(엑셀도 이 값). 계약여부 `딜소개 불가` 는 `uncontracted` 에 없어
+    # 여기 `deal_blocked` 는 꼬리표만 걸린다.
+    from ..routers.companies import deal_blocked
+
     uncontracted_rows = [
         {"company": c,
-         "contract_label": contract_label(c) + (" · 폐업" if is_closed(c) else ""),
+         "contract_label": " · ".join(
+             [contract_label(c)] + (["딜소개 불가"] if deal_blocked(c) else [])
+             + (["폐업"] if is_closed(c) else [])),
          "total_count": len(total.of(c.id)),
          "total_firms": total.tally_of(c.id).firms}
-        for c in uncontracted(db) if total.of(c.id) or is_closed(c)]
+        for c in uncontracted(db) if total.of(c.id) or is_closed(c) or deal_blocked(c)]
     return {
         "month": month,
         "rows": rows,
