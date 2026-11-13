@@ -105,6 +105,9 @@ def view_as_on(member_id: int = Form(0), next: str = Form(""),
                db: Session = Depends(get_db),
                user: User = Depends(get_current_user)):
     admin_only(user)
+    # 고르개의 나 자신 = 보기를 끄고 내 화면으로(11/13) — 나를 대상으로 세우지 않는다.
+    if member_id == user.id:
+        return view_as_off(next, user)
     if not may_view_as(user, db.get(User, member_id)):
         raise HTTPException(status_code=404, detail="볼 수 있는 팀원이 아닙니다")
     resp = RedirectResponse(_safe_next(next) or "/", status_code=303)
