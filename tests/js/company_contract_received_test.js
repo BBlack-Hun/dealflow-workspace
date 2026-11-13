@@ -45,10 +45,15 @@ function build() {
 
   const ym = D.el("td", { class: "cell", "data-field": "contract_ym" });
 
+  const quote = D.el("td", {
+    class: "cell", "data-field": "quote_attached", "data-type": "pick",
+    "data-choices": "O,X"
+  });
+
   const tr = D.el("tr", {
     "data-id": "7", "data-search": "",
-    "data-f-contract": "유료계약완료", "data-f-received": ""
-  }, [D.el("td", { class: "rowno muted" }), name, ym, contract, received]);
+    "data-f-contract": "유료계약완료", "data-f-received": "", "data-f-quote": ""
+  }, [D.el("td", { class: "rowno muted" }), name, ym, contract, received, quote]);
 
   const table = D.el("table", { id: "co-table", "data-inline-url": "/api/companies" }, [
     D.el("tbody", {}, [tr])
@@ -67,7 +72,7 @@ function build() {
     D.el("button", { id: "co-save" })
   ]);
   return { root: root, table: table, tr: tr, received: received,
-           contract: contract, name: name, ym: ym };
+           contract: contract, name: name, ym: ym, quote: quote };
 }
 
 // --- companies.js 를 그대로 돌린다 ------------------------------------------
@@ -170,6 +175,26 @@ function saved(dom, cell, data) {
                              contract_received: "", contract_ym: "2026-11" });
   assert.strictEqual(dom.ym.textContent, "2026-11",
     "서버가 채운 계약년월이 새로고침 전까지 안 보입니다");
+}
+
+// ── 6. 계약 완료로 바꾸면 채워진 견적서 첨부 여부(i255)도 그 줄에 그린다 ─────
+{
+  const dom = build();
+  run(dom);
+  saved(dom, dom.contract, { contract_label: "무료계약완료", blocked: false,
+                             contract_received: "", quote_attached: "O" });
+  assert.strictEqual(dom.quote.textContent, "O",
+    "서버가 채운 견적서 첨부 여부가 새로고침 전까지 안 보입니다");
+  assert.strictEqual(dom.tr.getAttribute("data-f-quote"), "O",
+    "필터 값이 옛 빈칸 그대로라 `O` 를 고르면 이 기업이 빠집니다");
+  assert.strictEqual(dom.contract.textContent, "무료계약완료");
+
+  // 이름만 고친 응답은 견적서 칸을 안 건드린다(응답에 늘 실려 와도).
+  dom.quote.textContent = "X";
+  saved(dom, dom.name, { contract_label: "무료계약완료", blocked: false,
+                         contract_received: "", quote_attached: "O" });
+  assert.strictEqual(dom.quote.textContent, "X",
+    "이름을 고쳤는데 견적서 첨부 여부 칸이 덮였습니다");
 }
 
 console.log("company_contract_received_test OK");

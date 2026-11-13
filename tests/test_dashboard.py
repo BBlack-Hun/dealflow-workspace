@@ -171,6 +171,47 @@ def test_team_page_opens_for_admin(admin_client):
     assert "팀원별 현황" in r.text
 
 
+def test_team_page_follows_the_team_order(admin_client, db, users):
+    """팀 현황 줄 순서는 `TEAM_PAGE_ORDER`(운영 계정 id) — 이름·id 순이 아니다(i254).
+
+    목록에 없는 계정은 뒤에 id 순. 꺼진 계정은 지금처럼 계정 표에는 제자리에
+    서고(정지된 줄), 정지된 계정을 빼던 판(발송 상한 · 팀원 카톡방)에서는 빠진다.
+    같은 화면의 다른 판도 같은 순서로 선다.
+    """
+    import re
+
+    from app.models import AgentDevice, User
+    from app.services import auth as auth_svc
+    from app.services import send_guard
+    from app.services.dashboard import admin_dashboard
+
+    pw = auth_svc.hash_password(DEMO_PASSWORD)
+    rows = [(3, "consultant", 1), (4, "user", 1), (5, "user", 0), (6, "consultant", 1),
+            (7, "consultant", 1), (8, "admin", 1), (9, "user", 1), (10, "user", 1),
+            (11, "user", 1), (12, "user", 1), (13, "user", 0)]
+    db.add_all([User(id=i, name=f"가짜{i}", phone=f"010000000{i:02d}", role=role,
+                     is_active=on, password_hash=pw) for i, role, on in rows])
+    db.flush()
+    db.add_all([AgentDevice(user_id=i, token=f"tok-order-{i}", hostname="pc")
+                for i in (4, 9, 12)])
+    db.commit()
+
+    board = admin_dashboard(db)
+    assert [m["id"] for m in board["members"]] == [2, 8, 4, 1, 6, 7, 10, 11, 5, 9,
+                                                   3, 12, 13]
+    # 발송기 맡기기 고르개 — 발송기가 있는 살아 있는 딜소개 계정만, 같은 순서.
+    assert [h["id"] for h in board["agent_hosts"]] == [2, 4, 1, 9, 12]
+    # 발송 안전장치 상한 표 — 정지 · 투자컨설턴트는 지금처럼 빠진다.
+    assert [r["id"] for r in send_guard.status(db)["rows"]] == [2, 8, 4, 1, 10, 11,
+                                                               9, 12]
+
+    page = admin_client.get("/team").text
+    assert [int(i) for i in re.findall(r'name="cap_(\d+)"', page)] == [
+        2, 8, 4, 1, 10, 11, 9, 12]
+    assert [int(i) for i in re.findall(r'name="room_(\d+)"', page)] == [
+        2, 8, 4, 1, 6, 7, 10, 11, 9, 3, 12]
+
+
 def test_admin_can_create_member(admin_client, db):
     from app.models import AgentDevice, User
 

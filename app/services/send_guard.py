@@ -246,9 +246,10 @@ def status(db: Session, today: Optional[date] = None) -> dict:
     from .. import deps
 
     day = today or clock.today()
-    users = db.execute(
-        select(User).where(User.is_active == 1).order_by(User.id)
-    ).scalars().all()
+    # 팀 현황의 다른 표와 같은 줄 순서(`deps.TEAM_PAGE_ORDER`, i254).
+    users = deps.in_account_order(
+        db.execute(select(User).where(User.is_active == 1)).scalars().all(),
+        deps.TEAM_PAGE_ORDER)
     rows = []
     for user in users:
         if not deps.sends_deals(user):
