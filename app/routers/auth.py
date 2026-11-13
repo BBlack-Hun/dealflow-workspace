@@ -12,6 +12,7 @@ from ..deps import (VIEW_AS_COOKIE, admin_only, can_open, get_current_user,
                     home_for, may_view_as, templates)
 from ..ui import PASSWORD_CHANGED, base_ctx
 from ..models import User
+from ..services import account_rename
 from ..services import auth as auth_svc
 
 router = APIRouter(tags=["auth"])
@@ -168,3 +169,70 @@ def change_password(
     resp = RedirectResponse(f"{home_for(user)}?{PASSWORD_CHANGED}=1", status_code=303)
     auth_svc.set_session_cookie(resp, token)
     return resp
+
+
+# ── 이름 바꾸기 ─────────────────────────────────────────────────────────────
+# 같은 사람의 표시 이름을 바꾸고 그 이름이 든 탭 · 담당자 칸을 같이 옮긴다
+# (`services/account_rename`). **본인은 누구나, 남의 것은 관리자만** — 팀 현황의 줄마다
+# 이 화면으로 오는 링크가 있고(`?member=`), 팀 현황을 못 여는 팀원은 사이드바에서 온다.
+# 한 화면이 미리보기(GET `?to=`)와 바꾸기(POST)를 같이 한다 — 미리 본 계획의 지문
+# (`expect`)이 맞아야 바뀐다.
+#
+# `/account` 아래라 팀원 화면으로 보는 중에도 관리자 본인으로 열린다
+# (`deps.VIEW_AS_OWN_PATHS`). 그래도 **보는 중에는 바꾸지 않는다** — 화면 위 띠는 팀원
+# 이름을 말하는데 바뀌는 것은 관리자 이름이라 헷갈리고, 대리 보기는 보기 · 수정까지가 원칙이다.
+VIEW_AS_RENAME_BLOCKED = ("팀원 화면으로 보는 중에는 이름을 바꿀 수 없습니다 — "
+                          "[내 화면으로] 돌아간 뒤 바꿔 주세요")
+
+
+def _rename_target(db: Session, user: User, member_id: int) -> User:
+    """이름을 바꿀 계정 — 본인이 아니면 관리자만."""
+    if not member_id or member_id == user.id:
+        return user
+    admin_only(user)
+    member = db.get(User, member_id)
+    if member is None:
+        raise HTTPException(status_code=404, detail="계정을 찾을 수 없습니다")
+    return member
+
+
+@router.get("/account/name", response_class=HTMLResponse, include_in_schema=False)
+def name_page(request: Request, member: int = 0, to: str = "", msg: str = "",
+              db: Session = Depends(get_db),
+              user: User = Depends(get_current_user)):
+    target = _rename_target(db, user, member)
+    ctx = base_ctx(request, db, user, active="")
+    ctx.update({"member": target, "to": to, "msg": msg, "plan": None, "refused": "",
+                "max_name": account_rename.MAX_NAME,
+                "viewing": getattr(request.state, "view_as", None) is not None,
+                "view_as_blocked": VIEW_AS_RENAME_BLOCKED})
+    if to.strip():
+        try:
+            ctx["plan"] = account_rename.plan(db, target, to)
+        except account_rename.RenameRefused as exc:
+            ctx["refused"] = str(exc)
+    return templates.TemplateResponse(request, "account_name.html", ctx)
+
+
+@router.post("/account/name", include_in_schema=False)
+def rename_account(request: Request, member: int = Form(0), name: str = Form(""),
+                   expect: str = Form(""), db: Session = Depends(get_db),
+                   user: User = Depends(get_current_user)):
+    from urllib.parse import quote
+
+    target = _rename_target(db, user, member)
+    back = f"/account/name?member={target.id}&to={quote(name)}&msg="
+    if getattr(request.state, "view_as", None) is not None:
+        return RedirectResponse(back + quote(VIEW_AS_RENAME_BLOCKED), status_code=303)
+    try:
+        done = account_rename.apply(db, target, name, actor_user_id=user.id,
+                                    expect=expect, path=request.url.path, method="POST")
+    except account_rename.RenameRefused as exc:
+        db.rollback()
+        return RedirectResponse(back + quote(str(exc)), status_code=303)
+    db.commit()
+    text = (f"이름을 {done.before} → {done.after} 로 바꿨습니다 "
+            f"(탭 {len(done.tabs)}개 · 담당자 칸 {done.total}줄)")
+    if target.id != user.id:
+        return RedirectResponse(f"/team?msg={quote(text)}", status_code=303)
+    return RedirectResponse(f"/account/name?msg={quote(text)}", status_code=303)
