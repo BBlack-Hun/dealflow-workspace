@@ -61,8 +61,17 @@ class Sender:
     can_send_files = False
 
     def verify_room(self, room_name: str) -> str:
-        """Return 'verified' | 'not_found' | 'ambiguous'. (Used by Sprint 2 [방 연결 확인].)"""
+        """Return 'verified' | 'not_found' | 'ambiguous'. (Used by Sprint 2 [방 연결 확인].)
+
+        확인하려고 연 채팅창은 판정 뒤 **스스로 닫는다** — 열기 전부터 떠 있던 창은
+        건드리지 않는다(0.11.15). 닫기가 안 돼도 판정은 그대로 돌려준다.
+        """
         raise NotImplementedError
+
+    def tidy_after_verify(self) -> None:
+        """방 확인 회차가 **어떻게 끝났든** 끝에 한 번 부른다 (0.11.15) — 검색칸에 남은
+        글자 같은 것을 치운다. 던져도 판정 · 보고는 그대로다(`agent/main.py:
+        process_verify_job`). 기본은 할 일 없음."""
 
     def send_text(self, room_name: str, text: str, should_stop=None) -> SendResult:
         """Send `text` to the chat room whose title EXACTLY equals `room_name`.

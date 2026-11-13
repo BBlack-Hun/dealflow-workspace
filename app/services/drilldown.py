@@ -14,12 +14,27 @@
 
 ## 칸은 원천에서 읽는다 — 새로 베껴 두지 않는다
 
-  · 심사역 이름 · 투자사명 · 연락처 · 회사주소 — 투자사 명단 줄(`VcContact`)
+  · 심사역 이름 · 투자사명 · 연락처 · 회사주소 — 투자사 명단 줄(`VcContact`). 회사주소가
+    빈 줄은 **같은 투자사의 다른 심사역 줄**에 적힌 주소를 보인다(i241 — 회사주소는 사람이
+    아니라 회사 값이다. 여럿이면 가장 많이 적힌 것).
   · 스타트업명 · 기업 담당자 · 그 연락처 · Pre Value · 연도 매출 · 누적투자금액 ·
-    투자유치희망금액 — IR 기업 현황 줄(`pipeline.company_finder`: IR 번호 → IR 기업명 →
-    Series A 같은 이름). Series A 줄이면 같은 뜻의 칸을 `company_sync.slot` 으로 찾는다.
-    IR 기업 현황과 Series A · 스타트업 명단의 같은 이름 칸은 이미 서로 따라 고친다
-    (`company_sync`) — 그래서 어느 메뉴에서 적어도 여기 같은 값이 보인다.
+    투자유치희망금액 — IR 기업 현황 줄(`_finder`: IR 번호 → IR 기업명 → Series A 같은 이름
+    → 꼬리표 뗀 이름 → 시트 이력 글에서 기업명 조각). Series A 줄이면 같은 뜻의 칸을
+    `company_sync.slot` 으로 찾는다. IR 기업 현황과 Series A · 스타트업 명단의 같은 이름
+    칸은 이미 서로 따라 고친다(`company_sync`) — 그래서 어느 메뉴에서 적어도 여기 같은
+    값이 보인다.
+
+## 시트 이력 글에서도 기업을 찾는다(i241)
+
+시트에서 옮겨 온 요청 · 미팅 줄의 기업명은 사람이 적은 글 그대로라 `샘플가 전달` ·
+`1.샘플나 요청 -> 8/4(화) 전달 완료` 같은 꼴이 많고, IR 쪽 이름에는 `[딜소개 불가/…]` ·
+`(영문명)` 같은 꼬리표가 붙어 있다. 글자 그대로만 맞추면 운영 값으로 `IR 요청받은 기업`
+539줄 중 220줄(41%)이 기업을 못 찾아 기업 칸이 통째로 비었다. 그래서 못 찾은 줄만
+  ① 양쪽 꼬리표(`[…]` · 법인 표기 아닌 `(…)`)를 떼고 맞추고,
+  ② 그래도 없으면 글을 `company_names.split`(딜소개 칸을 쪼개는 그 규칙)으로 조각내
+     조각 · 조각 안 낱말을 **글자 그대로** 맞춘다 — 부분일치는 하지 않는다.
+     맞는 기업이 **딱 하나**일 때만 붙인다(여럿이면 어느 것인지 모르므로 비운다).
+스타트업명 칸은 적힌 글 그대로 둔다 — 그 글이 그날의 기록이다.
   · 미팅 일시 · 미팅 결과 — 미팅 기록(`Meeting`). 미팅 줄이 아닌 것(IR 요청 · 시트 이력)은
     같은 심사역 × 기업의 가장 최근 미팅(취소 제외)을 붙인다. 결과 글자는 `OUTCOMES`
     를 읽고, 모르는 값이면 적힌 그대로 둔다 — 결과 칸은 따로 손보는 중이다(#176 · #183).
@@ -29,6 +44,8 @@
 """
 from __future__ import annotations
 
+import re
+from collections import Counter
 from datetime import date
 from typing import Dict, List, Optional
 
@@ -36,8 +53,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..models import IrCompany, Meeting, User, VcContact
-from . import amount, company_sync, dashboard, pipeline, report, revenue_years
+from . import (amount, company_names, company_sync, dashboard, investor_firms, pipeline,
+               report, revenue_years)
 from .dashboard import ReactionHit
+
+#: 기업명 꼬리표 — `[딜소개 불가/…]` · `(딜 클로징 …)` · `(영문명)`. 법인 표기 `(주)` 류는 남긴다
+#: (`pipeline._key` 가 뗀다).
+_TAG = re.compile(r"\[[^\]]*\]|\((?![주유재사합]\))[^)]*\)")
 
 #: 반응 칸 이름 — 대시보드 패널의 글자 그대로(`REACTION_ROWS` + 달로 못 가르는 하나).
 REACTION_LABELS = {**{r["key"]: r["label"] for r in dashboard.REACTION_ROWS},
@@ -83,6 +105,49 @@ def _company_value(company, field: str) -> str:
     return (amount.phrase(text) or text) if text and field in _MONEY else text
 
 
+def _bare(name: Optional[str]) -> str:
+    """꼬리표를 뗀 비교용 이름(`_TAG` → `pipeline._key`)."""
+    return pipeline._key(_TAG.sub(" ", name or ""))
+
+
+def _finder(db: Session):
+    """`pipeline.company_finder` + 못 찾은 줄만 한 번 더(머리말 `시트 이력 글에서도`)."""
+    find = pipeline.company_finder(db)
+    bare: Dict[str, object] = {}
+    for c in db.execute(select(IrCompany).order_by(IrCompany.id)).scalars():
+        bare.setdefault(_bare(c.name), c)
+    for row in pipeline.series_a_rows(db).values():
+        bare.setdefault(_bare(row.name), row)
+    bare.pop("", None)
+
+    def loose(company_id: Optional[int], name: Optional[str]):
+        got = find(company_id, name)
+        if got is None:
+            got = bare.get(_bare(name))
+        if got is not None or not (name or "").strip():
+            return got
+        found: Dict[int, object] = {}
+        for piece in company_names.split(name).names:
+            hit = bare.get(_bare(piece))
+            words = piece.split()
+            cands = [hit] if hit is not None else [
+                bare.get(_bare(w)) for w in words
+                if len(words) > 1 and len(w) >= 2 and not company_names.is_noise_word(w)]
+            found.update((id(c), c) for c in cands if c is not None)
+        return next(iter(found.values())) if len(found) == 1 else None
+    return loose
+
+
+def _firm_addresses(db: Session) -> Dict[str, str]:
+    """투자사(`investor_firms.firm_key`) → 그 회사 심사역 줄에 가장 많이 적힌 회사주소."""
+    seen: Dict[str, Counter] = {}
+    for firm, address in db.execute(select(VcContact.firm, VcContact.address)):
+        key, text = investor_firms.firm_key(firm), (address or "").strip()
+        if key and text:
+            seen.setdefault(key, Counter())[text] += 1
+    return {k: n.most_common(1)[0][0] for k, n in seen.items()}
+
+
 def _meeting_at(m: Optional[Meeting]) -> str:
     if m is None:
         return ""
@@ -97,7 +162,8 @@ def lines(db: Session, hits: List[ReactionHit], fields: List[str]) -> tuple:
     contact_ids = {h.contact_id for h in hits} or {0}
     contacts = {c.id: c for c in db.execute(
         select(VcContact).where(VcContact.id.in_(contact_ids))).scalars()}
-    find = pipeline.company_finder(db)
+    find = _finder(db)
+    addresses = _firm_addresses(db)
 
     def pair(contact_id, company, name):
         return contact_id, company if company is not None else (name or "").strip()
@@ -125,7 +191,9 @@ def lines(db: Session, hits: List[ReactionHit], fields: List[str]) -> tuple:
                 "vc_name": contact.name if contact else "",
                 "firm": (contact.firm or "") if contact else "",
                 "phone": (contact.phone or "") if contact else "",
-                "address": (contact.address or "") if contact else "",
+                "address": ((contact.address or "").strip()
+                            or addresses.get(investor_firms.firm_key(contact.firm), "")
+                            if contact else ""),
                 "company": h.company or (company.name if company is not None else ""),
                 "ceo_name": _company_value(company, "contact_name"),
                 "ceo_phone": _company_value(company, "contact_phone"),

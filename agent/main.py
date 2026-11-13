@@ -688,6 +688,24 @@ def process_job(client: AgentClient, sender, job: dict, cfg: dict):
 
 
 def process_verify_job(client: AgentClient, sender, job: dict, cfg: dict):
+    """방 이름 대조 잡 — 건마다 대조하고(`_verify_items`), 끝나면 **어떻게 끝났든**
+    카톡을 정리한다(`Sender.tidy_after_verify` — 0.11.15, 맥은 검색칸 글자 지우기).
+
+    정리가 안 돼도 이미 올린 판정 · 잡 보고는 그대로다. 확인하느라 연 채팅창은
+    건마다 발송기가 닫는다(`verify_room` · Windows 맨 위 방 열기).
+    """
+    try:
+        _verify_items(client, sender, job, cfg)
+    finally:
+        tidy = getattr(sender, "tidy_after_verify", None)
+        if tidy is not None:
+            try:
+                tidy()
+            except Exception as exc:  # noqa: BLE001 - 정리 실패로 결과를 바꾸지 않는다
+                log.warning("방 확인 뒤 카톡 정리 실패(결과는 그대로): %s", exc)
+
+
+def _verify_items(client: AgentClient, sender, job: dict, cfg: dict):
     """방 이름 대조 잡 (ROADMAP 2.5) — 검색만 하고 **전송은 하지 않는다**.
 
     방 제목이 실제와 다르면 발송이 통째로 skip 되므로, 실운영 전에 담당자 전원을
