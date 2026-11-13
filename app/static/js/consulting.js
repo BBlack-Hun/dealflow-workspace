@@ -468,6 +468,16 @@
             && typeof data.values[field] === "string") {
           valueBox(cell).textContent = data.values[field];
         }
+        // 같은 저장으로 **따라 바뀐 옆 칸** — 계약여부를 계약 완료로 고치면 비어 있던
+        // `견적서 첨부 여부` 가 `O` 로 채워져 온다(i255 · `routers/consulting.update_company`).
+        if (!custom && !noteId && data && data.values) {
+          Object.keys(data.values).forEach(function (f) {
+            var td = f === field ? null : tr.querySelector('td.cell[data-field="' + f + '"]');
+            if (td && td !== editing && typeof data.values[f] === "string") {
+              valueBox(td).textContent = data.values[f];
+            }
+          });
+        }
         // IR 칸 — 서버가 준 **그 IR 기업의 화면 글자 전부**로 이 줄의 IR 칸을 다시 적는다.
         // 금액은 `억` 이 붙고(`30` → `30억`), 한 칸을 고쳐도 `딜 소개 문구` 처럼 따라
         // 바뀌는 칸이 있다. 그사이 다시 연 칸은 건드리지 않는다(치는 중인 입력칸이 지워진다).

@@ -5,6 +5,8 @@
 //   1. `2026.3` 을 치면 `contract_ym` 으로 나가고, 응답의 `values`(`2026-03`)로 칸을 다시 적는다.
 //   2. 응답에 `values` 가 없으면(옛 서버 · 깨진 본문) 친 글자 그대로 둔다.
 //   3. 서버가 막으면(400) 까닭을 띄우고 칸을 옛 값으로 되돌린다.
+//   4. 응답 `values` 에 **따라 바뀐 옆 칸**이 실려 오면 그 칸도 적는다 — 계약 완료로 고치면
+//      비어 있던 `견적서 첨부 여부` 가 `O` 로 채워져 온다(i255).
 "use strict";
 const assert = require("assert");
 const fs = require("fs");
@@ -24,7 +26,10 @@ function row(id, value) {
   }, [cell]);
 }
 
-const rows = [row(1, ""), row(2, "2026-01"), row(3, "2026-05")];
+const rows = [row(1, ""), row(2, "2026-01"), row(3, "2026-05"), row(4, "")];
+// 4번 줄에는 `견적서 첨부 여부` 칸도 선다(관리 스타트업 탭).
+const quote = D.el("td", { class: "cell", "data-field": "contract_management" });
+rows[3].appendChild(quote);
 const root = D.el("div", {}, [
   D.el("span", { class: "kpi-value", "data-kpi": "total" }),
   D.el("button", { "data-cs-filter": "" }),
@@ -102,6 +107,15 @@ async function type(tr, text) {
   cell = await type(rows[2], "다음 달");
   assert.deepStrictEqual(alerts, [reply.body.detail], "서버가 막은 까닭이 안 보입니다");
   assert.strictEqual(cell.textContent, "2026-05", "막혔는데 칸이 옛 값으로 안 돌아왔습니다");
+
+  // 4. 따라 바뀐 옆 칸도 응답 값으로 적는다.
+  alerts.length = 0;
+  reply = { ok: true, body: { id: 4, stamps: {},
+                              values: { contract_ym: "2026-11", contract_management: "O" } } };
+  cell = await type(rows[3], "2026-11");
+  assert.strictEqual(cell.textContent, "2026-11");
+  assert.strictEqual(quote.textContent, "O", "채워진 견적서 첨부 여부가 새로고침 전까지 안 보입니다");
+  assert.deepStrictEqual(alerts, []);
 
   console.log("consulting_contract_ym_test OK");
 })().catch(function (e) { console.error(e); process.exit(1); });

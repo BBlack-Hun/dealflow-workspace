@@ -564,13 +564,19 @@ def _stamp_contract_done(session, flush_context, instances) -> None:
     `_sync_company_links` **뒤에** 건다 — 투자컨설턴트 · 스타트업 줄에서 IR 로 따라
     고친 계약여부까지 여기서 읽혀야 한다. 그래서 여기서 저절로 적은 계약년월은 따라 고치기를
     못 지났다 — 이어진 줄에 마저 적는다(#206 · `company_sync.follow_late`).
+
+    같은 까닭으로 여기서 — 계약 완료로 적힌 줄의 빈 `견적서 첨부 여부` 에 `O`(i255 ·
+    `services/contract_quote`). 그 `O` 도 이어진 줄의 빈칸에 마저 적는다.
     """
-    from .services import company_sync
+    from .services import company_sync, contract_quote
     from .services.automations import contract_day7
 
     stamped = contract_day7.before_flush(session)
     if stamped:
         company_sync.follow_late(session, stamped, "contract_ym")
+    quoted = contract_quote.before_flush(session)
+    if quoted:
+        company_sync.follow_late(session, quoted, "quote_attached")
 
 
 event.listen(OrmSession, "before_flush", _stamp_contract_done)
