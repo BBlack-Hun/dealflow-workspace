@@ -542,6 +542,10 @@ def _apply_verify_result(item: SendItem, body: ItemResult,
     # 투자사 담당자를 **이름으로 찾은** 건(방 이름이 빈 건) — 찾은 방이 이 분 방으로
     # 분명할 때만 빈 방 이름 칸을 채우고, 적어 둔 이름으로 못 찾아 되돌아온 건이면 그
     # 제목으로 방 이름을 바꾼다(11/13). 아래 대조 길은 여전히 안 바꾼다.
+    #
+    # 앞 결과(다시 확인 전)에 담아 둔 후보는 뗀다 — 이번 결과로 새로 담는다
+    # (`vc_room_search.save_rooms`). 대조 길은 후보를 안 담는다(진행 화면 단추 없음).
+    item.room_candidates = None
     if vc_room_search.is_search(item.job, item):
         vc_room_search.apply_result(item, body)
         return

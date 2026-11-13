@@ -106,6 +106,16 @@
 </p>
 {% endif %}
 
+{# **찾기 결과를 머리에 센다**(11/13 — 사용자: "투자사 방 찾기처럼 별도의 체크하는 화면").
+   진행 화면이 끝날 때 띄우는 알림과 **같은 셈**이다(`room_match.find_state`). #}
+{% if find_counts %}
+<p class="muted" data-testid="room-find-summary">
+  찾기 결과: {% for label, n in find_counts %}{{ label }} <b>{{ n }}곳</b>{% if not loop.last %} · {% endif %}{% endfor %}
+  — <b>찾음 · 여럿</b>은 후보를 골라 <b>[확정]</b>, <b>못 찾음</b>은 카톡에서 방 제목을 복사해 적어 주세요.
+</p>
+{% endif %}
+<p class="hint error" id="room-match-error" role="alert"></p>
+
 <form method="post" action="/deals/startup-ir/rooms" id="room-match">
   {# 고른 기업으로 연 화면이면 저장도 **그 기업들**을 받는다(`room_match.company_ids`). #}
   <input type="hidden" name="ids" value="{{ ids }}">
@@ -116,7 +126,8 @@
           <th>기업명</th>
           <th>대표자명</th>
           <th>대표 카톡방 제목 — 카톡에 보이는 글자 그대로</th>
-          <th>확인</th>
+          <th>찾기 결과</th>
+          <th>확인 · 확정</th>
         </tr>
       </thead>
       <tbody>
@@ -126,7 +137,7 @@
           없다(`services/startup_send.rows` 의 그 규칙 그대로).
         #}
         {% for row in rows %}
-        <tr{% if not row.room %} class="ir-row-off"{% endif %}>
+        <tr data-id="{{ row.company.id }}"{% if not row.room %} class="ir-row-off"{% endif %}>
           <td>
             {#
               **기업 번호와 방 제목 칸이 같은 순서로 나간다**(짝지은 두 목록).
@@ -148,14 +159,18 @@
                 회사명이 안 든 후보도 **지우지 않는다**: 우리가 아는 이름이
                 방을 만들 때 쓴 이름과 다를 수 있어, 지우면 맞는 방이 사라진다.
               #}
+              {#
+                **하나만 고른다**(11/13) — 누른 후보에 `picked` 가 서고 같은 줄의 다른 후보는
+                풀린다(`startup_room.js`). 지금 칸에 든 제목과 같은 후보는 처음부터 골라져 선다.
+              #}
               {% for c in row.candidates if c.has_name %}
-              <button type="button" class="chip room-pick named"
-                      data-room="{{ c.room }}"
+              <button type="button" class="chip room-pick named{% if c.room == row.room %} picked{% endif %}"
+                      data-room="{{ c.room }}" aria-pressed="{{ 'true' if c.room == row.room else 'false' }}"
                       title="카톡에서 찾은 방 제목입니다 — 맞는지 보고 누르세요">{{ c.room }}</button>
               {% endfor %}
               {% for c in row.candidates if not c.has_name %}
-              <button type="button" class="chip room-pick"
-                      data-room="{{ c.room }}"
+              <button type="button" class="chip room-pick{% if c.room == row.room %} picked{% endif %}"
+                      data-room="{{ c.room }}" aria-pressed="{{ 'true' if c.room == row.room else 'false' }}"
                       title="카톡에서 찾았지만 제목에 회사명이 안 보입니다 — 정말 이 방인지 보고 누르세요">{{ c.room }}<span class="muted"> · 회사명 없음</span></button>
               {% endfor %}
               {#
@@ -187,18 +202,31 @@
             {% endif %}
           </td>
           <td>
+            {# 찾음 · 여럿 · 못 찾음 · 확인됨 · 안 찾아봄 · 찾는 중(`room_match.find_state`). #}
+            <span class="room-badge room-find {% if row.find == 'verified' %}ok{% elif row.find in ('found', 'many') %}warn{% else %}muted{% endif %}"
+                  data-find="{{ row.find }}">{{ row.find_label }}{% if row.find == 'many' %} {{ row.candidates|length }}{% endif %}</span>
+          </td>
+          <td>
             {% if not row.room %}
-            <span class="room-badge muted">{{ no_room_label }}</span>
+            <span class="room-badge room-state muted">{{ no_room_label }}</span>
             {% elif row.state == 'verified' %}
-            <span class="room-badge ok">{{ row.state_label }}</span>
+            <span class="room-badge room-state ok">{{ row.state_label }}</span>
             {% else %}
-            <span class="room-badge muted">{{ row.state_label }}</span>
+            <span class="room-badge room-state muted">{{ row.state_label }}</span>
             {% endif %}
+            {#
+              **이 줄만** 넣는다(`only`) — 새로고침 없이 그 줄만 고친다(`startup_room.js`).
+              고른 후보 그대로면 확인됨, 직접 적은 글자는 확인 안 됨이다.
+              `type="button"` 이다 — 폼 안 첫 전송 단추가 되면 글자 칸에서 Enter 를 친 것이
+              **맨 윗줄만 넣는** 전송이 된다. 스크립트가 없으면 아래 [고른 것 확정] 을 쓴다.
+            #}
+            <button type="button" class="linkbtn room-confirm"
+                    data-id="{{ row.company.id }}">확정</button>
           </td>
         </tr>
         {% endfor %}
         {% if not rows %}
-        <tr><td colspan="4" class="muted">{% if ids %}고른 기업이 없습니다.{% else %}계약을 마친 기업이 없습니다.{% endif %}</td></tr>
+        <tr><td colspan="5" class="muted">{% if ids %}고른 기업이 없습니다.{% else %}계약을 마친 기업이 없습니다.{% endif %}</td></tr>
         {% endif %}
       </tbody>
     </table>
@@ -209,10 +237,11 @@
     (지금까지 막혀 있던 까닭이 기업마다 창을 하나씩 여는 것이었다), 줄마다
     따로 누르게 하면 그 문제가 그대로 남는다.
   #}
-  <button type="submit" class="primary-btn">{{ total }}줄 저장</button>
+  <button type="submit" class="primary-btn" id="room-match-save">고른 것 확정 ({{ total }}줄 중 바뀐 줄)</button>
   <p class="hint">
-    바뀐 줄만 들어갑니다. 글자를 고친 줄은 <b>확인</b> 표시가
-    <b>확인 안 됨</b> 으로 되돌아갑니다 — 확인은 <b>그때 그 글자</b>에 대한
+    바뀐 줄만 들어갑니다 — 줄마다 <b>[확정]</b> 을 눌러도 됩니다(그 줄만 들어갑니다).
+    <b>카톡에서 찾은 후보를 골라 넣은 줄은 확인됨</b>이 되어 바로 보낼 수 있고, 직접 적은 글자는
+    <b>확인 안 됨</b> 으로 들어갑니다 — 확인은 <b>그때 그 글자</b>에 대한
     것이라, 글자를 고치면 확인한 적이 없는 것입니다.
     <br>이 표는 <b>보낼 곳을 정하는 자리가 아닙니다</b> — 회차는
     {% if may_send %}<a href="/deals/startup-ir">{{ label }}</a> · {% endif %}IR 기업 현황 › <a href="{{ msg_tab_href }}">스타트업으로 카톡보내기</a>에서 세웁니다.

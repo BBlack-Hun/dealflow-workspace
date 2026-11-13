@@ -68,9 +68,11 @@
     이미 팀 전체라 지금처럼 수 하나다(`team_total` 이 `None`).
   #}
   {% if page.investors or tabs %}
-  <a class="sheet-tab {% if not selected_sheet %}active{% endif %}" href="{{ page.href }}?sheet=all"{% if not page.investors %} title="이 화면의 명단 전부 — 달 칸은 명단마다 달라 고정 칸만 보입니다"{% elif team_total is not none %} title="표에는 내 명단이 보입니다 — 팀 전체는 인원 수만 적습니다"{% endif %}>
+  <a class="sheet-tab {% if not selected_sheet %}active{% endif %}" href="{{ page.href }}?sheet=all"{% if not page.investors %} title="이 화면의 명단 전부 — 달 칸은 명단마다 달라 고정 칸만 보입니다"{% elif team_total is not none %} title="표에는 내 명단이 보입니다 — 팀 전체는 인원 수만 적습니다"{% else %} title="{{ total_count }}명 중 카톡방 확인됨 {{ total_confirmed }}명"{% endif %}>
     {% if team_total is not none %}
-    전체 <span data-testid="all-tab-counts">내 명단 {{ total_count }}명 · 팀 전체 {{ team_total }}명</span>
+    전체 <span data-testid="all-tab-counts">내 명단 {{ total_count }}명 / 확인 {{ total_confirmed }} · 팀 전체 {{ team_total }}명</span>
+    {% elif page.investors %}
+    전체 <span data-testid="all-tab-counts">{{ total_count }}명 / 확인 {{ total_confirmed }}</span>
     {% else %}
     전체 <span>{{ total_count }}</span>
     {% endif %}
@@ -81,12 +83,17 @@
      감추면 되돌리려고 DB 를 직접 고쳐야 한다. 대신 표시를 달아 둔다. #}
   <a class="sheet-tab {% if selected_sheet == t.key %}active{% endif %}{% if t.is_hidden %} muted-tab{% endif %}"
      href="{{ page.href }}?sheet={{ t.key|urlencode }}"
-     title="{{ t.kind_label }} · 연결 완료 {{ t.connected }}명{% if t.owner %} · 담당 {{ t.owner }}{% endif %}{% if t.is_deal_list %} · 딜소개를 보내는 명단{% endif %}{% if t.is_hidden %} · 투자사로 세지 않는 명단{% endif %}{% if t.hidden_rows %} · 감춘 줄 {{ t.hidden_rows }}개{% endif %}">
+     title="{{ t.kind_label }}{% if page.investors %} · {{ t.shown }}명 중 카톡방 확인됨 {{ t.shown_confirmed }}명{% endif %} · 연결 완료 {{ t.connected }}명{% if t.owner %} · 담당 {{ t.owner }}{% endif %}{% if t.is_deal_list %} · 딜소개를 보내는 명단{% endif %}{% if t.is_hidden %} · 투자사로 세지 않는 명단{% endif %}{% if t.hidden_rows %} · 감춘 줄 {{ t.hidden_rows }}개{% endif %}">
     {% if t.kind == 'pool' %}<span class="pool-dot" title="투자사 풀">◇</span>{% endif %}{% if t.is_hidden %}<span class="pool-dot" title="투자사로 세지 않는 명단">🚫</span>{% endif %}{#
       딜 소개를 보내는 명단인지 **탭에서 바로 보여야 한다.** 발송 대상의
       모집단이 이 표시로 정해지는데, 어느 탭이 그 명단인지 화면에 없으면
       "왜 이 사람이 발송 목록에 없지" 를 설정 화면까지 들어가 봐야 안다.
-    #}{% if t.is_deal_list %}<span class="pool-dot" title="딜소개를 보내는 명단">✉</span>{% endif %}{{ t.label }} <span>{{ t.count }}</span>
+    #}{% if t.is_deal_list %}<span class="pool-dot" title="딜소개를 보내는 명단">✉</span>{% endif %}{{ t.label }} {#
+      투자사 화면은 `총원 / 확인` 을 같이 적는다(11/13) — 탭 이름의 `119명` 은 가져올
+      때 붙은 글자라 실제 줄 수와 다르다. 총원은 이 탭을 눌렀을 때 표에 뜨는 줄 수,
+      확인은 그중 [방 연결 확인] 이 `확인됨` 으로 끝난 줄(`dashboard.room_confirmed`).
+      스타트업 화면은 방 확인의 뜻이 달라(대표와의 방) 지금처럼 수 하나다.
+    #}{% if page.investors %}<span data-testid="tab-counts">{{ t.shown }}명 / 확인 {{ t.shown_confirmed }}</span>{% else %}<span>{{ t.count }}</span>{% endif %}
   </a>
   {% endfor %}
 

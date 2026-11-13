@@ -1529,6 +1529,12 @@ class SendItem(TimestampMixin, Base):
     # 손으로 첨부한다. 자동 첨부를 켠 계정에서만 채워진다
     # (`services/ir_attach.py: auto_attach_enabled`).
     files_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # **투자사 [방 연결 확인]이 이름으로 찾은 방 제목들**(JSON) — 저절로 확정하지 못한
+    # 건의 진행 화면 사유 칸에 후보 단추로 선다(11/13). 사유 글(`error`)은 잘린 참고
+    # 글이라 다시 쪼개 읽지 않는다 — 발송기가 올린 제목을 **자르지 않고** 여기 담는다.
+    # 모양 · 읽고 쓰는 함수는 `services/vc_room_search`(`save_rooms` · `pick_view`).
+    # 다른 잡(발송 · 스타트업 · IR 기업 · 딜 소싱 찾기)은 비워 둔다 — 그쪽은 줄에 담는다.
+    room_candidates: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     # pending | sending | sent | failed | canceled
     status: Mapped[str] = mapped_column(String, default="pending")
     error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

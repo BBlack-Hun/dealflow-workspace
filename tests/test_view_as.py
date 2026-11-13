@@ -37,6 +37,8 @@ SEND_ROUTES = {
     ("POST", "/api/jobs/{job_id}/resume"),
     ("POST", "/api/jobs/{job_id}/schedule"),
     ("POST", "/api/contacts/verify-rooms"),
+    # 그 진행 화면의 찾은 방 후보 — 방 이름을 넣고 그 한 줄만 [방 연결 확인](11/13).
+    ("POST", "/api/jobs/{job_id}/items/{item_id}/room-pick"),
     ("POST", "/api/startup-msg/send"),
     ("POST", "/api/startup-rooms/search"),
     # IR 기업현황 탭의 안내 카톡 · [카톡방 찾기·확인](11/11) — 보내는 계정 PC 로 선다.
@@ -61,6 +63,7 @@ SEND_ROUTES = {
 # 회차 단추(`/api/jobs/…`)는 딜 소개 · 방 확인 회차만 연다 — 아래 3-2 에서 본다.
 OPEN_ROUTES = {
     ("POST", "/api/contacts/verify-rooms"),
+    ("POST", "/api/jobs/{job_id}/items/{item_id}/room-pick"),
     ("POST", "/sourcing/rooms/search"),
     ("POST", "/api/startup-rooms/search"),
     ("POST", "/api/deals/send"),

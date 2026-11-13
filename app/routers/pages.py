@@ -14,7 +14,7 @@ from .. import clock
 from ..db import get_db
 from ..deps import get_current_user, may_manage_team_contacts, proxy_job, templates
 from ..models import ROOM_SEARCH_TOPIC, STARTUP_MSG_KIND, IrCompany, SendJob, User
-from ..services import (cadence, contact_columns, custom_columns, deal_history, deal_queue,
+from ..services import (cadence, contact_columns, custom_columns, dashboard, deal_history, deal_queue,
                         deal_stage, email_domains, group_name, investor_firms, ir_attach,
                         ir_outreach, ir_readonly, llm_brief, mailer, manual_send, memo_intro, no_reaction,
                         ref_panel, send_window, series_a_share, sheet_import,
@@ -540,6 +540,14 @@ def list_page(
     hidden_rows = [r for r in rows if r["is_hidden"]]
     if not hidden:
         rows = [r for r in rows if not r["is_hidden"]]
+    # 탭에 적는 `총원 / 확인`(11/13) — **그 탭의 표에 뜨는 줄**로 센다. 감춘 줄은
+    # 빠지되, [함께 보기](`?hidden=1`)로 연 탭은 표에 그 줄도 뜨니 같이 센다
+    # (다른 탭 링크는 `hidden` 을 안 실어서 누르면 감춘 줄이 빠진 표가 뜬다).
+    for t in tabs:
+        with_hidden = bool(hidden) and t["key"] == selected
+        t["shown"] = t["count"] + (t["hidden_rows"] if with_hidden else 0)
+        t["shown_confirmed"] = (t["confirmed"]
+                                + (t["hidden_confirmed"] if with_hidden else 0))
 
     # 이 명단이 쓰는 표 배치. 정해 두지 않은 명단은 지금까지의 투자사 명함 표다.
     # 아무 명단도 안 골랐으면 **이 화면의 기본 표**다 — 그냥 `DEFAULT` 로 두면
@@ -582,6 +590,9 @@ def list_page(
     # `services/ref_panel.py` 한 곳에 있다(투자컨설턴트·스타트업 화면이
     # 같은 패널을 쓴다) — 화면마다 적어 두면 조건 하나가 조용히 갈린다.
     ref_ctx = ref_panel.panel_ctx(db, page.page, ref)
+
+    # 투자사 화면 `전체` 탭이 세는 사람 — 아래 `total_count` · `total_confirmed`.
+    everyone = sheet_owner.investors(db, contacts) if page.investors else []
 
     stages = Counter(r["connect_stage"] for r in rows)
     # 깔때기는 **지금 탭에 보이는 사람들** 기준이다. 탭이 곧 명단이라,
@@ -653,11 +664,17 @@ def list_page(
         # 스타트업의 `전체` 는 투자사가 아니라 **이 화면 명단의 줄 수**다 — 탭과
         # 같이 감춘 줄은 뺀다(탭 숫자를 더한 것과 다를 수 있다: 두 명단에 같이
         # 있는 줄은 한 번만 센다).
-        "total_count": (len(sheet_owner.managed(db, user, team_wide=team_wide))
-                        if page.investors else
+        #
+        # 투자사 화면은 위에서 받아 둔 줄(`contacts` — 같은 `managed` 에 감춘 것만
+        # 더 실은 것)을 `investors` 로 걸러 센다. `managed(include_hidden=False)`
+        # 가 하는 일과 같아서 수는 그대로고, 질의를 한 번 더 안 한다.
+        "total_count": (len(everyone) if page.investors else
                         sum(1 for r in all_rows
                             if not r["is_hidden"]
                             and any(s in page_keys for s in r["sheets"]))),
+        # `전체` 탭의 `/ 확인 N` — 위 `total_count` 사람 중 카톡방 확인이 끝난 수
+        # (탭의 `confirmed` 와 같은 판정). 투자사 화면에만 적는다.
+        "total_confirmed": sum(1 for c in everyone if dashboard.room_confirmed(c)),
         # 팀원 화면의 `전체` 에 **함께 적는** 팀 전체 투자사 수(#29). 팀원의
         # `전체` 는 자기 명단이라(위 `total_count`) 팀 전체 인원을 볼 자리가
         # 없었다 — 사용자는 거기서 팀 전체 수를 기대했다. 표의 줄은 그대로다.
@@ -833,7 +850,9 @@ def job_page(
     # IR 기업현황 탭의 안내 카톡은 **세운 사람**도 본다 — 회차는 보내는 계정 것이다
     # (`ir_outreach.made_by` · `routers/jobs._job_or_404` 와 같은 판정).
     made = job is not None and ir_outreach.made_by(db, job, user)
-    can_view = job is not None and (job.user_id == user.id or user.role == "admin" or made)
+    # IR 기업 방 찾기 회차는 발송하는 팀원 누구나 본다(11/13 — 회차는 보내는 계정 것이라
+    # 누른 팀원이 이 화면을 못 봤다). 판정은 2초 폴링과 같은 함수다(`ir_outreach.may_view`).
+    can_view = ir_outreach.may_view(db, job, user)
     verify = can_view and job.kind == "verify_room"
     # 스타트업 안내 카톡 회차는 [스타트업] 안에서 세운 것이다 — 메뉴도 거기
     # 켜지고, `새 발송` 도 그 화면으로 돌아간다(딜 제안 관리가 아니다).
@@ -859,15 +878,27 @@ def job_page(
                                if ir_job else STARTUP_PAGE.rooms_href),
                 # 회차 주인이 아닌 사람이 다루는 회차(IR 기업현황 탭의 안내 카톡) —
                 # **어느 계정 PC 에서 나가는지** 적는다.
-                "pc_note": (f"{db.get(User, job.user_id).name} 계정 PC 의 카톡에서 나갑니다"
+                "pc_note": (f"{db.get(User, job.user_id).name} 계정 PC 의 카톡에서 "
+                            + ("찾습니다" if verify else "나갑니다")
                             if can_view and job.user_id != user.id and ir_job
                             and db.get(User, job.user_id) is not None else ""),
+                # 찾은 후보를 보고 확정하는 화면의 이름 — 진행 화면 링크 · 끝날 때 묻는 창.
+                "rooms_label": "대표 카톡방 맞추기" if ir_job else "방 매칭",
+                # 엑셀은 회차 주인 · 세운 사람만 받는다(`data_io.export_job`) — 못 받는 사람
+                # 앞에 단추를 세우지 않는다(누르면 없는 회차라고 나온다).
+                "export_ok": can_view and (job.user_id == user.id or made),
                 # IR 기업 줄 회차는 「스타트업으로 카톡보내기」 탭(그 칸을 펴 둔 IR 기업현황)으로.
                 "again_href": (ir_outreach.TAB_HREF if ir_job and outreach
                                else f"{STARTUP_PAGE.msg_href}?topic={job.topic or ''}"
                                if outreach else "/deals"),
                 # 다루는 사람(`ir_outreach.may_operate` — 단추를 받는 자리와 같은 판정)이 아니면 보기만.
                 "readonly": can_view and not ir_outreach.may_operate(db, job, user),
+                # 보기만 하는 까닭 — 관리자가 남의 회차를 보는 것과, 팀원이 보내는 계정의
+                # IR 기업 방 찾기를 보는 것(`ir_outreach.may_view`)은 말이 다르다.
+                "readonly_why": ("보내는 계정의 회차라 [중단] · 다시 확인은 그 계정과 "
+                                 "관리자만 합니다. 찾기가 끝나면 이 화면이 알려 줍니다"
+                                 if verify and ir_job and user.role != "admin"
+                                 else "관리자로서 보고 있는 다른 사람의 회차입니다"),
                 # 팀원 화면으로 보는 중에도 단추를 여는 회차(`deps.proxy_job`).
                 "proxy_job": can_view and proxy_job(db, job)})
     if can_view:
