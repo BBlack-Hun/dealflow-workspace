@@ -893,13 +893,13 @@ def companies_page(request: Request, db: Session = Depends(get_db),
     # 주소만 같이 쓰고 그리는 것은 그쪽 라우터가 한다. 아래 두 탭의 판단(발송
     # 이력 훑기 · 소개 가능 · 계약)이 그 표에는 하나도 안 맞는다.
     from . import series_a
+    from ..services import ir_outreach
     from .ir_outreach import screen as ir_msg_screen
 
     if tab == series_a.TAB:
         return series_a.render_page(request, db, user, msg=msg, q=q)
     # 예전 `스타트업DB` 탭(`?tab=db`)은 같은 줄의 다른 칸 묶음이었다. #105 · #106 에
     # 한 표로 합쳤다 — 옛 주소(즐겨찾기 · 옛 링크)도 그 표를 그린다.
-    co_tab = "status"
     # 연도별 매출 — 올해가 정한다(#75). 새해 첫 화면이면 `최근 매출액` 을 지난해 칸으로
     # 옮겨 적고(해마다 한 번 · 수정 로그), 표 · 창은 지난 세 해와 `최근 매출액(올해)` 를 그린다.
     year = revenue_years.this_year()
@@ -910,6 +910,11 @@ def companies_page(request: Request, db: Session = Depends(get_db),
     sent = deal_history.scan(db)
     rows = company_rows(db, sent=sent)
     ctx = base_ctx(request, db, user, active="su")
+    # 「스타트업으로 카톡보내기」 탭(i248)은 **새 화면이 아니다** — 같은 표에 그 칸
+    # (`💬 스타트업으로 카톡보내기`)을 **펴 둔 채로** 그린다. 고르는 칸이 표 맨 왼쪽이라
+    # 표 없이 따로 세울 수가 없다. 탭이 안 서는 사람(`can_ir_msg` — 칸이 안 서는 사람과
+    # 같다)이 주소로 오면 그냥 첫째 탭이다.
+    co_tab = ir_outreach.TAB if tab == ir_outreach.TAB and ctx["can_ir_msg"] else "status"
     ctx.update({
         "rows": rows,
         "co_tab": co_tab,
@@ -971,7 +976,7 @@ def companies_page(request: Request, db: Session = Depends(get_db),
         "consulting_choices": CONSULTING_STATUS_CHOICES,
         # 이어진 줄이 없는 기업에 처음 적으면 줄이 서는 탭(`save_consulting`) — 칸의 안내 말.
         "consulting_new_tab": consulting_new_tab(db) if may_view_consulting(user) else "",
-        # 고른 기업에 안내 카톡 · 카톡방 찾기·확인(11/11 · `routers/ir_outreach.py`).
+        # 스타트업으로 카톡보내기 · 카톡방 찾기·확인(11/11 · i248 · `routers/ir_outreach.py`).
         "ir_msg": ir_msg_screen(db, user),
     })
     # 관리자가 붙인 추가 칸(`_custom_cols.html`). 그중 `IR 자료 수신` 메모 칸은 따로 서지 않고

@@ -19,6 +19,11 @@
 
   셋째 `IR 기업 연결` 은 다른 화면(`/ir-link`)이다 — 그 화면도 이 줄을 위에 세워
   탭으로 읽힌다. 볼 사람은 좌측 메뉴 판정 그대로(`ui.base_ctx` 의 `can_ir_link`).
+
+  끝의 `스타트업으로 카톡보내기`(i248)는 **새 화면이 아니다** — 첫째 탭과 같은 표에
+  그 칸(`💬 스타트업으로 카톡보내기`)을 펴 둔 채로 그린다(`?tab=startup-kakao` ·
+  `services/ir_outreach.TAB`). 고르는 칸이 표 맨 왼쪽이라 표와 떼어 세울 수 없다. 볼 사람은
+  그 칸이 서는 사람과 같다(`ui.base_ctx` 의 `can_ir_msg` — 투자컨설턴트 빼고).
 #}
 <nav class="sheet-tabs co-tabs">
   <a class="sheet-tab {% if co_tab == 'status' %}active{% endif %}" href="/companies">
@@ -29,5 +34,8 @@
   </a>
   {% if can_ir_link %}
   <a class="sheet-tab {% if co_tab == 'ir-link' %}active{% endif %}" href="/ir-link">IR 기업 연결</a>
+  {% endif %}
+  {% if can_ir_msg %}
+  <a class="sheet-tab {% if co_tab == 'startup-kakao' %}active{% endif %}" href="/companies?tab=startup-kakao">스타트업으로 카톡보내기</a>
   {% endif %}
 </nav>

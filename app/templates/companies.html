@@ -223,7 +223,7 @@
 </div>
 {% endif %}
 
-{# ── 고른 기업에 안내 카톡 · 카톡방 찾기·확인 (11/11) ──────────────────────────
+{# ── 스타트업으로 카톡보내기 · 카톡방 찾기·확인 (11/11 · 이름은 i248) ─────────────
    사용자: "스타트업에 있는 안내 카톡 기능을 IR 기업 현황 메뉴의 IR 기업현황 탭에도
    동일하게 있어야 함. 방 매칭도." 문구 셋 · 채움 · 대기 목록 길은 스타트업 화면과
    **같다**(`routers/ir_outreach.py`). 다른 것은 받는 방(이 기업의 `대표 카톡방`)과
@@ -234,11 +234,15 @@
    (`ir_outreach.rows`), [대기 목록 만들기] 는 그 답의 `보낼 수 있는 곳` 만 싣는다.
 
    **기본은 닫힘** — 이 화면의 일은 표를 읽고 칸을 고치는 것이다(투자컨설턴트의
-   [스타트업 명단으로 보내기] 와 같은 관용구 · 처음 하나를 고르면 저절로 펴진다). #}
+   [스타트업 명단으로 보내기] 와 같은 관용구 · 처음 하나를 고르면 저절로 펴진다).
+   탭 줄의 「스타트업으로 카톡보내기」 탭(`?tab=startup-kakao`)으로 오면 **펴 둔 채로**
+   선다 — 그 탭은 이 표 그대로다(`_company_tabs.html`). 거르개 같은 기본값은 넣지 않는다.
+
+   이름은 팀원이 정했다(i248): 예전 `고른 기업에 안내 카톡 · 카톡방 찾기·확인`. #}
 {% if ir_msg %}
 {% set first = ir_msg.topics[0] %}
-<details class="sheet-fold" id="irm-fold">
-  <summary>💬 고른 기업에 안내 카톡 · 카톡방 찾기·확인
+<details class="sheet-fold" id="irm-fold"{% if co_tab == 'startup-kakao' %} open{% endif %}>
+  <summary>💬 스타트업으로 카톡보내기 ·
     <span class="muted" id="irm-count">0곳 선택</span></summary>
   <div class="sheet-fold-body" id="irm-panel" data-sender="{{ ir_msg.sender }}"
        data-rooms-href="{{ ir_msg.rooms_href }}">
@@ -1864,7 +1868,7 @@
    (`contacts.html` 도 같은 이유로 같은 자리에 둔다). #}
 <script src="{{ asset('js/table_sort.js') }}"></script>
 <script src="{{ asset('js/companies.js') }}"></script>
-{# 고른 기업에 안내 카톡 · 카톡방 찾기·확인(`ir_msg.js`) — 위 칸이 설 때만. #}
+{# 스타트업으로 카톡보내기 · 카톡방 찾기·확인(`ir_msg.js`) — 위 칸이 설 때만. #}
 {% if ir_msg and ir_msg.sender %}
 <script src="{{ asset('js/ir_msg.js') }}"></script>
 {% endif %}

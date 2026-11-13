@@ -17,10 +17,10 @@
 <header class="page-head">
   <h1>대표 카톡방 맞추기</h1>
   {% if ids %}
-  {# IR 기업현황 탭에서 고른 기업으로 열었다(11/11 — `room_match.targets`). #}
+  {# 「스타트업으로 카톡보내기」(IR 기업 현황)에서 고른 기업으로 열었다(11/11 — `room_match.targets`). #}
   <p class="muted">
-    IR 기업현황 탭에서 고른 <b>{{ total }}곳</b>의 <b>대표 카톡방 제목</b>을 맞춥니다 —
-    확인된 방에만 안내 카톡이 나갑니다. <a href="/deals/startup-ir/rooms">계약 기업 전부 보기</a>
+    <a href="{{ msg_tab_href }}">스타트업으로 카톡보내기</a>에서 고른 <b>{{ total }}곳</b>의 <b>대표 카톡방 제목</b>을 맞춥니다 —
+    확인된 방에만 카톡이 나갑니다. <a href="/deals/startup-ir/rooms">계약 기업 전부 보기</a>
   </p>
   {% else %}
   <p class="muted">
@@ -28,8 +28,8 @@
     이 칸이 비어 있으면 <b>{{ label }}</b>에서 그 기업을 고를 수 없습니다.
   </p>
   {% endif %}
-  {# 이 칸의 제목은 **보내는 계정 카톡**의 제목이다 — 월간 발송도 IR 기업현황 탭의
-     안내 카톡도 그 계정 PC 에서 나간다(`services/ir_outreach.py`). #}
+  {# 이 칸의 제목은 **보내는 계정 카톡**의 제목이다 — 월간 발송도 「스타트업으로
+     카톡보내기」도 그 계정 PC 에서 나간다(`services/ir_outreach.py`). #}
   {% if sender_name %}
   <p class="hint">이 칸의 방 제목은 <b>{{ sender_name }} 계정 PC</b>의 카톡에 보이는 제목입니다 — 그 계정 PC 에서 찾고, 그 계정 PC 에서 나갑니다.</p>
   {% endif %}
@@ -54,7 +54,7 @@
     <a class="chip" href="/companies">IR 기업 현황</a>
   </div>
   {# [카톡에서 방 찾기] 는 그 계정만 · 계약 기업 화면에서만이다(`routers/startup_send._guard`).
-     다른 사람 · 고른 기업 화면은 IR 기업현황 탭의 [카톡방 찾기·확인] 이 같은 일을 한다. #}
+     다른 사람 · 고른 기업 화면은 「스타트업으로 카톡보내기」의 [카톡방 찾기·확인] 이 같은 일을 한다. #}
   {% if may_send and not ids %}
   <div class="toolbar-right">
     {#
@@ -72,7 +72,7 @@
 
 {% if not may_send or ids %}
 <p class="hint">
-  카톡에서 찾기 · 확인은 <a href="/companies">IR 기업 현황</a> › IR 기업현황 탭에서 기업을 골라
+  카톡에서 찾기 · 확인은 IR 기업 현황 › <a href="{{ msg_tab_href }}">스타트업으로 카톡보내기</a> 탭에서 기업을 골라
   <b>[카톡방 찾기·확인]</b> 을 누르세요 — 찾아 온 후보가 이 화면에 섭니다.
 </p>
 {% else %}
@@ -102,7 +102,7 @@
 <p class="warn-box">
   ⚠ <b>{{ no_room }}곳</b>이 아직 <b>{{ no_room_label }}</b>입니다.
   {% if never_searched %}그중 <b>{{ never_searched }}곳</b>은 아직 한 번도 찾아보지
-  않았습니다 — {% if may_send and not ids %}위 <b>[카톡에서 방 찾기]</b>{% else %}IR 기업현황 탭의 <b>[카톡방 찾기·확인]</b>{% endif %} 를 먼저 눌러 보세요.{% endif %}
+  않았습니다 — {% if may_send and not ids %}위 <b>[카톡에서 방 찾기]</b>{% else %}<a href="{{ msg_tab_href }}">스타트업으로 카톡보내기</a> 탭의 <b>[카톡방 찾기·확인]</b>{% endif %} 를 먼저 눌러 보세요.{% endif %}
 </p>
 {% endif %}
 
@@ -215,7 +215,7 @@
     <b>확인 안 됨</b> 으로 되돌아갑니다 — 확인은 <b>그때 그 글자</b>에 대한
     것이라, 글자를 고치면 확인한 적이 없는 것입니다.
     <br>이 표는 <b>보낼 곳을 정하는 자리가 아닙니다</b> — 회차는
-    {% if may_send %}<a href="/deals/startup-ir">{{ label }}</a> · {% endif %}<a href="/companies">IR 기업 현황</a>(안내 카톡)에서 세웁니다.
+    {% if may_send %}<a href="/deals/startup-ir">{{ label }}</a> · {% endif %}IR 기업 현황 › <a href="{{ msg_tab_href }}">스타트업으로 카톡보내기</a>에서 세웁니다.
   </p>
 </form>
 
