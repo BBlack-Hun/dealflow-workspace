@@ -1480,10 +1480,15 @@ def update_company(company_id: int, body: CompanyIn,
     # **줄 전체를 돌려주지 않는다.** 그러면 `company_rows` 를 한 번 더 도는데,
     # 거기에는 이 응답에 필요 없는 조회가 둘 붙어 있다(줄 편집 허용 ·
     # 스타트업 명단에 이미 있는 기업).
+    sent = set(body.model_fields_set)
+    if "contract_done" in sent:
+        # 계약 완료로 고치면 비어 있던 `견적서 첨부 여부` 가 `O` 로 채워진다(i255 ·
+        # `services/contract_quote`) — 그 칸도 실어 화면이 그 자리에서 적는다.
+        sent.add("contract_management")
     out = {"id": company.id, "stamps": shown_stamps(company),
            # **저장된 값 그대로** — 서버가 꼴을 맞추는 칸(`계약년월` 의 `2026.3` → `2026-03`)은
            # 화면이 친 글자와 다르다. 표가 이것으로 그 칸을 다시 적는다(`consulting.js` 의 `save`).
-           "values": {f: getattr(company, f) or "" for f in body.model_fields_set
+           "values": {f: getattr(company, f) or "" for f in sent
                       if f not in ("notes", "sheet")}}
     # IR 기업 현황의 `컨설팅 상태` 는 `기업 관리` 의 **갈래**를 보여 준다(#166 — 거기서 이 길로
     # 고친다). 갈래는 서버 한 곳이 센다(`consulting_status`) — 화면이 다시 세면 두 번째 규칙이다.

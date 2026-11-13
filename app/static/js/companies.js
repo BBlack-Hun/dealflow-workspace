@@ -789,11 +789,18 @@
                kakao_joined: "data-f-joined" };
     var cell = e.detail.cell;
     var field = cell.getAttribute("data-field");
+    var row = e.detail.row;
+    // 계약여부를 계약 완료로 바꾸면 비어 있던 `견적서 첨부 여부` 가 `O` 로 채워져 온다
+    // (i255 · `services/contract_quote`) — 고친 칸이 계약여부면 그 칸을 되그린다.
+    if (field === "contract_status" && row) {
+      cell = row.querySelector('[data-field="quote_attached"]');
+      field = "quote_attached";
+      if (!cell) return;
+    }
     if (!OX[field] || !(field in data)) return;
 
     cell.textContent = data[field];
     cell.title = data[field];
-    var row = e.detail.row;
     if (row && row.hasAttribute(OX[field])) {
       row.setAttribute(OX[field], data[field]);
     }
