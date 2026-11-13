@@ -38,7 +38,9 @@
       return "<tr>" +
         "<td>" + esc(i.contact_name) + "</td>" +
         "<td>" + esc(i.room_name) + "</td>" +
-        '<td class="st st-' + i.status + '">' + (STATUS_KO[i.status] || i.status) + "</td>" +
+        // 회사명으로 찾은 줄은 서버가 결과 말(찾음 · 여럿 · 못 찾음 · 확인됨)을 준다
+        // (`room_done.item_results`) — 후보 하나를 찾은 건이 `확인됨` 으로 읽히지 않게.
+        '<td class="st st-' + i.status + '">' + esc(i.result || STATUS_KO[i.status] || i.status) + "</td>" +
         "<td>" + (i.retry_count || 0) + "</td>" +
         // 예전 발송기는 사유에 `**강조**` 표시를 그대로 실었다 — 글자로 보이지 않게 뗀다
         "<td>" + esc(i.error && i.error.replace(/\*\*/g, "") || i.sent_at || "") + "</td>" +
@@ -103,7 +105,29 @@
       resumeBtn.dataset.count = pending;
     }
 
+    tellDone(d, terminal);
     if (terminal) { if (timer) { clearInterval(timer); timer = null; } }
+  }
+
+  // ── 방 찾기 · 확인이 끝나면 한 번 알린다 (사용자 11/13: "방 찾기 완료 시 alert") ──
+  //
+  // **이 화면을 열어 둔 동안 진행 중 → 끝남으로 바뀔 때만** 띄운다 — 이미 끝난 회차를
+  // 새로 열면 띄우지 않는다. 글은 서버가 만든다(`room_done.summary` — 방 확인 회차에만
+  // 실린다. 발송 회차에는 없어서 아무것도 안 뜬다). 찾은 후보를 고르는 화면이 있으면
+  // (`room-pick-link`) 알림창 대신 **그리로 갈지 묻고**, 안 가도 링크를 강조해 둔다.
+  var sawOpen = false, told = false;
+  function tellDone(d, terminal) {
+    if (!terminal) { sawOpen = true; told = false; return; }
+    var r = d.room_done;
+    if (!r || !sawOpen || told) return;
+    told = true;
+    var link = document.getElementById("room-pick-link");
+    if (!(r.pick && link)) { alert(r.sentence); return; }
+    link.classList.add("primary-btn");
+    if (confirm(r.sentence + "\n\n[확인] 을 누르면 결과를 보고 확정하는 화면(" +
+                (link.getAttribute("data-label") || "") + ")으로 갑니다.")) {
+      window.location.href = link.getAttribute("href");
+    }
   }
 
   function poll() {

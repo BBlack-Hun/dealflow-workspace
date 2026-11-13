@@ -833,7 +833,9 @@ def job_page(
     # IR 기업현황 탭의 안내 카톡은 **세운 사람**도 본다 — 회차는 보내는 계정 것이다
     # (`ir_outreach.made_by` · `routers/jobs._job_or_404` 와 같은 판정).
     made = job is not None and ir_outreach.made_by(db, job, user)
-    can_view = job is not None and (job.user_id == user.id or user.role == "admin" or made)
+    # IR 기업 방 찾기 회차는 발송하는 팀원 누구나 본다(11/13 — 회차는 보내는 계정 것이라
+    # 누른 팀원이 이 화면을 못 봤다). 판정은 2초 폴링과 같은 함수다(`ir_outreach.may_view`).
+    can_view = ir_outreach.may_view(db, job, user)
     verify = can_view and job.kind == "verify_room"
     # 스타트업 안내 카톡 회차는 [스타트업] 안에서 세운 것이다 — 메뉴도 거기
     # 켜지고, `새 발송` 도 그 화면으로 돌아간다(딜 제안 관리가 아니다).
@@ -859,15 +861,27 @@ def job_page(
                                if ir_job else STARTUP_PAGE.rooms_href),
                 # 회차 주인이 아닌 사람이 다루는 회차(IR 기업현황 탭의 안내 카톡) —
                 # **어느 계정 PC 에서 나가는지** 적는다.
-                "pc_note": (f"{db.get(User, job.user_id).name} 계정 PC 의 카톡에서 나갑니다"
+                "pc_note": (f"{db.get(User, job.user_id).name} 계정 PC 의 카톡에서 "
+                            + ("찾습니다" if verify else "나갑니다")
                             if can_view and job.user_id != user.id and ir_job
                             and db.get(User, job.user_id) is not None else ""),
+                # 찾은 후보를 보고 확정하는 화면의 이름 — 진행 화면 링크 · 끝날 때 묻는 창.
+                "rooms_label": "대표 카톡방 맞추기" if ir_job else "방 매칭",
+                # 엑셀은 회차 주인 · 세운 사람만 받는다(`data_io.export_job`) — 못 받는 사람
+                # 앞에 단추를 세우지 않는다(누르면 없는 회차라고 나온다).
+                "export_ok": can_view and (job.user_id == user.id or made),
                 # IR 기업 줄 회차는 「스타트업으로 카톡보내기」 탭(그 칸을 펴 둔 IR 기업현황)으로.
                 "again_href": (ir_outreach.TAB_HREF if ir_job and outreach
                                else f"{STARTUP_PAGE.msg_href}?topic={job.topic or ''}"
                                if outreach else "/deals"),
                 # 다루는 사람(`ir_outreach.may_operate` — 단추를 받는 자리와 같은 판정)이 아니면 보기만.
                 "readonly": can_view and not ir_outreach.may_operate(db, job, user),
+                # 보기만 하는 까닭 — 관리자가 남의 회차를 보는 것과, 팀원이 보내는 계정의
+                # IR 기업 방 찾기를 보는 것(`ir_outreach.may_view`)은 말이 다르다.
+                "readonly_why": ("보내는 계정의 회차라 [중단] · 다시 확인은 그 계정과 "
+                                 "관리자만 합니다. 찾기가 끝나면 이 화면이 알려 줍니다"
+                                 if verify and ir_job and user.role != "admin"
+                                 else "관리자로서 보고 있는 다른 사람의 회차입니다"),
                 # 팀원 화면으로 보는 중에도 단추를 여는 회차(`deps.proxy_job`).
                 "proxy_job": can_view and proxy_job(db, job)})
     if can_view:

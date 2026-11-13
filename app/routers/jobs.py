@@ -10,9 +10,9 @@ from ..db import get_db
 from ..deps import agent_status, get_current_user, no_send_as_member
 from ..models import (STARTUP_MSG_KIND, STARTUP_SEND_KIND, IrCompany, SendItem, SendJob,
                       SourcingContact, User)
-from ..services import (automation_runner, ir_outreach, mail_sender, scheduled_send,
-                        send_guard, sourcing_msg, sourcing_rooms, sourcing_sync,
-                        startup_monthly)
+from ..services import (automation_runner, ir_outreach, mail_sender, room_done,
+                        scheduled_send, send_guard, sourcing_msg, sourcing_rooms,
+                        sourcing_sync, startup_monthly)
 
 router = APIRouter(prefix="/api", tags=["jobs"])
 
@@ -40,10 +40,12 @@ def _sendable_or_404(db: Session, job: SendJob) -> None:
 
 def _viewable_job_or_404(db: Session, job_id: int, user: User) -> SendJob:
     """조회는 관리자에게도 열어 둔다. 재시도·취소 같은 **조작**은
-    `_job_or_404` 를 그대로 쓴다 — 관리자가 실수로 남의 회차를 건드리면 안 된다."""
+    `_job_or_404` 를 그대로 쓴다 — 관리자가 실수로 남의 회차를 건드리면 안 된다.
+
+    IR 기업 방 찾기 회차는 발송하는 팀원 누구나 본다(11/13 — `ir_outreach.may_view`,
+    진행 화면과 같은 판정)."""
     job = db.get(SendJob, job_id)
-    if job is None or (job.user_id != user.id and user.role != "admin"
-                       and not ir_outreach.made_by(db, job, user)):
+    if job is None or not ir_outreach.may_view(db, job, user):
         raise HTTPException(status_code=404, detail="발송 잡 없음")
     return job
 
@@ -64,6 +66,7 @@ def job_status(job_id: int, db: Session = Depends(get_db), user: User = Depends(
     job = _viewable_job_or_404(db, job_id, user)
     # 자동 회차가 지금 왜 안 내려가나 — **한 번만** 센다(이 화면은 2초마다 묻는다).
     hold = automation_runner.hold_reason(db, job)
+    results = room_done.item_results(db, job)
     return {
         "id": job.id,
         "status": job.status,
@@ -94,6 +97,10 @@ def job_status(job_id: int, db: Session = Depends(get_db), user: User = Depends(
         # 오류가 하나로 모이면 그 까닭. 그 화면이 끝날 때 알림창을 띄운다
         # (`sourcing_rooms.js` · `sourcing_rooms.search_summary`). 다른 회차는 `None`.
         "room_search": sourcing_rooms.search_summary(db, job),
+        # **방 찾기 · 확인 회차가 끝났으면** 한 번 띄우는 알림창의 글(11/13 — 사용자:
+        # "방 찾기 완료 시 alert"). 열어 둔 동안 끝날 때만 띄우는 것은 화면이 정한다
+        # (`progress.js`). 발송 회차 · 안 끝난 회차는 `None`(`room_done.summary`).
+        "room_done": room_done.summary(db, job),
         "items": [
             {
                 "id": i.id,
@@ -101,6 +108,10 @@ def job_status(job_id: int, db: Session = Depends(get_db), user: User = Depends(
                 "contact_name": i.recipient_name,
                 "room_name": i.room_name,
                 "status": i.status,
+                # 회사명으로 찾은 줄의 결과(찾음 · 여럿 · 못 찾음 · 확인됨) — 있으면 상태 칸이
+                # 이 말을 적는다(`room_done.item_results`). 후보 하나를 찾은 건이 `확인됨`
+                # 으로 읽히면 고르기 전인데 맞춰진 줄 안다.
+                "result": results.get(i.id),
                 "error": i.error,
                 "retry_count": i.retry_count,
                 "sent_at": i.sent_at,

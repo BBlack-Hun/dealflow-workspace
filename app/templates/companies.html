@@ -269,8 +269,17 @@
       <button type="button" class="secondary-btn" id="irm-room-check-btn" data-send disabled
               title="고른 기업 — 대표 카톡방 이름이 적힌 곳은 그 이름 그대로 확인하고, 없는 곳은 회사명으로 찾아 후보를 모읍니다 (문구는 보내지 않습니다)">카톡방 찾기·확인 (0곳)</button>
       <a class="linkbtn" id="irm-rooms-link" href="{{ ir_msg.rooms_href }}">대표 카톡방 맞추기 — 후보 고르기</a>
-      <span class="hint">이름이 적힌 곳은 그 이름 그대로 확인 · 없는 곳은 회사명으로 찾아 후보만 — 문구는 보내지 않습니다</span>
+      <span class="hint">이름이 적힌 곳은 그 이름 그대로 확인 · 없는 곳은 회사명으로 찾아 후보만 — 문구는 보내지 않습니다.
+        누르면 진행 화면에서 줄마다 찾음 · 여럿 · 못 찾음을 보고, 끝나면 알림 뒤 맞추기 화면에서 확정합니다</span>
     </div>
+    {# **아직 찾는 중인 회차** — 진행 화면을 닫고 왔어도 다시 갈 길(11/13). #}
+    {% if ir_msg.room_checks %}
+    <p class="hint" data-testid="irm-room-checks">
+      🔎 찾는 중:
+      {% for j in ir_msg.room_checks %}<a href="/jobs/{{ j.id }}">#{{ j.id }} · {{ j.total }}곳</a>{% if not loop.last %} · {% endif %}{% endfor %}
+      — 진행 화면에서 결과를 보고, 끝나면 맞추기 화면으로 갑니다.
+    </p>
+    {% endif %}
 
     <div class="quick-chips" id="irm-topics" data-testid="irm-topics">
       {% for t in ir_msg.topics %}
