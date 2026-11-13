@@ -254,3 +254,73 @@ def test_unknown_key_or_unsplittable_month_is_404(client, db, users, data):
     assert client.get("/reactions/list?key=nope").status_code == 404
     assert client.get("/reactions/list?key=meeting_call&month=2026-09").status_code == 404
     assert client.get("/reactions/list?key=ir_contacts&month=2026-13").status_code == 404
+
+
+# ── i241 — 시트 이력 글 · 꼬리표 붙은 이름에서도 기업 칸을 채운다 ──────────────
+
+def _rows(db, user, key="requested_companies"):
+    from app.services import drilldown
+
+    got = drilldown.build(db, user, key)
+    return got, [dict(zip(got["headers"], r["cells"])) for r in got["rows"]]
+
+
+def _ask(db, contact, *names):
+    from app.models import ContactActivity
+
+    db.add(ContactActivity(contact_id=contact.id, kind="ir_request", content="요청",
+                           happened_at="2026-07-02",
+                           company_names=json.dumps(list(names), ensure_ascii=False)))
+    db.commit()
+
+
+def test_sheet_text_and_tagged_names_still_find_the_company(db, users, data):
+    """`1.샘플애그 요청 -> 8/4(화) 전달 완료` · `샘플넷 IR 전달` 처럼 적힌 시트 이력, IR 쪽
+    이름에 `[딜소개 불가/…]` · `(영문)` 꼬리표가 붙은 기업도 IR 칸을 읽는다. 숫자는 그대로."""
+    from app.models import IrCompany
+    from app.services import dashboard
+
+    db.add_all([IrCompany(name="샘플넷 [딜소개 불가/폐업위기]", contact_name="대표나",
+                          contact_phone="010-0000-3333", pre_value="50"),
+                IrCompany(name="샘플캣(Samplecat)", contact_name="대표다")])
+    db.commit()
+    before = dashboard._reaction_summary(db, dashboard.reaction_ids(db, users["u1"]))
+    _ask(db, data["a"], "1.샘플애그 요청 -> 8/4(화) 전달 완료", "샘플넷 IR 전달",
+         "샘플캣 전달 완료")
+    got, rows = _rows(db, users["u1"])
+    by = {r["스타트업명"]: r for r in rows}
+    assert by["1.샘플애그 요청 -> 8/4(화) 전달 완료"]["기업 담당자"] == "대표가"
+    assert by["샘플넷 IR 전달"]["기업 담당자 연락처"] == "010-0000-3333"
+    assert by["샘플넷 IR 전달"]["Pre Value"] == "50억"
+    assert by["샘플캣 전달 완료"]["기업 담당자"] == "대표다"
+    # 묶음(숫자)은 적힌 글 그대로 센 것 — 기업을 찾았다고 묶음이 합쳐지지 않는다.
+    assert got["count"] == before["requested_companies"] + 3
+
+
+def test_two_companies_or_a_partial_name_stay_empty(db, users, data):
+    """기업이 둘 걸리면 어느 것인지 모르므로 비운다. 부분일치(`샘플애그리`)는 안 한다."""
+    from app.models import IrCompany
+
+    db.add(IrCompany(name="샘플넷", contact_name="대표나"))
+    db.commit()
+    _ask(db, data["a"], "샘플애그 샘플넷 전달", "샘플애그리 전달")
+    _got, rows = _rows(db, users["u1"])
+    by = {r["스타트업명"]: r for r in rows}
+    assert by["샘플애그 샘플넷 전달"]["기업 담당자"] == ""
+    assert by["샘플애그리 전달"]["기업 담당자"] == ""
+
+
+def test_empty_address_reads_a_colleague_at_the_same_firm(db, users, data):
+    """회사주소가 빈 심사역 줄은 같은 투자사 다른 심사역 줄의 주소를 보인다(가장 많이 적힌 것)."""
+    from app.models import VcContact
+
+    db.add_all([VcContact(user_id=users["u2"].id, name=f"동료{i}", firm="(주)다라인베스트",
+                          address=addr, source_sheet="남의 명단")
+                for i, addr in enumerate(["서울 본사 3", "서울 본사 3", "부산 지점 9"])])
+    db.commit()
+    _got, rows = _rows(db, users["u1"], "ir_contacts")
+    b = [r for r in rows if r["심사역 이름"] == "심사역나"]
+    assert b and all(r["회사주소"] == "서울 본사 3" for r in b)
+    a = [r for r in rows if r["심사역 이름"] == "심사역가"]
+    assert a and all(r["회사주소"] == "서울 어딘가 1" for r in a), "제 주소가 있으면 그대로"
+
