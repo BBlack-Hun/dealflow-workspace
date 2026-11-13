@@ -47,25 +47,22 @@
             <a href="/setup">발송 프로그램 설치</a>
           </div>
           {% if view_as_targets %}
-          {# 고르기만 하면 바로 바뀐다(팀 현황의 권한·발송기 고르개와 같은 꼴). 첫 줄은
-             고를 수 없는 안내라, 아직 아무도 안 보는 때 첫 팀원이 미리 골라져
-             그 사람은 골라도 안 바뀌는 일이 없다. #}
+          {# 고르기만 하면 바로 바뀐다(팀 현황의 권한·발송기 고르개와 같은 꼴). 지금 보는
+             사람이 골라져 선다 — 안 보는 중이면 나 자신이고, 나를 고르면 내 화면으로
+             돌아온다(11/13, 곁의 [내 화면으로] 단추는 뺐다). 첫 줄은 고를 수 없는
+             안내다 — 골라져 설 사람이 목록에 없을 때(공용 관리자 계정으로 로그인 등)
+             이 줄이 서야 첫 사람이 미리 골라져 골라도 안 바뀌는 일이 없다. #}
+          {% set view_as_picked = view_as.id if view_as else me.id %}
+          {% set view_as_listed = view_as_targets | selectattr('id', 'equalto', view_as_picked) | list %}
           <form method="post" action="/account/view-as" class="view-as-pick" data-testid="view-as-form">
             <input type="hidden" name="next" value="{{ view_as_next }}">
             <select name="member_id" aria-label="팀원 화면으로 보기" onchange="this.form.submit()">
-              <option value="" disabled {% if not view_as %}selected{% endif %}>팀원 화면으로 보기</option>
+              <option value="" disabled {% if not view_as_listed %}selected{% endif %}>팀원 화면으로 보기</option>
               {% for m in view_as_targets %}
-              <option value="{{ m.id }}" {% if view_as and view_as.id == m.id %}selected{% endif %}>{{ m.name }}</option>
+              <option value="{{ m.id }}" {% if m.id == view_as_picked %}selected{% endif %}>{{ m.name }}</option>
               {% endfor %}
             </select>
           </form>
-          {# 되돌아오는 길도 고르개 곁에 — 위 띠의 [내 화면으로 돌아가기]와 같은 폼이다. #}
-          {% if view_as %}
-          <form method="post" action="/account/view-as/off" class="view-as-pick" data-testid="view-as-back">
-            <input type="hidden" name="next" value="{{ view_as_next }}">
-            <button type="submit" class="linkbtn">내 화면으로</button>
-          </form>
-          {% endif %}
           {% endif %}
         </div>
         <div id="agent-badge" class="agent-badge {% if agent.online %}on{% else %}off{% endif %}">
