@@ -422,8 +422,9 @@
       자료를 달라고 한 횟수가 곧 관심의 크기다.
     #}
     {# 관리자는 팀원 명단을 다 합친 순위(i242) — 반응 패널과 같은 모집단. #}
-    <h2 class="panel-title">내 투자사 선호
-      <span class="hint">IR 자료를 많이 요청한 순{% if reaction_team %} · 팀 전체 합계{% endif %}</span>
+    {# 옛 이름 '내 투자사 선호'(i252 에서 바꿈) — 코드 주석 · 테스트 이름에는 옛 이름이 남아 있다. #}
+    <h2 class="panel-title">IR 자료를 많이 요청하신 심사역 순{% if reaction_team %}
+      <span class="hint">팀 전체 합계</span>{% endif %}
       {# 몇 명이 걸렸는지 보여야 한다 — 50명으로 놓고 12명만 나오면
          "왜 적지" 가 아니라 "요청한 사람이 12명" 이라는 뜻이다. #}
       <span class="count-pill {% if top_requesters %}on{% endif %}"
@@ -480,7 +481,7 @@
     {% endif %}
     <p class="hint req-rank-all" id="req-rank-all"
        {% if not top_requesters or top_requesters|length >= top_n %}hidden{% endif %}>
-      IR 자료를 요청한 곳이 <b>{{ top_requesters|length }}</b>곳뿐입니다 —
+      IR 자료를 요청하신 심사역이 <b>{{ top_requesters|length }}</b>명뿐입니다 —
       더 늘려도 이 목록은 그대로입니다.
     </p>
     {% if top_requesters %}
