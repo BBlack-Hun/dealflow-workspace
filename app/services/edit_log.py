@@ -667,18 +667,24 @@ FIELD_LABELS = {
 #: 한 번에 수십 줄을 잇는 단추(`후보가 하나인 줄 일괄 연결`)가 있어 더 그렇다.
 ALWAYS_FIELDS = frozenset({"ir_company_id"})
 
-#: 부르는 쪽이 **이 새 줄 하나는 자기 줄이라도 남긴다**고 짚은 표시(`always`).
+#: 부르는 쪽이 **이 줄의 다음 저장 한 번은 자기 줄이라도 남긴다**고 짚은 표시(`always`).
 _ALWAYS_ROW = "_edit_log_always"
 
 
 def always(obj) -> None:
-    """이 **새 줄**은 자기 줄이라도 남긴다 — 부르는 쪽이 짚는다.
+    """이 줄의 **다음 저장 한 번**은 자기 줄이라도 남긴다 — 부르는 쪽이 짚는다.
 
     IR 기업 현황에서 이어진 줄이 없는 기업의 `컨설팅 상태` · `컨설팅 미팅일` 을 적으면 그
     기업에 이어진 투자컨설턴트 줄이 **저절로 생긴다**(`routers/companies.save_consulting`).
     누른 사람은 칸 하나를 적었을 뿐 줄을 세운 줄 모른다 — 자기 줄이라고 빼면 "이 줄은 언제
     누가 세웠나" 를 물을 곳이 없다. 사람이 [기업 추가] 로 세운 줄은 짚지 않는다(그대로 안
     남는다 — 머리글의 `자기 것만 고친 것은 남기지 않는다`).
+
+    고칠 때도 같다 — [방 연결 확인]이 이름으로 찾은 방으로 **사람이 적어 둔 방 이름을
+    바꿀 때**(`vc_room_search._confirm`, 11/13). 기계가 사람이 적은 값을 덮는 일이라, 자기
+    줄이라고 빼면 "언제 무엇에서 바뀌었나" 를 물을 곳이 없다.
+
+    표시는 **한 번 쓰면 뗀다** — 같은 요청에서 그 줄을 또 고친 것까지 남기지 않는다.
     """
     setattr(obj, _ALWAYS_ROW, True)
 
@@ -935,9 +941,11 @@ def _collect(session: OrmSession, action: str, rows, ctx: dict) -> List[dict]:
         if not keep and action == ACTION_UPDATE and _touches_always(obj):
             # 자기 줄인데 `ALWAYS_FIELDS` 를 건드렸다 — 남긴다(그 주석 참고).
             keep, scope = True, SCOPE_MINE
-        if not keep and action == ACTION_CREATE and getattr(obj, _ALWAYS_ROW, False):
-            # 부르는 쪽이 짚은 새 줄 — 자기 줄이라도 남긴다(`always`).
-            keep, scope = True, SCOPE_MINE
+        if getattr(obj, _ALWAYS_ROW, False) and action != ACTION_DELETE:
+            # 부르는 쪽이 짚은 줄 — 자기 줄이라도 남긴다(`always`). 한 번 쓰면 뗀다.
+            setattr(obj, _ALWAYS_ROW, False)
+            if not keep:
+                keep, scope = True, SCOPE_MINE
         if not keep:
             continue
         changes = _changes(obj, action)
