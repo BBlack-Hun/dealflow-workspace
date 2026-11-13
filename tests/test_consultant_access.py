@@ -66,6 +66,9 @@ EXPECTED_OPEN = {
     ("POST", "/logout"),
     ("GET", "/account/password"),
     ("POST", "/account/password"),
+    # 자기 계정 이름 바꾸기 — 남의 이름은 라우터가 관리자만 받는다(`auth._rename_target`).
+    ("GET", "/account/name"),
+    ("POST", "/account/name"),
     # 공지를 **확인했다고 적는 길.** 공지 판은 밑틀(`base.html`)에 서므로
     # 투자컨설턴트의 화면 위에도 뜬다 — 막으면 그 계정에서는 같은 공지가
     # 영영 안 닫힌다. 하는 일은 자기가 읽었다는 표시 하나이고, 올리고

@@ -137,20 +137,54 @@ def test_forged_cookie_does_nothing_for_a_member(client, users, admin):
     assert r.json().get("detail") != BLOCKED
 
 
-def test_admin_cannot_pick_self_or_consultant(client, db, users, admin):
+def test_admin_cannot_pick_consultant(client, db, users, admin):
     from app.models import User
 
     db.add(User(id=7, name="컨설턴트", phone="01000000007", role="consultant",
                 is_active=1))
     db.commit()
     _login(client, "01000000009")
-    assert _view_as(client, admin.id).status_code == 404
     assert _view_as(client, 7).status_code == 404
     assert _view_as(client, 999).status_code == 404
-    # 고르개에는 팀원만 선다.
+    # 고르개에는 팀원과 나 자신만 선다.
     page = client.get("/").text
     assert 'data-testid="view-as-form"' in page
     assert '<option value="1"' in page and '<option value="7"' not in page
+
+
+def test_picking_myself_turns_viewing_off(client, users, admin):
+    """고르개의 나 자신 = 내 화면으로(11/13) — 나를 '보는 대상'으로 세우지 않는다.
+
+    세우면 내 화면인데도 발송이 막힌다. 쿠키를 지우고 같은 주소로 돌아온다.
+    """
+    _login(client, "01000000009")
+    _view_as(client, users["u1"].id)
+    assert client.cookies.get("dealflow_view_as") == str(users["u1"].id)
+
+    here = "/todo?a=1"
+    r = client.post("/account/view-as", data={"member_id": admin.id, "next": here},
+                    follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == here
+    assert client.cookies.get("dealflow_view_as") is None
+    page = client.get("/").text
+    assert 'data-testid="view-as-banner"' not in page
+    assert '<div class="me-name">관리자 · 관리자</div>' in page
+    # 발송이 막히지 않는다(보는 중에 막히는 길 하나로 본다).
+    r = client.post("/api/startup-msg/send", json={})
+    assert not (r.status_code == 403 and r.json().get("detail") == BLOCKED)
+
+    # 안 보는 중에 나를 골라도 쿠키가 서지 않는다.
+    r = _view_as(client, admin.id)
+    assert r.status_code == 303 and client.cookies.get("dealflow_view_as") is None
+
+
+def test_forged_cookie_on_myself_does_nothing(client, users, admin):
+    """쿠키에 나 자신을 심어도 '보는 중'이 서지 않는다 — 띠도, 발송 막기도 없다."""
+    _login(client, "01000000009")
+    client.cookies.set("dealflow_view_as", str(admin.id))
+    assert 'data-testid="view-as-banner"' not in client.get("/").text
+    r = client.post("/api/startup-msg/send", json={})
+    assert not (r.status_code == 403 and r.json().get("detail") == BLOCKED)
 
 
 def _picker_ids(page):
@@ -164,7 +198,8 @@ def _picker_ids(page):
 def test_picker_follows_the_team_order(client, db, users):
     """고르개 순서는 `VIEW_AS_ORDER`(운영 계정 id) — 이름·id 순이 아니다(i237).
 
-    목록에 없는 계정은 맨 뒤에 id 순으로 선다. 투자컨설턴트·꺼진 계정·나 자신은 빠진다.
+    목록에 없는 계정은 맨 뒤에 id 순으로 선다. 투자컨설턴트·꺼진 계정은 빠진다.
+    나 자신은 제자리에 서고(11/13), 공용 관리자 계정(id 2)은 누가 로그인해도 빠진다.
     """
     from app.models import User
     from app.services import auth as auth_svc
@@ -178,11 +213,20 @@ def test_picker_follows_the_team_order(client, db, users):
                      is_active=on, password_hash=pw) for i, role, on in rows])
     db.commit()
 
-    _login(client, "01000000008")          # 목록에 없는 관리자 — 자기는 빠진다
-    assert _picker_ids(client.get("/").text) == [2, 1, 4, 10, 11, 5, 9, 12]
+    team = [1, 4, 10, 11, 5, 9, 8, 12]
+    _login(client, "01000000008")          # 목록에 없는 관리자 — 자기는 뒤에 id 순 자리
+    assert _picker_ids(client.get("/").text) == team
 
-    _login(client, "01000000001")          # 목록 둘째 관리자 — 목록 밖 관리자는 맨 뒤
-    assert _picker_ids(client.get("/").text) == [2, 4, 10, 11, 5, 9, 8, 12]
+    _login(client, "01000000001")          # 목록 첫째 관리자 — 자기가 맨 앞
+    assert _picker_ids(client.get("/").text) == team
+
+    users["u2"].role = "admin"             # id 2 로 로그인해도 id 2 는 안 선다
+    db.commit()
+    _login(client, "01000000002")
+    page = client.get("/").text
+    assert _picker_ids(page) == team
+    # 골라져 설 사람(나)이 목록에 없으니 첫 줄 안내가 골라져 선다.
+    assert '<option value="" disabled selected>팀원 화면으로 보기</option>' in page
 
 
 # ── 2. 그 팀원 화면을 본다 ────────────────────────────────────────────────────
@@ -252,14 +296,18 @@ def test_switching_returns_to_the_same_address(client, users, admin):
     r = client.post("/account/view-as", data={"member_id": users["u1"].id, "next": here},
                     follow_redirects=False)
     assert r.headers["location"] == here
-    # 보는 중에는 고르개 · 곁의 [내 화면으로] · 띠의 [내 화면으로 돌아가기] 셋 다 같은 주소를 싣는다.
-    assert client.get(here).text.count('name="next" value="/todo?a=1&amp;b=2"') == 3
+    # 보는 중에는 고르개 · 띠의 [내 화면으로 돌아가기] 둘 다 같은 주소를 싣는다.
+    assert client.get(here).text.count('name="next" value="/todo?a=1&amp;b=2"') == 2
     r = client.post("/account/view-as/off", data={"next": here}, follow_redirects=False)
     assert r.headers["location"] == here
 
 
-def test_sidebar_has_the_way_back_only_while_viewing(client, users, admin):
-    """돌아오는 단추가 사이드바 고르개 곁에도 선다 — 띠만 있으면 고르개에서 길을 못 찾는다."""
+def test_sidebar_has_no_separate_way_back(client, users, admin):
+    """고르개 곁의 [내 화면으로] 단추는 뺐다(11/13) — 고르개에서 나를 고르면 된다.
+
+    맨 위 띠의 [내 화면으로 돌아가기]는 그대로 선다(공용 관리자 계정처럼 고르개에
+    내가 없는 사람의 비상구).
+    """
     import re
 
     _login(client, "01000000009")
@@ -267,17 +315,18 @@ def test_sidebar_has_the_way_back_only_while_viewing(client, users, admin):
     assert 'data-testid="view-as-back"' not in client.get(here).text
     _view_as(client, users["u1"].id)
     page = client.get(here).text
-    back = re.search(r'<form method="post" action="([^"]+)"[^>]*data-testid="view-as-back">'
+    assert 'data-testid="view-as-back"' not in page
+    assert 'class="linkbtn">내 화면으로</button>' not in page
+    banner = re.search(r'data-testid="view-as-banner">(.*?)</div>', page, re.S)[1]
+    back = re.search(r'<form method="post" action="([^"]+)" class="inline-form">'
                      r'\s*<input type="hidden" name="next" value="([^"]+)">'
-                     r'\s*<button type="submit" class="linkbtn">내 화면으로</button>', page)
+                     r'\s*<button type="submit" class="linkbtn">\[내 화면으로 돌아가기\]</button>',
+                     banner)
     assert back and back.groups() == ("/account/view-as/off", here)
-    r = client.post(back[1], data={"next": here}, follow_redirects=False)
-    assert r.status_code == 303 and r.headers["location"] == here
-    assert 'data-testid="view-as-back"' not in client.get(here).text
 
 
 def test_picking_a_member_switches_without_a_button(client, users, admin):
-    """고르기만 하면 바뀐다 — 단추가 없고, 첫 줄은 고를 수 없는 안내라 첫 팀원도 골라진다."""
+    """고르기만 하면 바뀐다 — 단추가 없고, 지금 보는 사람이 골라져 선다(안 보는 중이면 나)."""
     import re
 
     def picker(page):
@@ -287,13 +336,15 @@ def test_picking_a_member_switches_without_a_button(client, users, admin):
     form = picker(client.get("/").text)
     assert "<button" not in form
     assert '<select name="member_id" aria-label="팀원 화면으로 보기" onchange="this.form.submit()">' in form
-    assert '<option value="" disabled selected>팀원 화면으로 보기</option>' in form
-    assert f'<option value="{users["u1"].id}" >' in form           # 아직 아무도 안 골라짐
+    assert '<option value="" disabled >팀원 화면으로 보기</option>' in form
+    assert f'<option value="{admin.id}" selected>관리자</option>' in form   # 안 보는 중 = 나
+    assert f'<option value="{users["u1"].id}" >' in form
 
     _view_as(client, users["u1"].id)
     form = picker(client.get("/").text)
     assert '<option value="" disabled >팀원 화면으로 보기</option>' in form
     assert f'<option value="{users["u1"].id}" selected>' in form
+    assert f'<option value="{admin.id}" >관리자</option>' in form
 
 
 def test_own_device_token_never_shows_the_members(client, users, admin):

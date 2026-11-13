@@ -176,21 +176,30 @@ def view_as_member(db: Session, real: User, raw: Optional[str]) -> Optional[User
     return member if may_view_as(real, member) else None
 
 
-# 고르개에 세우는 순서(i237) — **운영 계정 id** 로 적는다: 공용 관리자 계정 ·
-# 관리자 겸 팀원 · 팀원 · BACKUPONE · BACKUPTWO · BACKUPTHREE · BACKUPFOUR.
+# 고르개에 세우는 순서(i237) — **운영 계정 id** 로 적는다: 관리자 겸 팀원 ·
+# 팀원 · BACKUPONE · BACKUPTWO · BACKUPTHREE · BACKUPFOUR.
 # 이름으로 가르지 않는 것은 이름이 바뀌기 때문이다(11/04 에 한 번 다 바뀌었다).
 # 여기 없는 계정(새로 만든 계정 등)은 이 뒤에 id 순으로 선다.
-VIEW_AS_ORDER = (2, 1, 4, 10, 11, 5, 9)
+VIEW_AS_ORDER = (1, 4, 10, 11, 5, 9)
+
+# 고르개에 **아예 세우지 않는** 계정 — 공용 관리자 계정(담당 명단이 없다, 11/13).
+# 고르개에서만 빠진다: 그 계정으로 로그인하는 것은 그대로다.
+VIEW_AS_HIDDEN = frozenset({2})
 
 
 def view_as_targets(db: Session, real: User) -> list:
-    """밑틀의 팀원 고르개에 세울 사람들 — `VIEW_AS_ORDER` 순, 나머지는 뒤에 id 순."""
+    """밑틀의 팀원 고르개에 세울 사람들 — `VIEW_AS_ORDER` 순, 나머지는 뒤에 id 순.
+
+    **나 자신도 선다**(11/13) — 고르면 보기를 끄고 내 화면으로 돌아온다
+    (`routers.auth.view_as_on`). 나를 '보는 대상'으로 세우지는 않는다(`may_view_as`).
+    """
     if real.role != "admin":
         return []
     rows = db.execute(select(User).where(User.is_active == 1)).scalars().all()
     rank = {uid: i for i, uid in enumerate(VIEW_AS_ORDER)}
     rows = sorted(rows, key=lambda u: (rank.get(u.id, len(rank)), u.id))
-    return [u for u in rows if may_view_as(real, u)]
+    return [u for u in rows if u.id not in VIEW_AS_HIDDEN
+            and (u.id == real.id or may_view_as(real, u))]
 
 
 def _acting(member: User, real: User) -> User:
@@ -399,6 +408,9 @@ CONSULTANT_PATHS = (
     "/login",
     "/logout",
     "/account/password",
+    # 본인 이름 바꾸기(`routers/auth.name_page`). 남의 이름은 그 안에서 관리자만 —
+    # 투자컨설턴트에게 열리는 것은 자기 계정 이름 하나다.
+    "/account/name",
     # 공지를 **확인했다고 적는 길.** 판은 밑틀(`base.html`)에 서므로
     # 투자컨설턴트의 화면 위에도 뜬다 — 막으면 그 계정에서는 같은 공지가
     # 영영 안 닫힌다. 여는 것은 이 한 길뿐이고(적고 내리는 것은 `/team`),

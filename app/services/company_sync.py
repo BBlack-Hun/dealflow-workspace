@@ -200,6 +200,10 @@ FILL_ONLY = "company_sync_fill_only"
 NO_AUTO_LINK = "company_sync_no_auto_link"
 #: `session.info` 열쇠 — 이번 flush 에서 새로 생기거나 이름이 바뀐 IR 기업(`after_flush`).
 NEW_NAMES = "company_sync_new_names"
+#: `session.info` 열쇠 — 켜져 있으면 이번 flush 는 **따라 고치지도 잇지도 않는다.** 계정
+#: 이름 바꾸기(`services/account_rename`)가 IR · Series A 담당자 칸의 이름 토막만 바꿀 때다 —
+#: 한쪽 줄에만 이름이 들었으면 그 줄 값 통째로 다른 쪽에 옮겨 적혀, 이름이 없던 칸까지 바뀐다.
+NO_FOLLOW = "company_sync_no_follow"
 
 
 # ── 값 ─────────────────────────────────────────────────────────────────────
@@ -675,7 +679,7 @@ def before_flush(session: Session) -> None:
     # flush 마다 새로 적는다(실패한 flush 의 목록이 다음 flush 로 넘어가지 않게).
     session.info[NEW_NAMES] = [o for o in session.new if isinstance(o, IrCompany)] + [
         c for c in companies if _renamed(c)]
-    if not rows and not companies:
+    if session.info.get(NO_FOLLOW) or (not rows and not companies):
         return
     # 새 줄 · 기업명을 고친 줄(안 이었거나 저절로 이은 줄 — 사람이 고른 연결은 둔다).
     # 스타트업 줄은 #85, 투자컨설턴트 줄은 11/01 — `기업명` 칸 후보에서 IR 기업을 고르면

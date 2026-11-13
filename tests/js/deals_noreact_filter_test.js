@@ -10,7 +10,7 @@
 //   ② 다시 누르면 거르기와 고른 것이 함께 풀린다(예전 두 번째 누름과 같다).
 //   ③ 단추에 지금 조건 안의 반응 없는 분 수가 적힌다 — 판정은 서버가 준 `data-noreact`
 //      그대로다(`services/no_reaction`).
-//   ④ 딜 소싱 탭으로 가면 거르기가 풀린다 — 그 탭에서는 단추가 숨는다.
+//   ④ 딜 소싱 탭으로 가면 거르기가 풀린다 — 그 탭에서는 단추(와 그 엑셀 — i246)가 숨는다.
 //   ⑤ 대시보드에서 `?noreact=1` 로 넘어오면 단추를 누른 것과 같은 상태로 열린다(#213).
 //
 // 규칙을 옮겨 적지 않고 **deals.js 를 그대로 실행**한다(`_deals_dom.js`).
@@ -78,7 +78,10 @@ const click = function (dom) { btn(dom).fire("click"); };
   click(dom);
   pickMode(dom, "sourcing");
   assert.ok(btn(dom).hidden, "딜 소싱 탭에서 [반응 없는 담당자만] 이 보인다");
+  const xls = dom.document.getElementById("noreact-export");   // 그 엑셀(i246)도 함께 숨는다
+  assert.ok(xls.hidden, "딜 소싱 탭에서 반응 없는 담당자 [엑셀] 이 보인다");
   pickMode(dom, "deal");
+  assert.ok(!xls.hidden, "딜 소개 탭으로 돌아왔는데 [엑셀] 이 숨은 채다");
   assert.strictEqual(btn(dom).getAttribute("aria-pressed"), "false",
     "다른 탭에 갔다 왔는데 반응 없음 거르기가 켜진 채다 — 왜 사람이 적은지 모른다");
 }

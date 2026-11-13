@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}이름 바꾸기 · CONTACTVC ASSET{% endblock %}
+
+{#
+  계정 이름 바꾸기 — 본인은 누구나, 남의 것은 관리자만(`routers/auth.py` 의 `_rename_target`).
+
+  **스크립트가 없다.** 미리보기는 `?to=` 를 단 GET, 바꾸기는 그 미리보기에만 서는 폼
+  하나다 — 팀 현황의 수정칸을 주소로 여는 것과 같은 판단이다. [바꾸기]는 미리 본 계획의
+  지문(`expect`)을 들고 가서, 그 사이 무엇이 달라졌으면 바꾸지 않고 다시 보여 준다.
+#}
+
+{% block content %}
+<h1 class="page-title">이름 바꾸기</h1>
+
+{% if msg %}<p class="flash">{{ msg }}</p>{% endif %}
+
+<div class="panel">
+  <p>
+    {% if member.id != user.id %}<b>{{ member.name }}</b> 님 계정의{% else %}내 계정의{% endif %}
+    표시 이름을 바꿉니다. 지금 이름: <b>{{ member.name }}</b>
+    {% if member.id != user.id %}· <a class="linkbtn" href="/team">팀 현황으로</a>{% endif %}
+  </p>
+  {% if viewing %}
+  <div class="warn-box"><b>{{ view_as_blocked }}</b></div>
+  {% else %}
+  <form method="get" action="/account/name" class="editor">
+    {% if member.id != user.id %}<input type="hidden" name="member" value="{{ member.id }}">{% endif %}
+    <label for="to">새 이름</label>
+    <input id="to" name="to" type="text" value="{{ to }}" maxlength="{{ max_name }}" required>
+    <button class="btn" type="submit">미리 보기</button>
+  </form>
+  {% endif %}
+  <p class="hint">
+    바로 바뀌지 않습니다 — 무엇이 몇 줄 같이 바뀌는지 먼저 보여 드리고, 확인한 뒤
+    <b>[바꾸기]</b>를 누르면 바뀝니다. 이 계정의 탭 이름과 담당자 칸의 이름이 같이 바뀌고,
+    관리자 시트 올리기의 담당 이름도 새 이름으로 맞춰 올리면 됩니다.
+    {{ max_name }}자까지, 다른 계정과 같은 이름은 쓸 수 없습니다(대소문자·띄어쓰기 무시).
+  </p>
+</div>
+
+{% if refused %}
+<div class="panel warn-panel"><p>{{ refused }}</p></div>
+{% endif %}
+
+{% if plan %}
+<section class="panel {% if plan.problem %}warn-panel{% endif %}" data-testid="rename-preview">
+  <h2 class="panel-title">같이 바뀌는 것</h2>
+  <div class="table-wrap">
+  <table class="grid-table compact">
+    <thead><tr><th>무엇</th><th>지금</th><th>바뀐 뒤</th></tr></thead>
+    <tbody>
+      <tr><td>계정 이름</td><td>{{ plan.before }}</td><td><b>{{ plan.after }}</b></td></tr>
+      {% for before, after in plan.tabs %}
+      <tr><td>탭</td><td>{{ before }}</td><td><b>{{ after }}</b></td></tr>
+      {% endfor %}
+      {% for c in plan.columns if c.equal or c.history %}
+      <tr>
+        <td>담당자 칸 · {{ c.title }}</td>
+        <td colspan="2">{{ c.equal + c.history }}줄
+          {% if c.history %}<span class="muted">(이름만 적힌 줄 {{ c.equal }} · 넘긴 이력 속 이름 {{ c.history }})</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p class="hint" data-testid="rename-summary">
+    탭 {{ plan.tabs|length }}개 · 담당자 칸 {{ plan.total }}줄이 같이 바뀝니다.
+  </p>
+
+  <h3>안 바뀌는 것</h3>
+  <ul class="hint">
+    <li>카톡방 이름 · 메모 · 비고 · 수정 기록 · 스타트업 기록의 담당 이력</li>
+    <li>다른 낱말의 일부로 든 같은 글자 — 이름이 앞뒤 글자와 붙어 있으면 그 사람 이름이 아닐 수 있어 그대로 둡니다</li>
+    {% if plan.other_tabs %}
+    <li>다른 계정이 주인인 탭 {{ plan.other_tabs|length }}개 — {{ plan.other_tabs|join(', ') }}
+      (탭 주인이나 관리자가 그 탭의 [이름 저장]으로 바꿉니다)</li>
+    {% endif %}
+    {% if not plan.cascade %}
+    <li>지금 이름이 로그인 ID 라, 같이 바꿀 탭 · 담당자 칸을 찾지 않았습니다</li>
+    {% endif %}
+  </ul>
+  {% if plan.already %}
+  <p class="hint">
+    담당자 칸에 <b>{{ plan.after }}</b> 로 이미 적힌 줄이 {{ plan.already }}줄 있습니다 — 바꾸고 나면
+    그 줄도 이 계정 담당으로 읽힙니다.
+  </p>
+  {% endif %}
+
+  {% if plan.problem %}
+  <div class="warn-box"><b>{{ plan.problem }}</b></div>
+  {% elif not viewing %}
+  <form method="post" action="/account/name"
+        onsubmit='return confirm({{ (plan.before ~ " → " ~ plan.after ~ " 로 바꿀까요?\n탭 " ~ plan.tabs|length ~ "개 · 담당자 칸 " ~ plan.total ~ "줄이 같이 바뀝니다.")|tojson }})'>
+    <input type="hidden" name="member" value="{{ member.id }}">
+    <input type="hidden" name="name" value="{{ plan.after }}">
+    <input type="hidden" name="expect" value="{{ plan.fingerprint }}">
+    <button class="btn primary" type="submit">바꾸기</button>
+  </form>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

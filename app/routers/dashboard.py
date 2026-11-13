@@ -960,6 +960,8 @@ def edit_member_profile(
     # 탭 이름을 고치는 길은 화면에 이미 있다(투자사 관리 현황의 탭 [이름 저장]
     # → `/api/contacts/sheets/rename`, 넷을 한 번에 옮긴다). **사람이 보고
     # 고르는 편이 맞다** — 물려준 계정의 탭 이름을 바꿀지 말지는 그때그때 다르다.
+    # **같은 사람의 이름만 바꾸는** 길은 따로 있다 — 미리보기를 거쳐 그 계정의 탭 ·
+    # 담당자 칸을 같이 옮긴다(`/account/name` · `services/account_rename`).
     note = "+이름을+바꿨습니다"
     if phone_changed:
         # **발송 프로그램 연결키(토큰)를 새로 발급한다.**

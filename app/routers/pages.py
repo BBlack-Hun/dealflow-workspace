@@ -879,7 +879,8 @@ def job_page(
                 "pc_note": (f"{db.get(User, job.user_id).name} 계정 PC 의 카톡에서 나갑니다"
                             if can_view and job.user_id != user.id and ir_job
                             and db.get(User, job.user_id) is not None else ""),
-                "again_href": ("/companies" if ir_job and outreach
+                # IR 기업 줄 회차는 「스타트업으로 카톡보내기」 탭(그 칸을 펴 둔 IR 기업현황)으로.
+                "again_href": (ir_outreach.TAB_HREF if ir_job and outreach
                                else f"{STARTUP_PAGE.msg_href}?topic={job.topic or ''}"
                                if outreach else "/deals"),
                 # 다루는 사람(`ir_outreach.may_operate` — 단추를 받는 자리와 같은 판정)이 아니면 보기만.
