@@ -29,6 +29,8 @@ from .base import (IrPathError, SendResult, Sender, ir_root, nfc,
 log = logging.getLogger("agent.kakao_mac")
 
 APP = "KakaoTalk"
+#: 카톡 메인 창 제목 — 방 확인 뒤 닫을 창에서 뺀다(`_close_opened_windows`).
+MAIN_WINDOW = "카카오톡"
 
 # 검색 결과에서 살펴볼 행 수 상한.
 #
@@ -51,6 +53,7 @@ COUNT_BUTTON_RE = re.compile(r"^(\d+)\s*개\s*전송$")
 # 표준 NSOpenPanel. '폴더로 이동'은 `Cmd+Shift+G` — **키 코드**로 보낸다
 # (`keystroke "g"` 는 입력원이 한글이면 먹지 않는다. 실기에서 잡았다).
 GOTO_KEY_CODE = 5          # 자판의 `g` 자리
+CLOSE_KEY_CODE = 13        # 자판의 `w` 자리 — 방 확인으로 연 창 닫기(Cmd+W)의 마지막 수단
 OPEN_PANEL_ID = "open-panel"
 OPEN_BUTTON_ID = "OKButton"
 OPEN_BUTTON_NAME = "열기"
@@ -234,11 +237,32 @@ class KakaoMacSender(Sender):
 
     def window_titles(self) -> List[str]:
         """카카오톡의 모든 창 제목. 방 열림 여부/정확 일치 검증의 근거."""
+        return [n.strip() for n in self._window_names() if n.strip()]
+
+    def _window_names(self) -> List[str]:
+        """카카오톡 창 이름을 **글자 그대로** (0.11.15).
+
+        예전에는 `name of windows` 를 쉼표로 나눠 읽어, 쉼표가 든 방 제목(단톡방
+        기본 제목 `홍길동, 김영희` 같은)이 토막 나 떠 있는 방도 못 알아봤다. 이름마다
+        `|` 로 감싸 한 줄씩 읽는다 — 앞뒤 공백까지 그대로라, 방 확인 뒤 연 창을 그
+        이름으로 정확히 닫을 수 있다(`_close_window`).
+        """
         out = _osa(
-            f'tell application "System Events" to tell process "{APP}" '
-            f'to return name of windows'
+            f'tell application "System Events" to tell process "{APP}"\n'
+            f'  set acc to ""\n'
+            f'  repeat with w in windows\n'
+            f'    try\n'
+            f'      set n to name of w\n'
+            f'      if n is not missing value then '
+            f'set acc to acc & "|" & (n as text) & "|" & linefeed\n'
+            f'    end try\n'
+            f'  end repeat\n'
+            f'  return acc\n'
+            f'end tell'
         )
-        return [w.strip() for w in out.split(",") if w.strip()]
+        return [line[1:-1] for line in out.split("\n")
+                if len(line) > 2 and line[0] == "|" and line[-1] == "|"
+                and line[1:-1].strip()]
 
     def _focus_window(self, title: str) -> bool:
         """이미 열려 있는 창을 앞으로 올린다. 성공하면 True.
@@ -603,16 +627,26 @@ class KakaoMacSender(Sender):
         return titles
 
     def verify_room(self, room_name: str) -> str:
-        """방 존재/모호성 확인. 전송은 하지 않는다."""
+        """방 존재/모호성 확인. 전송은 하지 않는다.
+
+        (0.11.15) 확인하려고 **여기서 연 채팅창은 판정 뒤 닫는다**. 0.11.14 까지는
+        검색으로 연 창(`_open_room_via_search`)을 그대로 두어 [방 연결 확인]을 돌리면
+        확인한 방마다 채팅창이 쌓였다 — 보낼 때는 `close_after_send` 로 닫는다.
+        못 찾음 · 여럿 · 오류로 끝나도 닫는다. 열기 **전부터** 떠 있던 창(사람이 열어 둔
+        같은 방 창 포함)은 여기서 연 것이 아니라 닫지 않는다. 닫기가 안 돼도 판정은
+        그대로 돌려준다.
+        """
         if not room_name or not room_name.strip():
             return "not_found"
+        before = None   # 열기 직전의 창 이름들 — 이것이 있을 때만 닫는다
         try:
-            titles = self.window_titles()
-            exact = [t for t in titles if t == room_name]
+            names = self._window_names()
+            exact = [n for n in names if n.strip() == room_name]
             if len(exact) > 1:
                 return "ambiguous"
             if exact:
-                return "verified"
+                return "verified"       # 이미 떠 있는 창 — 열지 않았으니 닫지도 않는다
+            before = names
             self._open_room_via_search(room_name)
             titles = self.window_titles()
             exact = [t for t in titles if t == room_name]
@@ -624,6 +658,102 @@ class KakaoMacSender(Sender):
         except Exception:
             log.exception("verify_room 실패")
             return "not_found"
+        finally:
+            if before is not None:
+                self._close_opened_windows(before, room_name)
+
+    def _close_opened_windows(self, before: List[str], room_name: str) -> None:
+        """`before`(열기 직전 창 이름들)에 없던 카톡 창을 닫는다 (0.11.15).
+
+        방을 연 것은 이 발송기뿐이라 그 사이 새로 뜬 창이 곧 연 창이다 — 제목이 방
+        이름과 조금 달라도(그래서 `not_found` 여도) 닫는다. 메인 창은 빼고, 열기 전부터
+        있던 이름은 건드리지 않는다. **던지지 않는다** — 판정은 이미 났다.
+        """
+        try:
+            now = self._window_names()
+        except Exception as exc:  # noqa: BLE001 - 접근성 오류까지 — 판정은 그대로
+            log.warning("[kakao_mac] 방 확인 뒤 창 목록을 못 읽어 연 창을 닫지 "
+                        "못했습니다(결과는 그대로) room=%r: %s", room_name, exc)
+            return
+        had = set(before)
+        fresh = [n for n in dict.fromkeys(now)
+                 if n not in had and n.strip() != MAIN_WINDOW]
+        for name in fresh:
+            try:
+                closed = self._close_window(name)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("[kakao_mac] 창 닫기 오류(결과는 그대로) %r: %s", name, exc)
+                closed = False
+            if closed:
+                log.info("[kakao_mac] 방 확인으로 연 창을 닫았습니다 %r", name)
+            else:
+                log.warning("[kakao_mac] 방 확인으로 연 창을 닫지 못했습니다(결과는 "
+                            "그대로) %r", name)
+
+    def _close_window(self, name: str) -> bool:
+        """이름이 `name` 인 카톡 창을 닫는다. 다 닫혔으면 True (0.11.15).
+
+        ① 그 창의 **닫기 단추**(AXCloseButton)를 누른다 — 키를 쓰지 않아 입력원(한/영)
+           · 앞 창과 상관없이 그 창에만 간다.
+        ② 그래도 남으면 그 창을 앞으로 올려 **카톡이 앞이고 앞 창 이름이 같을 때만**
+           Cmd+W(물리 키 — `keystroke` 는 입력원이 한글이면 안 먹는다). 아니면 누르지
+           않는다 — 키는 앞 창으로 간다.
+        """
+        esc = _esc(name)
+        gone = (f'  repeat 20 times\n'
+                f'    if not (exists window "{esc}") then return "closed"\n'
+                f'    delay 0.05\n'
+                f'  end repeat\n'
+                f'  return "left"\n')
+        if _osa(
+            f'tell application "System Events" to tell process "{APP}"\n'
+            f'  repeat with w in (every window whose name is "{esc}")\n'
+            f'    try\n'
+            f'      click (first button of w whose subrole is "AXCloseButton")\n'
+            f'    end try\n'
+            f'  end repeat\n'
+            + gone +
+            f'end tell'
+        ) == "closed":
+            return True
+        return _osa(
+            f'tell application "System Events" to tell process "{APP}"\n'
+            f'  set ws to (every window whose name is "{esc}")\n'
+            f'  if (count of ws) is 0 then return "closed"\n'
+            f'  set frontmost to true\n'
+            f'  perform action "AXRaise" of item 1 of ws\n'
+            f'  repeat 20 times\n'
+            f'    if frontmost and (name of front window) is "{esc}" then exit repeat\n'
+            f'    delay 0.05\n'
+            f'  end repeat\n'
+            f'  if not (frontmost and (name of front window) is "{esc}") then return "left"\n'
+            f'  key code {CLOSE_KEY_CODE} using command down\n'
+            + gone +
+            f'end tell'
+        ) == "closed"
+
+    def tidy_after_verify(self) -> None:
+        """방 확인 회차가 끝나면 메인 창 검색칸에 남은 글자를 지운다 (0.11.15).
+
+        찾기(`discover_rooms`) · 열기(`_open_room_via_search`)는 검색칸에 글자를 넣고
+        두기만 해서, 회차가 끝나도 마지막 검색어로 걸러진 목록이 남았다. 빈 칸이면
+        건드리지 않는다.
+        """
+        _osa(
+            f'tell application "System Events" to tell process "{APP}"\n'
+            f'  if not (exists window "{MAIN_WINDOW}") then return "none"\n'
+            f'  set sf to missing value\n'
+            f'  try\n'
+            f'    set sf to first UI element of (first window whose name is '
+            f'"{MAIN_WINDOW}") whose role is "AXTextField"\n'
+            f'  end try\n'
+            f'  if sf is missing value then return "none"\n'
+            f'  if (value of sf) is "" then return "empty"\n'
+            f'  set focused of sf to true\n'
+            f'  set value of sf to ""\n'
+            f'  return "cleared"\n'
+            f'end tell'
+        )
 
     def _front_title(self) -> str:
         """지금 최전면 카톡 창의 제목. 오발송 방지 검증의 근거."""
