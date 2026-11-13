@@ -327,6 +327,17 @@ def test_empty_address_reads_a_colleague_at_the_same_firm(db, users, data):
 
 # ── i242 — 관리자 대시보드의 카톡방 연결 상태 · 내 투자사 선호도 팀 전체 합계 ──
 
+# i252 — 이 칸의 이름. 옛 이름은 '내 투자사 선호'.
+REQUESTERS_TITLE = "IR 자료를 많이 요청하신 심사역 순"
+
+
+def test_member_dashboard_names_the_requesters_panel(client, db, users, data):
+    body = _login(client).get("/").text
+    head = body.split(REQUESTERS_TITLE, 1)[1].split("</h2>", 1)[0]
+    assert "팀 전체 합계" not in head
+    assert "내 투자사 선호" not in body, "옛 이름(i252 에서 바꿈)이 남아 있다"
+
+
 def test_admin_rooms_and_requesters_sum_the_team(client, db, users, data):
     from app.services import dashboard
 
@@ -348,8 +359,9 @@ def test_admin_rooms_and_requesters_sum_the_team(client, db, users, data):
     _login(client, "01000000002")
     body = client.get("/").text
     rooms = body.split("카톡방 연결 상태", 1)[1].split("</h2>", 1)[0]
-    pref = body.split("내 투자사 선호", 1)[1].split("</h2>", 1)[0]
+    pref = body.split(REQUESTERS_TITLE, 1)[1].split("</h2>", 1)[0]
     assert "팀 전체 합계" in rooms and "팀 전체 합계" in pref
+    assert "내 투자사 선호" not in body, "옛 이름(i252 에서 바꿈)이 남아 있다"
     # 몇 명까지 볼지 바꿔도(새로고침 없이 부르는 API) 같은 모집단이다.
     api = client.get("/api/dashboard/top-requesters?top=10").json()["rows"]
     assert {r["name"] for r in api} == names
@@ -370,6 +382,7 @@ def test_view_as_dashboard_is_the_members_own(client, db, users, data):
                 follow_redirects=False)
     body = client.get("/").text
     assert "팀 전체 합계" not in body
+    assert REQUESTERS_TITLE in body and "내 투자사 선호" not in body
     assert 'href="/reactions/list?key=ir_contacts"' in body
     api = client.get("/api/dashboard/top-requesters?top=10").json()["rows"]
     assert {r["name"] for r in api} == {"심사역가", "심사역나"}
