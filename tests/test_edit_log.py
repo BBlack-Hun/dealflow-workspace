@@ -688,6 +688,9 @@ WRITE_ROUTES = {
     ("POST", "/team/members/{member_id}/export-companies"): WATCHED,
     # 이 계정의 잡을 누구의 발송기가 집어가나 — `users.send_via_user_id`.
     ("POST", "/team/members/{member_id}/send-via"): WATCHED,
+    # 계정 이름 바꾸기 — 탭 · 담당자 칸(공용 표 포함)이 따라 움직인다. 줄마다가 아니라
+    # **한 판에 한 줄**로 남는다(`edit_log.log_account_rename` · 자기 이름이라도).
+    ("POST", "/account/name"): WATCHED,
     ("POST", "/team/members/{member_id}/reset-password"): WATCHED,
     ("POST", "/team/members/{member_id}/deactivate"): WATCHED,
     # 계정마다 하루 발송 상한 — `users.daily_send_cap` (발송 안전장치 판).

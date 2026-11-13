@@ -408,6 +408,9 @@ CONSULTANT_PATHS = (
     "/login",
     "/logout",
     "/account/password",
+    # 본인 이름 바꾸기(`routers/auth.name_page`). 남의 이름은 그 안에서 관리자만 —
+    # 투자컨설턴트에게 열리는 것은 자기 계정 이름 하나다.
+    "/account/name",
     # 공지를 **확인했다고 적는 길.** 판은 밑틀(`base.html`)에 서므로
     # 투자컨설턴트의 화면 위에도 뜬다 — 막으면 그 계정에서는 같은 공지가
     # 영영 안 닫힌다. 여는 것은 이 한 길뿐이고(적고 내리는 것은 `/team`),

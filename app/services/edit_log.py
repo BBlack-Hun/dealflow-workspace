@@ -90,6 +90,7 @@ flush 를 지나지 않아 이 자리에서 안 잡힌다. 지금 그런 자리�
 from __future__ import annotations
 
 import json
+from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from typing import Any, Callable, Dict, List, Optional
 
@@ -650,6 +651,14 @@ FIELD_LABELS = {
     "tab_canceled_jobs": "비어서 취소한 발송 회차",
     "tab_deleted_columns": "함께 지운 달 칸",
     "tab_snapshot": "지우기 직전 백업",
+    # 계정 이름 바꾸기 한 번(`log_account_rename`). 위 두 판과 같은 이유로 부르는 쪽이
+    # 세어서 넘긴다 — 줄마다는 안 남는다(`one_line`).
+    "rename_tab": "같이 바꾼 탭",
+    "rename_vc_contacts": "담당자 칸 · 투자사 관리 현황",
+    "rename_sourcing_contacts": "담당자 칸 · 딜 소싱",
+    "rename_ir_companies": "담당자 칸 · IR 기업 현황",
+    "rename_series_a_companies": "담당자 칸 · Series A 이상 딜 소싱",
+    "rename_sheet_owners": "담당자 칸 · 명단 설정",
     "ir_company_id": "IR 기업 연결", "ir_link_auto": "자동 연결",
     "region": "지역", "quote_attached": "견적서 첨부 여부", "success_fee": "성공보수율",
     "contact_name": "대표자명", "contact_phone": "연락처", "contact_email": "이메일",
@@ -717,6 +726,24 @@ def end(token: Token) -> None:
 
 def actor() -> Optional[dict]:
     return _ACTOR.get()
+
+
+@contextmanager
+def one_line():
+    """이 안에서 flush 된 줄은 **줄마다 남기지 않는다** — 부르는 쪽이 그 일을 한 줄로 적는다.
+
+    계정 이름 바꾸기가 쓴다(`services/account_rename`). 이름 하나에 탭 · 담당자 칸
+    수백 줄이 따라 움직이는데, 줄마다 남기면 그날의 다른 기록이 그 밑에 묻힌다 —
+    시트 한 판(`log_import`) · 탭 지우기(`log_tab_delete`)를 한 줄로 적는 것과 같은
+    까닭이다. **안에서 flush 까지 마쳐야 한다** — 바꾼 줄이 나간 뒤에 flush 되면
+    그때는 문맥이 돌아와 있어 줄마다 남는다. 누른 사람은 들어가기 전에 잡아 둔다
+    (안에서는 `_sender` 가 부르는 쪽이 준 사람으로 떨어진다).
+    """
+    token = _ACTOR.set(None)
+    try:
+        yield
+    finally:
+        _ACTOR.reset(token)
 
 
 def _sender(fallback: int) -> int:
@@ -1163,6 +1190,46 @@ def log_tab_delete(db, *, actor_user_id: int, label: str,
         # 지우기 **전에** 읽어 넘긴다 — 지운 뒤에는 배치가 없어 알 수 없다.
         "screen": _screen(href),
         "row_label": _trim(label) or "",
+        "method": method,
+        "path": path,
+        "changes_json": json.dumps(changes, ensure_ascii=False),
+    }])
+
+
+def log_account_rename(db, *, actor_user_id: int, member_id: int, before: str,
+                       after: str, tabs=(), counts: Optional[Dict[str, int]] = None,
+                       path: str = "", method: str = "") -> None:
+    """계정 이름을 바꾼 일을 **한 줄로** 남긴다 — 누가 · 누구 이름을 · 무엇이 몇 줄 같이.
+
+    `log_tab_delete` 와 같은 자리 · 같은 방식이다. 따라 바뀐 탭 · 담당자 칸은 줄마다
+    안 남는다(`one_line`) — 대신 여기 탭은 하나하나(전 → 후), 담당자 칸은 표마다 줄 수를
+    싣는다. 담당자 칸은 `옛 이름 → 새 이름 · N줄` 로 적는다(로그 화면이 고친 줄을
+    `전 → 후` 로 그린다). 0 인 표는 싣지 않는다.
+
+    **자기 이름이라도 남긴다**(`SCOPE_MINE`). 자기 것을 고친 것은 보통 안 남기지만,
+    이 한 판은 남의 탭 · 공용 표(IR · 딜 소싱)의 담당자 칸까지 움직인다.
+    """
+    from ..models import EditLog
+
+    actor_user_id = _sender(actor_user_id)
+    scope = SCOPE_MINE if member_id == actor_user_id else SCOPE_OTHERS
+    changes = [{"field": "name", "before": _trim(before), "after": _trim(after)}]
+    changes += [{"field": "rename_tab", "before": _trim(a), "after": _trim(b)}
+                for a, b in tabs]
+    for name, value in (counts or {}).items():
+        if value:
+            changes.append({"field": name, "before": _trim(before),
+                            "after": _trim(f"{after} · {value}줄")})
+    db.execute(EditLog.__table__.insert(), [{
+        "at": now_iso(),
+        "actor_user_id": actor_user_id,
+        "target_user_id": member_id,
+        "scope": scope,
+        "action": ACTION_UPDATE,
+        "table_name": "users",
+        "row_id": int(member_id),
+        "screen": _screen("/team"),
+        "row_label": _trim(after) or "",
         "method": method,
         "path": path,
         "changes_json": json.dumps(changes, ensure_ascii=False),
