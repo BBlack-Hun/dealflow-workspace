@@ -369,21 +369,24 @@ def test_이레는_한_곳에만_적혀_있다():
 
 
 def test_화면_안내문이_그_값을_읽는다(db, users, logged):
-    """안내문의 `7일` 은 상수에서 나온 것이어야 한다 — 값을 바꿔 보고 확인한다."""
+    """`/ir` 안내문의 날 수는 상수에서 나온 것이어야 한다 — 값을 바꿔 보고 확인한다.
+
+    11/14 부터 `/ir` 은 검토 요청 차례(`IR_REVIEW_ASK_DAYS`, 전달 뒤 5일)를 말한다.
+    """
     from app.services import pipeline
 
     contact = _contact(db, users, "가담당")
     _delivered(db, users, contact, "샘플애그",
                when=date.today() - timedelta(days=99))
 
-    before = pipeline.IR_MEETING_ASK_DAYS
+    before = pipeline.IR_REVIEW_ASK_DAYS
     try:
-        pipeline.IR_MEETING_ASK_DAYS = 3
+        pipeline.IR_REVIEW_ASK_DAYS = 3
         body = logged.get("/ir").text
-        assert "3일 지남" in body
-        assert "7일 지남" not in body
+        assert "전달 3일 지남 1명" in body
+        assert "전달 5일 지남" not in body
     finally:
-        pipeline.IR_MEETING_ASK_DAYS = before
+        pipeline.IR_REVIEW_ASK_DAYS = before
 
 
 # --- 보이는 자리 --------------------------------------------------------------
@@ -395,7 +398,7 @@ def test_전달한_자료_판에_뜬다(db, users, logged):
                when=date.today() - timedelta(days=30))
 
     body = logged.get("/ir").text
-    assert "7일 지남" in body
+    assert "전달 5일 지남 1명" in body
     # #79 — 전달 뒤 먼저 나가는 것이 IR 자료 검토 요청이라 경보도 그 말이다.
     assert "IR 자료 검토 요청 미완료 1명" in body
     # 줄에는 **지난 날 그대로**가 선다(10/17 회의 #39) — 예전엔 `7일 지남` 고정.
@@ -449,7 +452,7 @@ def test_지난_건은_스무_줄_밖으로_밀려도_보인다(db, users, logge
 
     body = logged.get("/ir").text
     assert "샘플애그" in body, "재촉할 건이 20줄 밖으로 밀려 사라졌다"
-    assert "7일 지남" in body
+    assert "전달 5일 지남 1명" in body
 
 
 def test_지난_줄이_스무_개를_넘어도_안_자른다(db, users, logged):

@@ -639,10 +639,14 @@
        여기서 세어 보여 준다. **줄이 아니라 담당자를 센다**(미팅 요청 카톡은
        담당자당 한 통이다). #}
     <h2 class="panel-title">IR 전달기업 <span class="hint">{{ done_requests|length }}건</span></h2>
-    {% if meeting_ask_missing %}
+    {# 차례(11/14): 자료 전달 5~6일 뒤 검토 요청 → 검토 요청 4~5일 뒤 미팅 요청. #}
+    {% if meeting_ask_missing or meeting_waiting %}
     <p class="hint {% if meeting_ask_overdue %}warn{% endif %}">
-      {{ labels.not_reviewed }} {{ meeting_ask_missing }}명
-      ({{ meeting_ask_days }}일 지남 {{ meeting_ask_overdue }}명)
+      {% if meeting_ask_missing %}{{ labels.not_reviewed }} {{ meeting_ask_missing }}명
+      (전달 {{ review_ask_days }}일 지남 {{ review_due }}명){% endif %}
+      {% if meeting_ask_missing and meeting_waiting %} · {% endif %}
+      {% if meeting_waiting %}{{ labels.not_asked }} {{ meeting_waiting }}명
+      (검토 요청 {{ meeting_after_review_days }}일 지남 {{ meeting_due }}명){% endif %}
     </p>
     {% endif %}
     {% if done_requests %}
@@ -700,9 +704,11 @@
             (위 리마인드 구역의 `req-link`) — 투자사명만 눌리게 하면 투자사명이
             빈 줄에서는 누를 곳이 없어진다.
           #}
+          {# 11/14 — 검토 요청이 이미 나간 심사역은 다음 차례인 **미팅 요청**으로 연다. #}
+          {% set next_meeting = r.reviewed or r.meeting_asked %}
           <td><a class="req-link"
-                 href="/deals?mode=ir_review&contacts={{ r.contact_id }}"
-                 title="이 투자사에 IR 자료 검토 요청 문구 보내기 — 담당자가 골라진 채로 열립니다"
+                 href="/deals?mode={{ 'meeting' if next_meeting else 'ir_review' }}&contacts={{ r.contact_id }}"
+                 title="이 투자사에 {{ '미팅 요청' if next_meeting else 'IR 자료 검토 요청' }} 문구 보내기 — 담당자가 골라진 채로 열립니다"
                 >{{ r.name }} <span class="muted">{{ r.firm }}</span></a></td>
           <td>{{ r.company_name }}{% if r.series_a %} {{ series_a_tag(r.series_a) }}{% endif %}</td>
           <td class="num">{{ r.raise_target }}</td>

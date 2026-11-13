@@ -23,7 +23,8 @@
 
   건수를 함께 띄운다. 숫자가 없으면 어느 구역에 일이 밀렸는지 내려가 봐야 안다.
 #}
-<nav class="jump-bar">
+{# 11/14 — 페이지가 길어 이동 바가 화면 위에 붙어 따라온다(`.flow-jump`). #}
+<nav class="jump-bar flow-jump">
   <a href="#requests">
     IR 자료 요청
     {% if flow_counts.ir_open %}<span class="warn">{{ flow_counts.ir_open }}</span>

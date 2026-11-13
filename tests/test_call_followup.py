@@ -176,7 +176,7 @@ def test_the_screen_has_a_tab_of_its_own(waiting_call, logged):
     """
     body = logged.get("/ir").text
 
-    at = body.index('class="jump-bar"')
+    at = body.index('class="jump-bar')
     bar = body[at:body.index("</nav>", at)]
     assert 'href="#calls"' in bar, "점프바에 전화 요청 갈래가 없다"
     assert "전화 요청" in bar
