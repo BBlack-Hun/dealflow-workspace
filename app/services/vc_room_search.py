@@ -57,6 +57,20 @@
   참여 안 함 줄은 그대로 둔다. 확정 못 한 줄은 단계 · 채널 모두 그대로다.
 - **발송기 오류**(카톡 창을 못 잡음 등) — 줄은 건드리지 않고 오류만 건에 적는다.
 
+## 확정 못 한 후보는 사람이 눌러 고른다 (11/13)
+
+사용자: "자동으로 연결 안 해 줄 거면 그걸 클릭해서 카톡방에 입력 후 해당 투자사만
+재검사". 찾은 제목은 사유 글에 **잘려**(셋까지 · 60자 — `_shown`) 적힌다. 그 글을 쪼개
+읽지 않는다 — 발송기가 올린 제목을 건의 `room_candidates` 에 그대로 담고(`save_rooms`),
+진행 화면이 확정 못 한(`failed`) 건의 사유 아래에 제목마다 단추를 세운다(`pick_view`).
+누르면 그 줄 방 이름을 그 제목으로 고치고(수정 창과 같은 길 — `routers/contacts.
+update_contact`) 그 한 줄만 새 [방 연결 확인] 회차로 다시 본다(`routers/jobs.pick_room`).
+다시 보는 회차는 적어 둔 이름 그대로 대조한다(1) — 맞으면 확인됨이다.
+
+  · 같은 제목이 둘 이상 걸린 제목은 단추를 안 세운다 — 넣어도 어느 방인지 못 가른다.
+  · 찾을 때의 방 이름(`was`)과 지금 방 이름이 다르면 덮지 않는다 — 사람이 고쳤다.
+  · 이 칸 전에 끝난 건은 후보를 모른다 — 단추가 안 선다(사유 글은 그대로다).
+
 ## 누가 찾나 — 그 계정 발송기
 
 잡은 누른 계정(팀원 화면으로 보는 중이면 그 팀원) 것으로 서고, 그 계정의 발송기가
@@ -65,6 +79,7 @@
 """
 from __future__ import annotations
 
+import json
 import re
 import unicodedata
 from typing import List, Optional, Set, Tuple
@@ -224,6 +239,9 @@ def apply_result(item: SendItem, body) -> None:
     found = (body.found_room or "").strip()
     if found and not any(room_name.same_title(found, r) for r in rooms):
         rooms.insert(0, found)
+    # 사유 글에는 잘려 적히는 제목을 자르지 않고 건에 담는다 — 확정 못 하면 진행 화면이
+    # 제목마다 단추를 세운다(`pick_view`). 확정한 건(`sent`)에는 안 선다.
+    save_rooms(item, rooms)
     error = (body.error or "").strip()
     written = (contact.kakao_room_name or "").strip()
     if written:
@@ -278,6 +296,95 @@ def apply_result(item: SendItem, body) -> None:
         return
     _confirm(db, item, contact, title)
     done(None)
+
+
+# ── 확정 못 한 후보 — 건에 담아 두고 진행 화면에서 골라 다시 확인 (11/13) ──────────
+
+#: 건에 담는 찾은 방 제목 수의 상한(같은 제목을 하나로 친 뒤). 제목은 자르지 않는다.
+ROOMS_MAX = 10
+
+
+def save_rooms(item: SendItem, rooms: List[str]) -> None:
+    """발송기가 올린 제목들을 건에 담는다 — `{"rooms", "same", "was"}`. 없으면 비운다.
+
+    · `rooms` — 같은 제목(`title_key`)을 하나로 친 제목, 올라온 차례 그대로 · 자르지 않음.
+    · `same` — 둘 이상 걸린 제목. 넣어도 어느 방인지 못 가른다(`_pick` 의 「같은 제목의
+      방이 여럿」 · 다시 확인하면 `ambiguous`) — 단추를 안 세운다.
+    · `was` — **찾기 시작할 때의 방 이름**. 적어 둔 이름으로 못 찾아 되돌아온 건이면 그
+      이름(`fall_back` 이 `subject` 에 떠 둔 것), 처음부터 빈 줄이면 빈 글자. 누를 때
+      지금 방 이름과 견줘 사람이 그 사이 고쳤으면 덮지 않는다(`routers/jobs.pick_room`).
+    """
+    keys: dict = {}
+    same: List[str] = []
+    for room in rooms:
+        key = room_name.title_key(room)
+        if not key:
+            continue
+        if key in keys:
+            if keys[key] not in same:
+                same.append(keys[key])
+            continue
+        keys[key] = room
+    if not keys:
+        item.room_candidates = None
+        return
+    item.room_candidates = json.dumps(
+        {"rooms": list(keys.values())[:ROOMS_MAX], "same": same,
+         "was": (item.subject or "").strip()}, ensure_ascii=False)
+
+
+def _saved(item: SendItem) -> dict:
+    """담아 둔 후보 — 글자가 깨졌거나 없으면 빈 묶음(진행 화면이 터지지 않게)."""
+    try:
+        data = json.loads(item.room_candidates or "")
+    except (TypeError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def pick_view(job: Optional[SendJob], item: SendItem) -> Optional[dict]:
+    """진행 화면 사유 칸 아래에 세울 후보 — 없으면 `None`.
+
+    `{"rooms": [누를 제목], "picked": 고른 제목, "job_id": 다시 확인 회차, "note": 한 줄}`.
+    투자사 [방 연결 확인](주제 없음)의 담당자 줄 건 중 **확정 못 한(`failed`)** 건만이다 —
+    확인됨 건 · 대기 건 · 이 칸 전에 끝난 건(후보를 모른다)에는 안 선다. 이미 골랐으면
+    단추 대신 고른 제목과 다시 확인 회차를 싣는다(`mark_picked` — 한 번에 한 후보만).
+    """
+    from ..routers.agent_api import VERIFY_KIND   # 순환 import 를 피해 늦게 부른다
+
+    if (job is None or job.kind != VERIFY_KIND or job.topic is not None
+            or item.contact_id is None or item.ir_company_id is not None
+            or item.status != "failed" or not item.room_candidates):
+        return None
+    data = _saved(item)
+    picked = str(data.get("picked") or "")
+    if picked:
+        return {"rooms": [], "picked": picked, "job_id": data.get("job_id"),
+                "note": str(data.get("note") or "")}
+    same = {room_name.title_key(r) for r in data.get("same") or []}
+    rooms = [str(r) for r in data.get("rooms") or []
+             if str(r).strip() and room_name.title_key(str(r)) not in same]
+    if not rooms:
+        return None
+    return {"rooms": rooms, "picked": "", "job_id": None, "note": ""}
+
+
+def pickable(item: SendItem) -> List[str]:
+    """누를 수 있는 제목들(`pick_view` 의 `rooms`) — 고른 뒤 · 확정한 건이면 빈 목록."""
+    view = pick_view(item.job, item)
+    return view["rooms"] if view else []
+
+
+def started_from(item: SendItem) -> str:
+    """찾기 시작할 때의 방 이름(`save_rooms` 의 `was`)."""
+    return str(_saved(item).get("was") or "")
+
+
+def mark_picked(item: SendItem, title: str, job_id: Optional[int], note: str = "") -> None:
+    """고른 제목과 다시 확인 회차를 건에 적는다 — 그 뒤로는 단추 대신 그 회차 링크가 선다."""
+    data = _saved(item)
+    data.update({"picked": title, "job_id": job_id, "note": note})
+    item.room_candidates = json.dumps(data, ensure_ascii=False)
 
 
 def _connect(contact: VcContact) -> None:

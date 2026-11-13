@@ -34,6 +34,7 @@
     badge.textContent = JOB_STATUS_KO[d.status] || d.status;
 
     var body = document.getElementById("log-body");
+    picks = {};
     body.innerHTML = d.items.map(function (i) {
       return "<tr>" +
         "<td>" + esc(i.contact_name) + "</td>" +
@@ -43,7 +44,7 @@
         '<td class="st st-' + i.status + '">' + esc(i.result || STATUS_KO[i.status] || i.status) + "</td>" +
         "<td>" + (i.retry_count || 0) + "</td>" +
         // 예전 발송기는 사유에 `**강조**` 표시를 그대로 실었다 — 글자로 보이지 않게 뗀다
-        "<td>" + esc(i.error && i.error.replace(/\*\*/g, "") || i.sent_at || "") + "</td>" +
+        "<td>" + esc(i.error && i.error.replace(/\*\*/g, "") || i.sent_at || "") + pickCell(i) + "</td>" +
         "</tr>";
     }).join("");
 
@@ -108,6 +109,58 @@
     tellDone(d, terminal);
     if (terminal) { if (timer) { clearInterval(timer); timer = null; } }
   }
+
+  // ── 찾은 방 후보 — 눌러 방 이름에 넣고 그 분만 다시 확인 (사용자 11/13) ──────────
+  //
+  // 투자사 [방 연결 확인]이 찾았지만 확정 못 한 건에 서버가 `room_pick` 을 싣는다
+  // (`vc_room_search.pick_view` — 사유 글을 쪼개 읽지 않고 건에 담아 둔 제목 그대로).
+  // 단추는 다룰 수 있는 사람에게만 선다(`DEALFLOW_JOB_PICK` — 조회만 하는 화면에는 없다).
+  // 고른 뒤에는 단추 대신 넣은 이름과 새 확인 회차 링크가 선다 — 한 번에 한 후보만.
+  var PICK = !!window.DEALFLOW_JOB_PICK;
+  var picks = {};       // 단추 id → {item, room} — 그릴 때마다 새로 맨다
+  var picking = false;  // 누른 요청이 도는 동안 다른 단추를 안 받는다
+
+  function pickCell(i) {
+    var p = i.room_pick;
+    if (!p) return "";
+    if (p.picked) {
+      var link = p.job_id
+        ? ' · <a class="linkbtn" href="/jobs/' + Number(p.job_id) + '">이 분만 다시 확인 — '
+          + Number(p.job_id) + "회차</a>"
+        : "";
+      return '<div class="room-picked hint">넣은 방 이름: <b>' + esc(p.picked) + "</b>" + link
+        + (p.note ? '<div class="warn">' + esc(p.note) + "</div>" : "") + "</div>";
+    }
+    if (!PICK || !(p.rooms && p.rooms.length)) return "";
+    return '<div class="room-picks">' + p.rooms.map(function (room, k) {
+      var id = "room-pick-" + i.id + "-" + k;
+      picks[id] = { item: i.id, room: room };
+      return '<button type="button" class="chip room-pick" id="' + id + '" title="이 제목으로 '
+        + '방 이름을 넣고 이 분만 다시 확인">' + esc(room) + "</button>";
+    }).join("") + "</div>";
+  }
+
+  var logBody = document.getElementById("log-body");
+  if (logBody) logBody.addEventListener("click", function (e) {
+    var btn = e.target && e.target.closest ? e.target.closest(".room-pick") : null;
+    var p = btn ? picks[btn.getAttribute("id")] : null;
+    if (!p || picking) return;
+    if (!confirm("이 방 이름으로 넣고 이 분만 다시 확인할까요?\n\n" + p.room)) return;
+    picking = true;
+    fetch("/api/jobs/" + jobId + "/items/" + p.item + "/room-pick", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: p.room })
+    })
+      .then(function (r) { return r.json().then(function (x) { return { ok: r.ok, d: x }; }); })
+      .then(function (res) {
+        picking = false;
+        if (!res.ok) alert("넣지 않았습니다: " + ((res.d && res.d.detail) || ""));
+        else if (res.d && res.d.note) alert(res.d.note);
+        poll();   // 끝난 회차라 폴링이 멈췄어도 그 줄을 다시 그린다(단추 → 링크)
+      })
+      .catch(function () { picking = false; alert("요청 오류 — 다시 눌러 주세요"); });
+  });
 
   // ── 방 찾기 · 확인이 끝나면 한 번 알린다 (사용자 11/13: "방 찾기 완료 시 alert") ──
   //
