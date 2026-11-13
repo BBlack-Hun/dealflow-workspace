@@ -540,7 +540,8 @@ def _apply_verify_result(item: SendItem, body: ItemResult,
         return
 
     # 투자사 담당자를 **이름으로 찾은** 건(방 이름이 빈 건) — 찾은 방이 이 분 방으로
-    # 분명할 때만 빈 방 이름 칸을 채운다. 적어 둔 방 이름은 여기서도 안 바꾼다.
+    # 분명할 때만 빈 방 이름 칸을 채우고, 적어 둔 이름으로 못 찾아 되돌아온 건이면 그
+    # 제목으로 방 이름을 바꾼다(11/13). 아래 대조 길은 여전히 안 바꾼다.
     if vc_room_search.is_search(item.job, item):
         vc_room_search.apply_result(item, body)
         return
@@ -598,8 +599,9 @@ def _apply_verify_result(item: SendItem, body: ItemResult,
         item.error = body.error or VERIFY_ERRORS.get(verdict, verdict)
     # 적어 둔 이름으로 **찾아봤는데 없었다** — 같은 건을 이름+직급 → 이름으로 한 번 더
     # 찾는다. 발송기 오류 · 판정 없이 온 결과 · 판을 못 믿는 발송기 · 잡 뒤에 고친
-    # 이름은 뺀다(찾아본 결과가 아니다). 적어 둔 이름은 그대로이고, 위에서 적은 사유는
-    # 남겨 두었다가 이름으로도 못 찾으면 앞에 붙인다(`vc_room_search.apply_result`).
+    # 이름은 뺀다(찾아본 결과가 아니다). 적어 둔 이름은 여기서는 그대로이고, 위에서 적은
+    # 사유는 남겨 두었다가 이름으로도 못 찾으면 앞에 붙인다. 이름으로 찾은 방이 이 분
+    # 방으로 분명하면 그 제목으로 바꾸는 것은 그쪽 일이다(`vc_room_search.apply_result`, 11/13).
     if (verdict == "not_found" and body.verify_result in VERIFY_VERDICTS
             and not (renamed or blind or investor) and not (body.error or "").strip()):
         vc_room_search.fall_back(item)

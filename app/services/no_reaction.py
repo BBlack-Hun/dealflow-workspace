@@ -153,18 +153,19 @@ def before_flush(session) -> None:
             contact.status = STATUS_ACTIVE
 
 
-def judged(db: Session, user, contacts=None) -> Tuple[Set[int], Set[int]]:
+def judged(db: Session, user, contacts=None, rows=None) -> Tuple[Set[int], Set[int]]:
     """(`반응 없음` 인 분, 판정은 `반응 없음` 인데 **사람이 손으로 뺀** 분) — 대상 목록 안에서.
 
     딜 제안 관리는 둘 다 쓴다 — 앞엣것에 딱지를, 뒤엣것에 [되돌리기] 를 단다. 판정을
     두 번 돌리지 않으려고 한 번에 나눠 준다. 손으로 뺀 분이라도 그 뒤 반응이 실제로
     적혀 판정에서 빠졌으면 뒤엣것에도 없다(되돌릴 것이 없다).
+    `rows` 는 이미 구한 `contact_rows` 를 받는 자리다(엑셀 내려받기가 그 줄을 함께 쓴다).
     """
     from ..routers.contacts import contact_rows   # 순환 import 를 피해 늦게 부른다
     from .sheet_owner import recipients
 
     shown = contacts if contacts is not None else recipients(db, user)
-    quiet = ids(db, contact_rows(db, user)) & {c.id for c in shown}
+    quiet = ids(db, rows if rows is not None else contact_rows(db, user)) & {c.id for c in shown}
     cleared = {c.id for c in shown if c.id in quiet and c.no_reaction_cleared_at}
     return quiet - cleared, cleared
 

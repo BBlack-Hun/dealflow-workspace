@@ -62,7 +62,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import get_current_user, no_send_as_member, templates
 from ..models import IrCompany, SendItem, SendJob, User
-from ..services import (cadence, ir_monthly, room_match, scheduled_send,
+from ..services import (cadence, ir_monthly, ir_outreach, room_match, scheduled_send,
                         send_window, startup_monthly, startup_send)
 from ..services.automations import startup_monthly as a5
 from ..ui import base_ctx
@@ -310,6 +310,8 @@ def rooms_page(
         "sender_name": sender.name if sender else "",
         # 월간 발송 표 · [카톡에서 방 찾기] 는 그 계정만이다(`_guard`).
         "may_send": startup_send.may_send(db, user),
+        # 기업을 골라 찾기 · 회차를 세우는 자리 — 「스타트업으로 카톡보내기」 탭(i248).
+        "msg_tab_href": ir_outreach.TAB_HREF,
     })
     return templates.TemplateResponse(request, "startup_room.html", ctx)
 

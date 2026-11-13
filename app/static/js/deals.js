@@ -1522,6 +1522,8 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     var noReactBtn = document.getElementById("select-noreact");
     // 소싱 명단에는 '반응' 이라는 개념이 없다 — 아직 보낸 적이 없다.
     if (noReactBtn) noReactBtn.hidden = sourcingMode;
+    var noReactXls = document.getElementById("noreact-export");   // 그 엑셀(i246)도 함께
+    if (noReactXls) noReactXls.hidden = sourcingMode;
     // 숨는 단추의 거르기는 함께 푼다 — 켜져 있는데 안 보이는 필터가 제일 나쁘다
     // (아래 그룹 필터와 같은 까닭).
     if (sourcingMode) noreactOnly = false;

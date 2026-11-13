@@ -12,8 +12,8 @@ from sqlalchemy.orm import Session
 
 from . import config, version
 from .deps import (VIEW_AS_BLOCKED, agent_status, consultant_may_open, doer,
-                   may_auto_attach, may_view_consulting, view_as_send_note,
-                   view_as_targets)
+                   may_auto_attach, may_view_consulting, sends_deals,
+                   view_as_send_note, view_as_targets)
 from .models import User
 from .services import agent_update, automation_runner, notices
 
@@ -188,6 +188,10 @@ def base_ctx(request: Request, db: Session, user: User, active: str) -> dict:
         # [IR 기업 연결](`/ir-link`)로 가는 자리 — 좌측 메뉴가 아니라 IR 기업 현황의
         # 탭 줄과 스타트업 툴바에 선다. 볼 사람은 메뉴 판정(`can_see`) 그대로다.
         "can_ir_link": can_see(user, {"href": "/ir-link"}),
+        # IR 기업 현황 탭 줄의 「스타트업으로 카톡보내기」 탭(i248). 그 탭이 펴는 칸
+        # (`routers/ir_outreach.screen`)과 **같은 판정**이다 — 칸이 안 서는 사람에게
+        # 탭만 서면 눌러도 아무것도 없는 화면이 된다. 탭 줄이 화면 셋에 서서 여기 둔다.
+        "can_ir_msg": sends_deals(user),
         # **아직 확인하지 않은 공지.** 비밀번호 변경 알림 바로 위, 같은 자리,
         # 같은 이유다 — 화면마다 심으면 새 화면이 하나 생겼을 때 그 화면만
         # 조용히 아무 말이 없다. 공지는 하필 **그 새 화면이 생겼다**고

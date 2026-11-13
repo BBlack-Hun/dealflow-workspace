@@ -38,11 +38,19 @@
     · 같은 제목의 방이 여럿이면 어느 방인지 못 가른다.
   둘 이상이거나 분명하지 않으면 **넣지 않고** 찾은 제목을 사유에 적는다 — 맞는 방이면
   그 제목을 방 이름 칸에 넣고 다시 확인하면 된다(1 에서 확인됨).
-- **방 이름이 적힌 줄**(1 에서 못 찾은 줄) — 적어 둔 이름은 **바꾸지 않는다**
-  (`agent_api._apply_verify_result` 의 ★ 11/05 — 사람이 카톡에서 복사해 넣은 이름이
-  남의 방 이름으로 바뀐 사고). 이름으로 찾은 결과 중 **적어 둔 이름과 글자까지 같은
-  제목**이 하나면 확인됨(1 에서 결과가 늦게 읽혀 놓친 경우), 아니면 `방 없음` 그대로
-  두고 찾은 제목을 사유에 적는다.
+- **방 이름이 적힌 줄**(1 에서 못 찾은 줄) — 이름으로 찾은 결과 중 **적어 둔 이름과
+  글자까지 같은 제목**이 하나면 그대로 확인됨(1 에서 결과가 늦게 읽혀 놓친 경우). 같은
+  제목이 없고 찾은 방이 **빈 줄과 같은 막이(`_pick`)를 지나면 그 제목으로 방 이름을
+  바꾸고** 확인됨(사용자 11/13: "찾아진 방이 있으면 그 방이름으로 카톡방이름 대체해줘").
+  적어 둔 이름으로도(1) 이름+직급 · 이름으로도(2 · 3) 그 제목이 안 나왔다 = 카톡에 그
+  이름의 방이 없다(방 이름을 카톡에서 바꿨거나 잘못 적었다). 막이를 못 지나면(여럿 ·
+  이름만 · 동명이인인데 회사명 없음) 바꾸지 않고 `방 없음` 그대로 찾은 제목을 사유에
+  적는다. 이렇게 바꾸는 자리는 **여기 한 곳**이다 — 1 의 대조(`agent_api.
+  _apply_verify_result` 의 ★ 11/05)는 여전히 적어 둔 이름을 안 바꾼다(그때 사고는 대조
+  결과로 덮은 것이다). 바꾼 것은 건의 사유 칸에 `방 이름을 찾은 제목으로 바꿈 (전: …)`
+  으로(성공 건이라 실패로 안 센다), 수정 로그에 전→후로 남는다(`_confirm`).
+  바꾸지 않는 줄: 방 나감 · 참여 안 함(`CONNECT_DONE`), 찾는 사이 사람이 방 이름을
+  고친 줄(`fall_back` 이 떠 둔 이름과 다르다 — 고친 이름은 아직 대조도 안 했다).
 - **확인됨을 달면 보낼 수 있는 줄로**(`_connect`) — 연결 단계를 `연결 완료` 로,
   카톡이 꺼져 있으면 켠다. 방 이름 칸만 채우면 단계가 `미착수` 그대로라 딜 소개
   대상에 안 뜬다. 수정 창의 「방 이름만 넣으면 연결 완료」와 같은 규칙이고, 방 나감 ·
@@ -146,6 +154,9 @@ def fall_back(item: SendItem) -> bool:
     db = object_session(item)
     if not searchable(contact, sheet_owner.hidden_labels(db)):
         return False
+    # 대조했던 이름을 떠 둔다 — 결과를 받을 때 그 사이 사람이 방 이름을 고쳤는지 본다
+    # (`apply_result`). 메일 제목 칸이지만 방 확인 건(카톡)에는 쓰이지 않는다.
+    item.subject = item.room_name
     item.room_name = ""
     item.status = "pending"
     item.sent_at = None
@@ -179,7 +190,8 @@ def _namesake(db: Session, contact: VcContact) -> bool:
 
 
 def _pick(db: Session, contact: VcContact, rooms: List[str]) -> Tuple[Optional[str], str]:
-    """방 이름이 빈 줄에 **저절로 넣을 제목**과, 못 넣으면 그 까닭.
+    """방 이름 칸에 **저절로 넣을 제목**과, 못 넣으면 그 까닭 — 빈 줄을 채울 때도, 적어 둔
+    이름을 바꿀 때도(11/13) 같은 막이다.
 
     모듈 머리말 「찾은 방을 어떻게 받나」의 막이 그대로다. `(제목, "")` 또는 `(None, 까닭)`.
     """
@@ -219,10 +231,11 @@ def apply_result(item: SendItem, body) -> None:
         # [실패 재시도] 는 다시 그 이름 대조부터 한다.
         item.room_name = written
 
-    def done(error_text: Optional[str]) -> None:
+    def done(error_text: Optional[str], note: Optional[str] = None) -> None:
+        # `note` — 성공 건에 남기는 한 줄. 진행 화면의 `사유 / 시각` 칸이 그린다.
         item.status = "failed" if error_text else "sent"
         item.sent_at = None if error_text else clock.now_iso()
-        item.error = error_text
+        item.error = error_text or note
 
     if not rooms and error:
         done(error)                     # 발송기 오류 — 줄은 그대로
@@ -233,12 +246,27 @@ def apply_result(item: SendItem, body) -> None:
             _confirm(db, item, contact)
             done(None)
             return
+        lead = before or "카톡에서 적어 둔 방 이름과 같은 제목을 찾지 못했습니다"
+        if not rooms:
+            done(f"{lead} · 이름+직급 → 이름으로도 찾지 못했습니다")
+            return
         if hits > 1:
             room_joined.set_verdict(contact, room_joined.AMBIGUOUS)
-        lead = before or "카톡에서 적어 둔 방 이름과 같은 제목을 찾지 못했습니다"
-        done(f"{lead} · 이름+직급 → 이름으로 찾은 방: {_shown(rooms)} — 맞는 방이면 그 "
-             "제목을 방 이름 칸에 넣고 다시 확인하세요" if rooms
-             else f"{lead} · 이름+직급 → 이름으로도 찾지 못했습니다")
+            title, why = None, "적어 둔 이름과 같은 제목의 방이 여럿입니다"
+        elif (contact.connect_stage or "") in CONNECT_DONE:
+            title, why = None, "방 나감 · 참여 안 함 줄이라 방 이름을 바꾸지 않습니다"
+        elif not room_name.same_title(item.subject, written):
+            # 찾는 사이 사람이 방 이름을 고쳤다(빈 줄이면 채웠다) — 그 이름은 아직 대조도
+            # 안 했다. 옛 이름으로 찾은 결과로 덮지 않는다.
+            title, why = None, "찾는 사이 방 이름이 바뀌어 바꾸지 않았습니다 — 다시 확인하세요"
+        else:
+            title, why = _pick(db, contact, rooms)
+        if title is not None:
+            _confirm(db, item, contact, title)
+            done(None, f"방 이름을 찾은 제목으로 바꿈 (전: {_clip(written)})")
+            return
+        done(f"{lead} · 이름+직급 → 이름으로 찾은 방: {_shown(rooms)} — {why} (맞는 방이면 "
+             "그 제목을 방 이름 칸에 넣고 다시 확인하세요)")
         return
     if not rooms:
         done("카톡에서 이 분의 방을 찾지 못했습니다 (이름+직급 → 이름으로 찾음)")
@@ -276,7 +304,9 @@ def _connect(contact: VcContact) -> None:
 def _confirm(db: Session, item: SendItem, contact: VcContact,
              title: Optional[str] = None) -> None:
     """찾기로 이 분 방을 확정 — 확인됨 · 연결 완료(`_connect`). `title` 이 있으면 그
-    제목을 방 이름으로 넣는다(방 이름이 빈 줄). 수정 로그는 **찾기를 건 계정** 이름으로.
+    제목을 방 이름으로 넣는다(빈 줄은 채우고, 적힌 줄은 바꾼다). 수정 로그는 **찾기를 건
+    계정** 이름으로 — 적어 둔 이름을 바꿀 때는 자기 줄이라도 전→후를 남긴다
+    (`edit_log.always`). 사람이 적은 값을 기계가 덮은 것이라 나중에 물을 곳이 있어야 한다.
 
     이 길에는 요청 문맥이 없다(발송기가 부른다). 딜 소싱의 저절로 확정과 같은 방식이다
     (`sourcing_rooms._confirm_single`). 확인 값 · 참여여부는 한 자리를 지난다
@@ -286,6 +316,8 @@ def _confirm(db: Session, item: SendItem, contact: VcContact,
     token = edit_log.begin(item.job.user_id, "POST", f"/agent/items/{item.id}/result")
     try:
         if title is not None:
+            if (contact.kakao_room_name or "").strip():
+                edit_log.always(contact)
             contact.kakao_room_name = title
         room_joined.set_verdict(contact, room_joined.VERIFIED)
         _connect(contact)

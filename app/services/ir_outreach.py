@@ -95,6 +95,12 @@ LABEL = startup_outreach.LABEL
 #: 후보를 고르는 화면 — 「대표 카톡방 맞추기」(`routers/startup_send.rooms_page`).
 ROOMS_HREF = "/deals/startup-ir/rooms"
 
+#: IR 기업 현황 탭 줄의 「스타트업으로 카톡보내기」 탭(i248) — 새 화면이 아니라 IR 기업현황
+#: 표에 이 칸을 **펴 둔 채로** 그린다(`routers/companies.companies_page`). 탭 줄 ·
+#: 표(`companies.html`)는 글자로 같은 값을 쓰고, 다른 화면이 이 칸을 부를 때 이 주소로 잇는다.
+TAB = "startup-kakao"
+TAB_HREF = f"/companies?tab={TAB}"
+
 #: [카톡방 찾기·확인] 한 번에 싣는 기업 수. 발송기가 한 번에 집는 수(`agent/main.py:
 #: DEFAULT_CONFIG["job_cap"]`)와 같은 크기다 — 그보다 크면 그 PC 의 카톡을 몇 분씩 붙잡는다.
 MAX_ROOM_CHECK = 60
