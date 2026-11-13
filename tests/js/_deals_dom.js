@@ -380,6 +380,7 @@ function buildDom(people) {
                   "only-picked-contacts", "company-search", "only-picked",
                   "company-filter-note", "contact-filter-note", "bucket-mix-note",
                   "select-all-contacts", "clear-all-contacts", "select-noreact",
+                  "noreact-export",
                   "include-opening", "tpl-opening", "tpl-closing",
                   "tpl-opening-wrap", "ir-attach", "ir-links", "ir-no-note",
                   "mail-fields", "company-hint", "mode-help",

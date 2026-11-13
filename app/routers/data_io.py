@@ -36,7 +36,7 @@ from ..deps import (NotAdmin, admin_only, doer, get_current_user, may_export_com
                     may_manage_team_contacts, may_view_consulting)
 from ..models import IrCompany, SendItem, SendJob, User, VcContact
 from ..services import (amount, company_view, custom_columns, import_diff, investor_firms,
-                        pipeline,
+                        no_reaction, pipeline,
                         report as report_svc, revenue_years, sheet_import, sheet_owner,
                         spreadsheet as sp)
 from .contacts import contact_rows
@@ -442,6 +442,44 @@ def export_contacts(sheet: str = "", db: Session = Depends(get_db),
     ]
     today = date.today().isoformat()
     return _xlsx(f"내 투자사_{today}.xlsx", "내 투자사", CONTACT_HEADERS, rows)
+
+
+# 전화 리마인드에 들고 갈 칸(i246) — 누구에게(성함 · 직함 · 회사명) · 어디로(전화번호)
+# · 무엇을 보냈나(마지막 딜소개 · 회차 메모) · 누구 명단인가(담당 팀원).
+NO_REACTION_HEADERS = ["성함", "직함", "회사명", "전화번호", "번호 종류",
+                       "마지막 딜소개", "회차 메모", "담당 팀원"]
+
+
+@router.get("/api/export/no-reaction.xlsx")
+def export_no_reaction(db: Session = Depends(get_db),
+                       user: User = Depends(get_current_user)):
+    """딜 제안 관리 [반응 없는 담당자만] 의 그분들 → 엑셀(i246 — 전화로 리마인드하려고).
+
+    **화면과 같은 사람들이다** — 대상 목록(`sheet_owner.recipients`: 본인 담당분, 감춘
+    줄 · 투자사로 세지 않는 명단은 빠짐) 중 `반응 없음`(`no_reaction.judged` — 손으로
+    뺀 분은 빠짐). 그룹 · 검색 거르기와는 상관없이 그 전부다(단추 처음 수와 같다).
+    권한도 투자사 관리 현황 엑셀(`export_contacts`)과 같다 — 제 담당분만 나간다.
+
+    전화는 휴대폰 먼저, 없으면 근무처 전화다 — 어느 쪽인지 `번호 종류` 에 적는다
+    (회사 번호면 바꿔 달라고 해야 한다).
+    """
+    contacts = sheet_owner.recipients(db, user)
+    rows = contact_rows(db, user)
+    quiet, _cleared = no_reaction.judged(db, user, contacts, rows)
+    by_id = {r["id"]: r for r in rows}
+    body = []
+    for c in contacts:                       # 화면 카드 차례(그룹 → 이름)
+        if c.id not in quiet:
+            continue
+        r = by_id[c.id]
+        mobile, office = r["phone"].strip(), r["office_phone"].strip()
+        phone, kind = ((mobile, "휴대폰") if mobile
+                       else (office, "회사") if office else ("", ""))
+        body.append([r["name"], r["title"], r["firm"], phone, kind,
+                     r["last_deal"] or "", r["last_deal_note"], r["owner"]])
+    today = date.today().isoformat()
+    return _xlsx(f"반응 없는 담당자_{today}.xlsx", "반응 없는 담당자",
+                 NO_REACTION_HEADERS, body)
 
 
 def _eok(value):
