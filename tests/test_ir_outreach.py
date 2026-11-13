@@ -222,7 +222,8 @@ def test_누른_사람이_시작하고_보내는_계정_발송기만_집어간�
     page = me.get(f"/jobs/{job_id}").text
     assert "조회만 가능합니다" not in page
     assert "윤서아 계정 PC 의 카톡에서 나갑니다" in page
-    assert 'href="/companies"' in page
+    # `새 발송` 은 세운 자리 — 그 칸을 펴 둔 「스타트업으로 카톡보내기」 탭으로 돌아간다(i248).
+    assert 'href="/companies?tab=startup-kakao" class="linkbtn">새 발송' in page
 
     assert me.post(f"/api/jobs/{job_id}/start").status_code == 200, "세운 사람이 못 누른다"
     mine = me.get("/api/agent/poll", params={"kinds": "startup_msg"},
@@ -294,10 +295,12 @@ def test_이어_둔_스타트업_줄이_받은_것도_세고_거꾸로도_센다
     _mark_sent(db, _send(me, _ids(seeded, "typed")).json()["job_id"])
     topic = startup_outreach.topic_of("startup_msg_free")
     info = startup_outreach.last_sent(db, [seeded["typed_link"]], topic)[seeded["typed_link"].id]
-    assert startup_outreach.recent_reason(info, 30).startswith("IR 기업현황 탭에서 ")
+    # 그 자리를 부르는 말은 탭 이름이다(i248 — 예전 `IR 기업현황 탭`).
+    assert startup_outreach.recent_reason(info, 30).startswith(
+        "IR 기업 현황 › 스타트업으로 카톡보내기에서 ")
     view = startup_outreach.rows(db, db.get(User, 1), topic, 30)
     row = next(r for r in view["rows"] if r["id"] == seeded["typed_link"].id)
-    assert row["last_from"] == "IR 기업현황 탭"
+    assert row["last_from"] == "IR 기업 현황 › 스타트업으로 카톡보내기"
 
 
 # ── 4. 카톡방 찾기·확인 — 기업 줄 ─────────────────────────────────────────────
@@ -444,6 +447,104 @@ def test_IR_기업현황_탭에_고르는_칸과_안내_카톡_칸이_선다(db,
         assert f'data-topic="{key}"' in page
     assert 'id="irm-room-check-btn"' in page and 'id="irm-rooms-link"' in page
     assert "ir_msg.js" in page
+
+
+# ── 6-1. 이름 · 탭(i248) ─────────────────────────────────────────────────────
+#
+# 팀원: "고른 기업에 안내 카톡 · 카톡방 찾기·확인 0곳 선택 — 이 문구를 '스타트업으로
+# 카톡보내기'로 수정해 준 후 탭 추가해 주세요". 탭은 **새 화면이 아니다** — 같은 표에
+# 그 칸을 펴 둔 채로 그린다(고르는 칸이 표 맨 왼쪽이다).
+
+MSG_TAB = 'href="/companies?tab=startup-kakao">스타트업으로 카톡보내기</a>'
+OLD_NAME = "고른 기업에 안내 카톡"
+
+
+def _nav(html):
+    import re
+
+    return re.search(r'<nav class="sheet-tabs co-tabs">.*?</nav>', html, re.S).group(0)
+
+
+def _fold(html):
+    import re
+
+    return re.search(r'<details class="sheet-fold" id="irm-fold"[^>]*>\s*<summary>(.*?)</summary>',
+                     html, re.S)
+
+
+def test_칸_이름이_스타트업으로_카톡보내기다(db, seeded, client):
+    me = _login(client)
+    for path in ("/companies", "/companies?tab=startup-kakao"):
+        page = me.get(path).text
+        fold = _fold(page)
+        assert fold, path
+        assert "💬 스타트업으로 카톡보내기" in fold.group(1), fold.group(1)
+        assert 'id="irm-count">0곳 선택' in fold.group(1), "고른 수가 머리에서 빠졌다"
+        assert OLD_NAME not in page, f"{path} 에 옛 이름이 남았다"
+    # 다른 화면이 이 칸을 부르는 말도 같다 — 맞추기 화면 · 스타트업 화면의 `어디서 받았나`.
+    rooms = me.get(f"/deals/startup-ir/rooms?ids={seeded['noroom'].id}").text
+    assert 'href="/companies?tab=startup-kakao">스타트업으로 카톡보내기</a>' in rooms
+    assert "IR 기업현황 탭" not in rooms and "(안내 카톡)" not in rooms
+
+
+def test_탭을_누르면_그_칸이_펴진_IR_기업현황_표다(db, seeded, client):
+    import re
+
+    from app.services import ir_outreach
+
+    me = _login(client)
+    plain = me.get("/companies").text
+    # 탭 줄은 화면 셋이 같이 쓴다 — 어디서든 선다.
+    for path in ("/companies", "/companies?tab=series-a", "/ir-link"):
+        assert MSG_TAB in _nav(me.get(path).text), path
+    assert f'href="{ir_outreach.TAB_HREF}"' in _nav(plain)
+    # 첫째 탭은 그대로 **닫힌** 칸이다(기본은 닫힘 — 처음 하나를 고르면 저절로 펴진다).
+    assert '<details class="sheet-fold" id="irm-fold">' in plain
+    assert re.search(r'class="sheet-tab active" href="/companies">', plain)
+
+    tab = me.get(ir_outreach.TAB_HREF)
+    assert tab.status_code == 200
+    page = tab.text
+    assert '<details class="sheet-fold" id="irm-fold" open>' in page, "탭으로 왔는데 칸이 닫혀 있다"
+    nav = _nav(page)
+    assert nav.count('class="sheet-tab active"') == 1
+    assert 'class="sheet-tab active" href="/companies?tab=startup-kakao"' in nav
+    # 같은 표 그대로다 — 줄을 거르지 않는다(미계약 같은 기본값을 넣지 않는다).
+    assert 'id="co-table"' in page
+    assert page.count('class="irm-pick"') == plain.count('class="irm-pick"') > 0
+    assert "ir_msg.js" in page
+
+
+def test_칸이_안_서는_사람은_탭도_없다(db, seeded, client, monkeypatch):
+    """탭을 보는 사람 = 칸이 서는 사람(`deps.sends_deals` — 투자컨설턴트만 빠진다).
+
+    투자컨설턴트는 IR 기업 현황부터 못 연다(허용 목록 — 제 화면으로 돌려보낸다). 그래서
+    판정이 갈리는 날을 잡으려고 **같은 판정**을 끄고 본다: 칸도 탭도 안 서고, 탭 주소로
+    와도 그냥 첫째 탭이다(펼 칸이 없다)."""
+    from app.models import User
+    from app.routers import ir_outreach as ir_outreach_router
+    from app.services import auth as auth_svc
+    from app import ui
+
+    db.add(User(id=4, name="한컨설", phone="01000000004", role="consultant",
+                can_view_consulting=1, password_hash=auth_svc.hash_password(DEMO_PASSWORD)))
+    db.commit()
+    them = _login(client, phone="01000000004")
+    res = them.get("/companies?tab=startup-kakao", follow_redirects=False)
+    assert res.status_code in (302, 303, 307), res.status_code
+    assert "스타트업으로 카톡보내기" not in them.get("/companies?tab=startup-kakao").text
+
+    me = _login(client)
+    for mod in (ui, ir_outreach_router):
+        monkeypatch.setattr(mod, "sends_deals", lambda user: False)
+    for path in ("/companies", "/companies?tab=startup-kakao", "/companies?tab=series-a",
+                 "/ir-link"):
+        page = me.get(path).text
+        assert "startup-kakao" not in _nav(page), path
+        assert "스타트업으로 카톡보내기" not in page, path
+        assert 'id="irm-panel"' not in page, path
+    page = me.get("/companies?tab=startup-kakao").text
+    assert 'class="sheet-tab active" href="/companies">' in _nav(page)
 
 
 def test_가짜_화면이_실제_화면과_같은_이름을_쓴다(db, seeded, client):

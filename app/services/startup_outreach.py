@@ -376,8 +376,9 @@ def last_sent(db: Session, contacts: List[VcContact], topic: Topic) -> Dict[int,
     return out
 
 
-#: 다른 자리에서 받은 것의 이름 — IR 기업현황 탭에서 나간 안내 카톡.
-IR_TAB = "IR 기업현황 탭"
+#: 다른 자리에서 받은 것의 이름 — IR 기업 현황의 「스타트업으로 카톡보내기」(i248 — 예전
+#: 이름 `고른 기업에 안내 카톡`)에서 나간 것. 화면 말로만 쓴다(저장하지 않는다).
+IR_TAB = "IR 기업 현황 › 스타트업으로 카톡보내기"
 
 
 def _live(topic: Topic):
@@ -433,7 +434,7 @@ def recent_reason(info: Optional[dict], days: int) -> str:
 
 
 def _where(by: Optional[str], person: str, place: str) -> str:
-    """`홍길동 님 명단에서 ` · `IR 기업현황 탭에서 ` — 사람이면 `님`, 자리면 그대로."""
+    """`홍길동 님 명단에서 ` · `IR 기업 현황 › 스타트업으로 카톡보내기에서 ` — 사람이면 `님`, 자리면 그대로."""
     if not by:
         return ""
     return f"{by} {person}" if by != IR_TAB else f"{by}{place}"
