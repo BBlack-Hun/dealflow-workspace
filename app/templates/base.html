@@ -126,6 +126,11 @@
       {% block content %}{% endblock %}
     </main>
   </div>
+  {# 조금 내려가면 오른쪽 아래에 뜬다(`to_top.js`) — 창과 넓은 표 상자를 함께
+     **세로로만** 올린다. 화면이 길어 맨 위 메뉴·필터로 돌아가려면 한참 굴려야 했다.
+     모든 화면이 길어질 수 있어 여기(base) 에 둔다. #}
+  <button type="button" id="to-top" class="secondary-btn to-top no-print"
+          aria-label="맨 위로" hidden>↑ 맨 위로</button>
   <script src="{{ asset('js/agent_badge.js') }}"></script>
   {% if view_as %}<script src="{{ asset('js/view_as.js') }}"></script>{% endif %}
   {# 넓은 표의 키를 화면 높이가 아니라 **표가 실제로 시작하는 자리**에 맞춘다.
@@ -144,6 +149,7 @@
   {# 메모 칸(`data-memo-date`)에 새로 다는 줄 앞에 오늘 날짜(i139). 두 편집기(`inline_edit.js` ·
      `consulting.js`)가 같이 쓰고 메모 칸이 서는 화면이 여럿이라 여기(base) 에 둔다. #}
   <script src="{{ asset('js/memo_date.js') }}"></script>
+  <script src="{{ asset('js/to_top.js') }}"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>
