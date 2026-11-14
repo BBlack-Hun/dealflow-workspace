@@ -2480,6 +2480,18 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
 /* 이동 바에서 눌러 내려온 구역이 붙어 있는 바 밑에 가리지 않게 */
 #requests, #remind, #meetings, #reviews, #calls, #delivered { scroll-margin-top: 64px; }
 
+/* '맨 위로' 단추(`to_top.js`). 오른쪽 아래에 뜨되 **넓은 표의 스크롤바 모서리를
+   비켜 선다.** 넓은 표 상자는 화면 바닥 16px 위(table_fit.js 의 GAP)에서 끝나고
+   오른쪽은 본문 여백(28px · 좁은 폭 14px) 끝에 붙는다 — 그 모서리에서 가로·세로
+   스크롤바(윈도 17px)가 만난다. `right:16px; bottom:16px` 같은 흔한 자리는 바로
+   그 끝을 덮어, 가로로 밀려고 잡는 자리를 막는다. 그래서 바닥 44px · 오른쪽 56px.
+   z-index 는 이동 바(30)·표 머리(3~4) 위, 수정창 뒷막(39)·칸 편집창(60) 아래 —
+   창이 열리면 단추는 그 밑으로 들어간다. 인쇄에서는 `.no-print` 가 걷는다. */
+.to-top { position: fixed; right: 56px; bottom: 44px; z-index: 35;
+          box-shadow: 0 4px 14px rgba(16,21,29,.16); }
+.to-top:hover { border-color: var(--brand); color: var(--brand); }
+.to-top:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
 /* ── 연간 업무 보고 — 달 하나 = 월간 보고 한 벌 (10/17 회의 #38) ───────────
    달마다 월간 판 다섯 개가 이어지므로 **달과 달 사이**가 눈에 띄어야 한다 —
    판 사이(`.panel` 의 여백)와 같은 간격이면 어디서 다음 달이 시작하는지 안
