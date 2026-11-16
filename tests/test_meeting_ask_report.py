@@ -623,7 +623,7 @@ def test_사람_수와_건수가_다르면_판이_둘_다_말한다(db, users, l
     # 숫자를 바꾸지 않았다 — 판 옆에 건수를 **덧붙였을** 뿐이다.
     assert "요청 5건" in _ask_li(html), _ask_li(html)
     # 왜 다른지가 글로도 적혀 있다 — 숫자 둘만 던지면 여전히 안 맞아 보인다.
-    assert "담당자당 한 통" in html
+    assert "심사역당 한 통" in html
 
 
 def test_사람_수와_건수가_같으면_괄호가_안_붙는다(db, users, logged):
@@ -639,7 +639,7 @@ def test_사람_수와_건수가_같으면_괄호가_안_붙는다(db, users, lo
     html = _report(logged, when)
     assert _n(html, r"회의실 미팅 톡 요청 미완료</span> ?<b[^>]*>(\d+)명") == 2
     assert "요청 2건" not in _ask_li(html), _ask_li(html)
-    assert "담당자당 한 통" not in html, "설명할 것이 없는데 설명이 붙었다"
+    assert "심사역당 한 통" not in html, "설명할 것이 없는데 설명이 붙었다"
 
 
 def test_요청이_한_건뿐이어도_괄호가_안_붙는다(db, users, logged):
@@ -694,7 +694,7 @@ def test_엑셀이_명과_건을_나란히_싣는다(db, users, logged):
     pairs = {str(r[0].value): r[1].value for r in ws.iter_rows(max_col=2)
              if r[0].value}
     assert pairs.get("회의실 미팅 톡 요청 미완료(명)") == 4
-    assert pairs.get("그 담당자가 받은 자료 요청(건)") == 5
+    assert pairs.get("그 심사역이 받은 자료 요청(건)") == 5
 
 
 def test_엑셀도_같을_때는_그_줄을_안_싣는다(db, users, logged):
@@ -704,7 +704,7 @@ def test_엑셀도_같을_때는_그_줄을_안_싣는다(db, users, logged):
 
     cells = _cells(_meetings_sheet(logged, when))
     assert "회의실 미팅 톡 요청 미완료(명)" in cells
-    assert "그 담당자가 받은 자료 요청(건)" not in cells
+    assert "그 심사역이 받은 자료 요청(건)" not in cells
 
 
 def test_건수를_화면이_따로_세지_않는다(db, users, logged, monkeypatch):

@@ -120,7 +120,7 @@ def test_manual_rows_join_the_report_and_the_dashboard(db, me, rows, users):
     view = dashboard.user_dashboard(db, users["u1"])
     sent = next(k for k in view["kpis"] if k["key"] == "sent")
     assert sent["value"] == 3, "대시보드 이번 주 발송에 안 합쳐졌다"
-    assert "손으로 적음 3" in sent["sub"], "합친 수를 되짚을 말이 없다"
+    assert "직접 기록 3" in sent["sub"], "합친 수를 되짚을 말이 없다"
 
 
 def test_the_team_view_counts_them_too(db, me, rows, users):

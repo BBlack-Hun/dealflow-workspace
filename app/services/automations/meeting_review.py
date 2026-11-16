@@ -476,7 +476,7 @@ def asked_contacts(db: Session, contact_ids) -> Dict[int, str]:
 
 
 #: 전환 전 밀린 결과 문의 줄 — 오늘 할 일에 수 한 줄.
-BACKLOG_TITLE = "자동화 전환 전 밀린 결과 문의 {count}건 — 손으로 확인"
+BACKLOG_TITLE = "자동화 전환 전 밀린 미팅 결과 확인 {count}건 — 직접 챙기기"
 
 
 def backlog(db: Session, row: Optional[Automation], today: date

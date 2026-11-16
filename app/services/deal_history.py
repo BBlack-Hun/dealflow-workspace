@@ -71,7 +71,7 @@ APP = "app"
 MANUAL = "manual"
 #: 딜 소싱 화면의 Series A 딜 공유 — 투자사 줄에 이어진 소싱 줄로 나간 것(훑기 ③).
 SOURCING = "sourcing"
-SOURCE_LABELS = {SHEET: "시트", APP: "앱 발송", MANUAL: "손으로 적음",
+SOURCE_LABELS = {SHEET: "시트", APP: "앱 발송", MANUAL: "직접 기록",
                  SOURCING: "딜 소싱"}
 
 #: 보낸 사람을 **추정으로 적었다**는 표시.

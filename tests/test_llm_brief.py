@@ -1192,11 +1192,11 @@ def test_the_data_says_how_many_went_in_and_why(db, users):
     out = _brief(db, users["u1"])
     # 담긴 수와 **견주는 수**가 둘 다 적힌다 — 하나만 적으면 왜 줄었는지 모른다.
     # 견주는 수도 같은 모집단(내 명단)이라, 빠진 수는 오직 방 때문이다.
-    assert out["scope"] == "내 명단의 투자사 3곳 중 카톡방 확인됨 1곳"
+    assert out["scope"] == "내 명단의 투자사 3곳 중 카톡방 확인 완료 1곳"
     assert len(out["investors"]) == 1 and out["investors"][0]["id"] == f"V-{kept.id}"
     # 무엇이 빠졌는지도 자료 안에 적혀 있어야 한다 — 담기지 않은 투자사가
     # 있다는 것을 모르면 "왜 이 투자사가 없지" 를 알 길이 없다.
-    assert "확인됨" in out["note"] and "내 명단" in out["note"]
+    assert "확인 완료" in out["note"] and "내 명단" in out["note"]
 
 
 def test_the_count_in_the_data_is_the_number_of_rows_in_it(db, users):

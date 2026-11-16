@@ -301,8 +301,8 @@ def test_the_meeting_header_and_body_have_the_same_cells(client, db, users,
 
     head, rows = _meeting_table(
         client.get(f"/report?month=2026-06&scope={scope}").text)
-    # 우리 팀원 칸은 #87 로 `담당자`(투자사 쪽 사람은 `심사역`).
-    assert ("담당자" in head) is wide, f"scope={scope!r} 인데 머리글이 {head}"
+    # 우리 팀원 칸은 #87 로 `담당자` → 용어 통일(11/16)로 `팀원`(투자사 쪽 사람은 `심사역`).
+    assert ("팀원" in head) is wide, f"scope={scope!r} 인데 머리글이 {head}"
     assert rows, "미팅 한 건은 나와야 한다"
     for row in rows:
         assert len(row) == len(head), (
