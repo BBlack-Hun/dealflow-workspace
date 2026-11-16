@@ -105,7 +105,7 @@ REQUEST_STATUS = {
     # #116 2차 — 자료는 보냈는데 미팅 없이 끝났다. 사람이 `IR 요청 후 미팅 없음` 의
     # 드랍 의심에서 확정한다(`ir_no_meeting.DROP_SUSPECT_DAYS`). `dropped` 와 다르다 —
     # 그쪽은 자료를 안 보냈다.
-    "lost": "드랍",
+    "lost": "중단",
 }
 #: **자료가 나간** 요청 상태 — 전달 수 · 딜 단계는 드랍도 보낸 것으로 센다. 미팅 요청
 #: 재촉(`meeting_ask_state` · A2)은 `delivered` 만 본다 — 드랍은 끝난 일이다.

@@ -83,15 +83,15 @@
        (`010-1234-5678` · `01012345678` · 뒷자리 `5678`). 그 말까지 안 잘리게 이 칸만
        넓힌다 — 툴바 검색칸의 모양은 자리로 건다(app.css 의 `.toolbar input[type="search"]`
        · id 로 꾸미지 않는다). #}
-    <input type="search" id="co-search" placeholder="모든 칸에서 찾기 (기업명 · 연락처 · 메모 …)"
+    <input type="search" id="co-search" placeholder="모든 열에서 찾기 (기업명 · 연락처 · 메모 …)"
            style="min-width:300px"
-           title="표의 글자 칸을 모두 찾습니다(기업명 · 대표자명 · 연락처 · 이메일 · 한줄 소개 · 메모 · 추가 칸 등, [수정] 창의 대표 카톡방 · 합치기 전 값까지).&#10;전화번호는 하이픈 없이, 뒷자리만으로도 찾습니다.&#10;O/X 칸 · 수정한 날짜 · 수정한 팀원 · 소개 횟수는 찾지 않습니다 — O/X 칸 · 수정한 팀원은 머리글 필터로 거르세요."
+           title="표의 글자 열을 모두 찾습니다(기업명 · 대표자명 · 연락처 · 이메일 · 한줄 소개 · 메모 · 추가 열 등, [수정] 창의 대표 카톡방 · 합치기 전 값까지).&#10;전화번호는 하이픈 없이, 뒷자리만으로도 찾습니다.&#10;O/X 열 · 수정한 날짜 · 수정한 팀원 · 소개 횟수는 찾지 않습니다 — O/X 열 · 수정한 팀원은 머리글 필터로 거르세요."
            value="{{ q }}" autocomplete="off">
     {# 내려받기 둘은 **관리자 + 팀 현황에서 켜 준 계정**(11/01 · 0132) — 라우터도 같은
        판정으로 막는다(`deps.may_export_companies` · `data_io.export_companies*`). #}
     {% if can_export %}
     <a class="secondary-btn" href="/api/export/companies.xlsx" download
-       title="필터·검색과 상관없이 모든 기업 · 모든 칸을 받습니다">엑셀 내려받기(전체)</a>
+       title="필터·검색과 상관없이 모든 기업 · 모든 열을 받습니다">엑셀 내려받기(전체)</a>
     {# ── 지금 화면 내려받기 (10/17 회의 #43) ─────────────────────────────────
        위 단추는 언제나 **전체**다(그대로 둔다). 이것은 지금 걸어 둔 머리글 필터 ·
        검색 · 정렬 그대로, 이 탭에 **보이는 칸**만 받는다. 화면 글을 긁지 않고
@@ -102,7 +102,7 @@
 
        옛 스타트업DB 탭의 칸도 이 탭에 합쳐졌으므로(#105 · #106) 그 칸들도 함께 받는다. #}
     <a class="secondary-btn" id="co-export-view" href="/api/export/companies-view.xlsx" download
-       title="지금 걸어 둔 필터·검색·정렬 그대로, 이 탭에 보이는 칸만 엑셀로 받습니다 (전체는 [엑셀 내려받기])">지금 화면 내려받기</a>
+       title="지금 걸어 둔 필터·검색·정렬 그대로, 이 탭에 보이는 열만 엑셀로 받습니다 (전체는 [엑셀 내려받기])">지금 화면 내려받기</a>
     {% endif %}
     <button type="button" class="secondary-btn" id="ir-bulk-btn">IR 파일명 일괄 입력</button>
     {# 관리자만. 한 번에 수백 줄의 소개를 바꾸는 일이라 라우터도 같이 막는다
@@ -252,11 +252,11 @@
     {% if ir_msg.sender %}
     {# **어느 PC 에서 나가는지**를 먼저 말한다 — 누른 사람 PC 가 아니다. #}
     <p class="hint" data-testid="irm-sender-note">
-      ✋ 표 맨 왼쪽 칸에서 기업을 고르세요(머리글 칸 = 지금 보이는 줄 모두). 고른 기업의
+      ✋ 표 맨 왼쪽 열에서 기업을 고르세요(머리글 칸 = 지금 보이는 줄 모두). 고른 기업의
       <b>대표 카톡방</b>으로 <b>{{ ir_msg.sender }} 계정 PC</b>의 카톡에서 나갑니다 — 이 표의
       대표 카톡방 제목이 그 계정 카톡의 제목이라서입니다(스타트업 월간 발송과 같은 계정).
-      대기 목록은 그 계정 회차로 서고, <b>만든 사람</b>이 진행 화면에서 <b>[발송 시작]</b> 을
-      누르거나 보낼 시각을 고르면 나갑니다. 카톡에서 <b>확인된 방</b>에만 보냅니다.
+      대기 회차는 그 계정 것으로 서고, <b>만든 사람</b>이 진행 화면에서 <b>[발송 시작]</b> 을
+      누르거나 보낼 시각을 고르면 나갑니다. <b>확인된 카톡방</b>에만 보냅니다.
     </p>
     {# **내가 세운 아직 안 나간 회차** — 회차가 보내는 계정 것이라 다른 목록에는 안 선다.
        잊고 두면 같은 기업이 `아직 안 나간 회차` 로 계속 빠진다(`ir_outreach.drafts_by`). #}
@@ -291,7 +291,7 @@
       {% endfor %}
     </div>
     <label class="field wide msg-body-field">
-      <span>문구 — 여기서 고친 것은 <b>이번 대기 목록에만</b> 씁니다.
+      <span>문구 — 여기서 고친 것은 <b>이번 대기 회차에만</b> 씁니다.
         늘 쓰는 글을 바꾸려면 <a href="/templates">딜 제안 문구</a>에서 고치세요.</span>
       <textarea id="irm-body" rows="8" data-topic="{{ first.key }}">{{ first.body }}</textarea>
     </label>
@@ -547,7 +547,7 @@
            세 번 중 한 번(내림)은 지금 그려진 차례를 다시 그리는 단추가 된다.
            그리고 이 칸은 `날짜 미정` 이 섞인 글자 칸이라, 세울 값을 따로 추려
            싣는 짝(`미팅제공일자` 의 `meeting_sort` 처럼)이 함께 와야 한다. #}
-        <th style="width:96px" title="홍보메일 답장 받은 날 · 표의 기본 차례가 이 칸 최신순입니다">수신일</th>
+        <th style="width:96px" title="홍보메일 답장 받은 날 · 표의 기본 차례가 이 열 최신순입니다">수신일</th>
         {# ── 이 줄을 언제 마지막으로 고쳤나 (사용자 요청) ──────────────────────
            **`수신일` 바로 오른쪽**이다(#105 · #106, 10/31 사용자 요청 — 예전에는 `투자라운드`
            뒤). "언제 들어왔나" 옆에 "언제 마지막으로 고쳤나 · 누가" 를 나란히 읽는다.
@@ -683,11 +683,11 @@
         {% for f, yy in revenue_years %}
         <th class="num" style="width:74px" data-filters="{{ f }}:{{ yy }}년 매출">{{ yy }}년 매출<div class="th-filters"></div></th>
         {% endfor %}
-        <th class="num" data-filters="revenue_recent:{{ recent_label }}" style="width:108px" title="올해 매출 — 지금까지 알려진 최근 매출을 적습니다(해가 바뀌면 지난해 칸으로 옮겨집니다).&#10;단위: 억 — 예: 18.3 · 5-10억 · 1억 미만은 5천만원&#10;모르면 ~">{{ recent_label }}<div class="th-filters"></div></th>
+        <th class="num" data-filters="revenue_recent:{{ recent_label }}" style="width:108px" title="올해 매출 — 지금까지 알려진 최근 매출을 적습니다(해가 바뀌면 지난해 열로 옮겨집니다).&#10;단위: 억 — 예: 18.3 · 5-10억 · 1억 미만은 5천만원&#10;모르면 ~">{{ recent_label }}<div class="th-filters"></div></th>
         {# 내년 예상매출(과제 169 · `revenue_years.forecast` — 2026년이면 `27년 예상매출`). 연도 칸과
            같은 꼴(글자 그대로 · 금액 구간 필터)이고, 딜 소개 문구에 `27년(예상)` 으로 실린다. #}
         {% if forecast %}
-        <th class="num" style="width:88px" data-filters="{{ forecast[0] }}:{{ forecast[1] }}" title="내년 예상 매출 — 단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 1억 미만은 `5천만원` · 모르면 `~` · Series A 이상 딜 소싱의 같은 해 칸과 함께 고쳐집니다">{{ forecast[1] }}<div class="th-filters"></div></th>
+        <th class="num" style="width:88px" data-filters="{{ forecast[0] }}:{{ forecast[1] }}" title="내년 예상 매출 — 단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 1억 미만은 `5천만원` · 모르면 `~` · Series A 이상 딜 소싱의 같은 해 열과 함께 고쳐집니다">{{ forecast[1] }}<div class="th-filters"></div></th>
         {% endif %}
         <th class="num" style="width:96px" title="단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 1억 미만은 `5천만원` · 모르면 `~`">누적투자금액</th>
         {# 144 → 104px(i132 — 값은 짧은데 머리글 때문에 넓던 칸이라 머리글을 매출 칸처럼 두 줄로 접는다).
@@ -751,7 +751,7 @@
            날 수**(`deal_history.intro_times`). 아래 `명` 은 그대로 발송 건수다.
            폭: 정렬 단추 `총 소개 횟수 ↕` 가 한 줄에 서는 폭(84 + `총 ` 16px). #}
         <th style="width:100px" data-sort="sent"
-            title="투자사가 실제로 받은 서로 다른 날 수(같은 날 여러 계정 · 여러 회차는 한 번) · 아래는 발송 건수 — 업무 보고 '소개한 기업' 과 같은 셈 · 짚으면 마지막 날짜">총 소개 횟수</th>
+            title="투자사가 실제로 받은 서로 다른 날 수(같은 날 여러 팀원 · 여러 회차는 한 번) · 아래는 발송 건수 — 업무 보고 '소개한 기업' 과 같은 셈 · 짚으면 마지막 날짜">총 소개 횟수</th>
         {# 계정마다 그 기업을 소개한 횟수(#165) — `계정 n · 계정 n`, 많은 순. 계정 수만큼 칸을
            늘리지 않는다(표가 이미 5천 px 이 넘고, 계정은 늘고 준다). 셈은 위 칸과 한 벌이고,
            '누구 것' 은 업무 보고 기준이다(앱 발송은 누른 계정 · 시트 · 손 기록은 지금 담당).
@@ -760,7 +760,7 @@
            필터 · 정렬은 안 세운다(`소개 횟수` 와 같은 까닭 — 고를 목록이 아니다). 두 줄에서
            자르고(`clamp2` — 줄 키를 안 키운다) 전체는 짚으면 보인다. #}
         <th style="width:170px"
-            title="계정마다 이 기업을 소개한 횟수(서로 다른 날 수) — 앱 발송은 보낸 계정, 시트 · 손으로 적은 기록은 지금 담당 계정으로 셉니다">담당별 소개</th>
+            title="팀원마다 이 기업을 소개한 횟수(서로 다른 날 수) — 앱 발송은 보낸 팀원, 시트 · 직접 기록은 지금 담당 팀원으로 셉니다">팀원별 소개</th>
         {# 무료 IR 미팅을 언제 주기로 했는가 / 언제 줬는가.
            예전에는 **`계약여부` 바로 앞**이었다(사용자 요청 — `계약여부` 의 두 상태
            `무료IR 미팅제공예정` · `무료 IR 미팅제공완료함` 이 곧 이 날짜를 묻는 말이라).
@@ -1114,7 +1114,7 @@
                       else (('/api/companies/' ~ r.id ~ '/consulting') if fresh else '') %}
         {% set born = ' — 처음 적으면 투자컨설턴트 「' ~ consulting_new_tab ~ '」 탭에 이 기업 줄이 생기고 거기 저장됩니다' %}
         {% set why = ('투자컨설턴트 줄 ' ~ cv.links ~ '개에 이어져 있어 투자컨설턴트 화면에서 고칩니다'
-                      if (cv.links or 0) > 1 else '그 줄을 고칠 수 있는 계정만 고칩니다') %}
+                      if (cv.links or 0) > 1 else '그 줄을 고칠 수 있는 팀원만 고칩니다') %}
         <td {% if save %}class="cell" data-field="management" data-type="pick" data-fixed-choices data-pick-head
             data-choices="{{ consulting_choices }}" data-value="{{ ce.management if ce else '' }}"
             data-save-url="{{ save }}"
@@ -1172,7 +1172,7 @@
 </div>
 <p class="hint">
   금액 단위는 <b>억</b>입니다 — <code>18.3</code> 처럼 소수점도 됩니다.
-  <b>IR 자료 수신</b> 칸의 윗줄에는 자료 폴더에 넣어 둔 <b>파일 이름</b>을 적습니다(주소가 아닙니다) — 배지나 이름을 눌러 바로 적고, 비우면 <b>없음</b>이 됩니다.
+  <b>IR 자료 수신</b> 열의 윗줄에는 자료 폴더에 넣어 둔 <b>파일 이름</b>을 적습니다(주소가 아닙니다) — 배지나 이름을 눌러 바로 적고, 비우면 <b>없음</b>이 됩니다.
   아랫줄은 <b>받은 기록</b>(예: <code>2026/11/04 수신완료</code>)을 적는 자리입니다.
   그러면 자료 요청이 왔을 때 <a href="/deals">딜 제안 관리 → IR 자료 전달</a>에서
   바로 보낼 수 있습니다.
@@ -1370,7 +1370,7 @@
 
        **투자컨설턴트 화면에도 `대표자` 가 있다**(`ConsultingCompany.ceo_name`).
        그쪽은 다른 표의 다른 칸이라 이름을 안 바꿨다 — 이번 요청은 이 두 탭이다. #}
-    <label class="field wide" title="홍보메일에 답장한 기업 쪽 사람 — 우리 팀 담당자(표의 `담당자`)와 다른 칸입니다"><span>대표자명</span><input type="text" id="f-contact_name"></label>
+    <label class="field wide" title="홍보메일에 답장한 기업 쪽 사람 — 우리 담당 팀원(표의 `담당자`)과 다른 칸입니다"><span>대표자명</span><input type="text" id="f-contact_name"></label>
     <label class="field"><span>연락처</span>
       <input type="tel" id="f-contact_phone" placeholder="010-0000-0000"></label>
     {# ── 여기에는 고를 목록을 **안 붙인다** ────────────────────────────────
@@ -1445,9 +1445,9 @@
        그림의 「26년 (현재 최근매출액으로 반영)」. 올해 칸은 연도 칸이 아니라 이 칸이고,
        해가 바뀌면 지난해 칸으로 옮겨 적힌다(이 창 머리 주석).
        **이름은 표 머리글(`26년 매출` — #82, 예전 `최근 매출액(26년)`) 그대로**여야 한다 — 설명은 `title`. #}
-    <label class="field" title="올해 매출 — 지금까지 알려진 최근 매출을 적습니다(해가 바뀌면 지난해 칸으로 옮겨집니다).&#10;단위: 억 — 예: 18.3 · 5-10억 · 1억 미만은 5천만원&#10;모르면 ~"><span>{{ recent_label }}</span><input type="text" id="f-revenue_recent" placeholder="18.3 · 5천만원 · 5-10억 · ~"></label>
+    <label class="field" title="올해 매출 — 지금까지 알려진 최근 매출을 적습니다(해가 바뀌면 지난해 열로 옮겨집니다).&#10;단위: 억 — 예: 18.3 · 5-10억 · 1억 미만은 5천만원&#10;모르면 ~"><span>{{ recent_label }}</span><input type="text" id="f-revenue_recent" placeholder="18.3 · 5천만원 · 5-10억 · ~"></label>
     {% if forecast %}
-    <label class="field" title="내년 예상 매출 — 단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 1억 미만은 `5천만원` · 모르면 `~` · Series A 이상 딜 소싱의 같은 해 칸과 함께 고쳐집니다"><span>{{ forecast[1] }}</span><input type="text" id="f-{{ forecast[0] }}" placeholder="18.3 · 5천만원 · 5-10억 · ~"></label>
+    <label class="field" title="내년 예상 매출 — 단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 1억 미만은 `5천만원` · 모르면 `~` · Series A 이상 딜 소싱의 같은 해 열과 함께 고쳐집니다"><span>{{ forecast[1] }}</span><input type="text" id="f-{{ forecast[0] }}" placeholder="18.3 · 5천만원 · 5-10억 · ~"></label>
     {% endif %}
     {# 누적투자금액 옆이 그림에서는 `정책자금 (기보 / 신보 / 중진공)` 이다.
        그 칸이 곧 아래 `정책자금`(`guarantee`) — 위 `1. 기본정보` 에서 옮겨 왔다.
@@ -1623,7 +1623,7 @@
     #}
     <label class="field wide" title="비워 두면 월간 발송 대상에서 빠집니다"><span>대표 카톡방 <b class="hint">비우면 월간 발송 제외</b></span>
       <input type="text" id="f-kakao_room_name"
-             placeholder="카톡에 보이는 방 제목 그대로"></label>
+             placeholder="카톡에 보이는 카톡방 제목 그대로"></label>
     <label class="field"><span>소개 상태</span>
       <select id="f-summary_status">
         {% for key, label in summary_labels.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
@@ -1740,8 +1740,8 @@
      같은 표의 두 이름이 서로 다른 것을 뜻한다는 것을 알 길이 없다. #}
   <details class="hint">
     <summary><b>(담당)</b> 이 붙은 이름은 <b>추정</b>입니다 — 보낸 사람이 기록되지 않아 지금 담당 팀원을 적었습니다.</summary>
-    <b>시트</b>·<b>손으로 적음</b> 줄에는 보낸 사람이 안 적혀 있어, 그 투자사를
-    <b>지금 담당하는 팀원</b>을 대신 적습니다. 담당이 바뀌면 과거 발송도 새 담당자
+    <b>시트</b>·<b>직접 기록</b> 줄에는 보낸 사람이 안 적혀 있어, 그 투자사를
+    <b>지금 담당하는 팀원</b>을 대신 적습니다. 담당이 바뀌면 과거 발송도 새 담당 팀원
     앞으로 옮겨 붙습니다. <b>앱 발송</b>만 실제로 보낸 사람이 남습니다.
   </details>
   {# ── 이 표에 안 잡히는 것 ────────────────────────────────────────────────
@@ -1817,7 +1817,7 @@
     {# 무엇이 같이 지워지는지 **숫자로**. `companies.js` 가 채운다. #}
     <ul class="force-del-plan" id="co-force-plan"></ul>
     <p class="warn-box">
-      이 기업 줄이 <b>IR 기업 현황 표에서 통째로</b> 사라집니다 — 같은 줄의 옛 스타트업DB 칸
+      이 기업 줄이 <b>IR 기업 현황 표에서 통째로</b> 사라집니다 — 같은 줄의 옛 스타트업DB 열
       (대표자명 · 매출 · 특이사항 …)도 함께 지워집니다.
     </p>
     {#

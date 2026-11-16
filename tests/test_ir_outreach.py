@@ -750,7 +750,7 @@ def test_같은_방_제목의_기업은_대조하지_않고_여럿으로_적는�
     me = _login(client)
     res = me.post("/api/ir-rooms/check", json={"company_ids": [seeded["typed"].id, twin.id]})
     assert res.status_code == 400
-    assert "같은 방 제목" in res.json()["detail"]
+    assert "같은 카톡방 제목" in res.json()["detail"]
     assert not _jobs(db)
     db.expire_all()
     assert seeded["typed"].room_verified == "ambiguous" and twin.room_verified == "ambiguous"
@@ -995,7 +995,7 @@ def test_맞추기_화면에_찾기_결과가_서고_투자사_방은_빠진다(
     for state in ("busy", "verified", "found", "none", "never"):
         assert f'data-find="{state}"' in body, state
     assert "차카타벤처스" not in body, "투자사 방이 후보로 섰다"
-    assert "투자사 방 1개는 후보에서 뺐습니다" in body
+    assert "투자사 카톡방 1개는 후보에서 뺐습니다" in body
     assert 'class="chip room-pick named picked"' in body
     assert 'aria-pressed="true"' in body
     assert body.count('class="linkbtn room-confirm"') == 5
@@ -1051,7 +1051,7 @@ def test_줄의_확정은_적혀_있던_후보_제목도_확인됨으로_올린�
         "ids": str(seeded["noroom"].id), "company_ids": [seeded["noroom"].id],
         "rooms": [title], "only": str(seeded["noroom"].id)})
     d = res.json()
-    assert d["state"] == "verified" and "확인됨으로 확정" in d["msg"]
+    assert d["state"] == "verified" and "확인 완료로 확정" in d["msg"]
     # 한꺼번에 [고른 것 확정] 은 바뀐 줄만 — 그대로인 줄을 몰래 올리지 않는다.
     seeded["notfound"].kakao_room_name = "다다랩스 방"
     room_match.save_candidates(seeded["notfound"], ["다다랩스 방"], at=now_iso(), query="다다랩스")

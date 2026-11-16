@@ -399,7 +399,7 @@ def test_asking_early_can_be_recorded(client, db, users):
 
     client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
     # 날짜가 한참 남았어도 버튼이 있다
-    assert "물어봤음" in client.get("/ir").text
+    assert "결과 확인함" in client.get("/ir").text
 
     r = client.post(f"/ir/meetings/{meeting.id}/followup",
                     data={"outcome": "investing"}, follow_redirects=False)

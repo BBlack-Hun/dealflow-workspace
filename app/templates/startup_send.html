@@ -27,7 +27,7 @@
     만들기] 를 누른 사람이 보냈다고 알고 창을 닫는다.
   #}
   <p class="hint">
-    ✋ 이 화면은 <b>대기 목록을 세우는 데까지</b>입니다 — 누른 뒤 진행 화면에서
+    ✋ 이 화면은 <b>대기 회차를 세우는 데까지</b>입니다 — 누른 뒤 진행 화면에서
     <b>[발송 시작]</b> 을 눌러야 실제로 나갑니다.
   </p>
   {# 매월 자동 발송은 2단계 자동화 A5 하나다(#31) — 켜고 날짜를 고치는 자리는
@@ -43,14 +43,14 @@
     {% if a5.skip %}— {{ a5.skip.month }} 은 이미 회차가 있어 건너뜁니다
       <a class="linkbtn" href="/jobs/{{ a5.skip.job_id }}">회차 보기</a>{% endif %}
     {% if a5.next_label %}— 다음: <b>{{ a5.next_label }}</b> · 지금 기준 <b>{{ a5.next_count }}곳</b>.
-    그날 아침 목록이 서고 그 시각에 나갑니다(그 전에 진행 화면에서 빼거나 [중단] 할 수 있습니다).
+    그날 아침 회차가 서고 그 시각에 나갑니다(그 전에 진행 화면에서 빼거나 [중단] 할 수 있습니다).
     <b>그 시각에 이 PC 의 발송 프로그램이 켜져 있어야 합니다.</b>{% endif %}
   </p>
   {% if a5.missed %}
   <p class="hint warn" data-testid="startup-a5-missed">
     ⚠️ <b>{{ a5.missed.month_num }}월분이 아직 안 나갔습니다</b> — 이 달 A5 날짜({{ a5.missed.slot }})가
     지났는데 나간 회차가 없습니다{% if a5.missed.error %}({{ a5.missed.error }}){% endif %}.
-    A5 는 그날이 지나면 다시 세우지 않습니다 — 달이 끝나기 전에 아래에서 손으로 보내세요.
+    A5 는 그날이 지나면 다시 세우지 않습니다 — 달이 끝나기 전에 아래에서 직접 보내세요.
   </p>
   {% endif %}
   {% else %}
@@ -69,7 +69,7 @@
 <p class="muted" data-testid="startup-send-summary">
   <b>{{ selected }}</b> 계약 기업 <b>{{ rows|length }}곳</b>
   · 보낼 수 있음 <b>{{ sendable_count }}곳</b>
-  · 방 확인 <b>{{ verified_count }}곳</b>
+  · 카톡방 확인 완료 <b>{{ verified_count }}곳</b>
   {% if no_room_count %}· {{ no_room_label }} <b>{{ no_room_count }}곳</b>{% endif %}
   {% if no_lines_count %}· 요청 없음 <b>{{ no_lines_count }}곳</b>{% endif %}
   {% if sent_count %}· 이미 보냄 <b>{{ sent_count }}곳</b>{% endif %}
@@ -113,8 +113,8 @@
     눌러서 넣는다.
   #}
   <a href="/deals/startup-ir/rooms">대표 카톡방 맞추기</a>에서
-  <b>한 판에</b> 채울 수 있습니다 — 카톡에서 <b>회사명으로 찾아온 방 제목</b>을
-  눌러서 넣으세요. 손으로 적을 때는 <b>카톡에 보이는 글자 그대로</b>여야
+  <b>한 판에</b> 채울 수 있습니다 — 카톡에서 <b>회사명으로 찾아온 카톡방 제목</b>을
+  눌러서 넣으세요. 직접 적을 때는 <b>카톡에 보이는 글자 그대로</b>여야
   합니다(한 글자만 달라도 발송기가 방을 찾지 못합니다).
 </p>
 {% endif %}
@@ -186,7 +186,7 @@
               (`services/startup_send.rows` 의 `verified` 설명).
             #}
             {% if not row.verified %}
-            <span class="room-badge muted" title="카톡에서 이 제목의 방을 확인한 적이 없습니다 — [대표 카톡방 맞추기] 에서 확인할 수 있습니다. 보내는 것을 막지는 않습니다.">확인 안 됨</span>
+            <span class="room-badge muted" title="카톡에서 이 제목의 카톡방을 확인한 적이 없습니다 — [대표 카톡방 맞추기] 에서 확인할 수 있습니다. 보내는 것을 막지는 않습니다.">확인 전</span>
             {% endif %}
             {% else %}<span class="status-badge warn">{{ no_room_label }}</span>
             {% endif %}
@@ -231,7 +231,7 @@
     단추에 수를 적는다 — 누른 뒤에 숫자를 아는 것은 늦다.
   #}
   <button type="submit" class="primary" {% if not sendable_count and not sent_count %}disabled{% endif %}>
-    {{ sendable_count }}곳 대기 목록 만들기
+    {{ sendable_count }}곳 대기 회차 만들기
   </button>
   <p class="hint">
     {#
@@ -240,8 +240,8 @@
       (`services/startup_send.rows` 의 `verified`) 적어서 드러낸다.
     #}
     {% if sendable_count %}
-    그중 <b>{{ verified_count }}곳</b>은 카톡에서 방 제목을 <b>확인했습니다</b> —
-    나머지는 확인 안 된 이름입니다(<a href="/deals/startup-ir/rooms">맞추기</a>에서
+    그중 <b>{{ verified_count }}곳</b>은 카톡방 제목을 카톡에서 <b>확인했습니다</b> —
+    나머지는 아직 확인 전인 이름입니다(<a href="/deals/startup-ir/rooms">맞추기</a>에서
     확인할 수 있습니다. 보내는 것을 막지는 않습니다).<br>
     {% endif %}
     누르면 <b>{{ sendable_count }}곳</b>짜리 회차가 <b>대기(draft)</b> 로 섭니다.

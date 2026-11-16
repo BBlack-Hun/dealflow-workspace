@@ -396,11 +396,11 @@ def save_rooms(
             kept += room_match.verify_picked(company, known)
     db.commit()
 
-    parts = [f"{changed}곳의 방 제목을 넣었습니다" if changed
-             else "적혀 있던 방을 확인됨으로 확정했습니다" if kept else "바뀐 줄이 없습니다"]
+    parts = [f"{changed}곳의 카톡방 제목을 넣었습니다" if changed
+             else "적혀 있던 카톡방을 확인 완료로 확정했습니다" if kept else "바뀐 줄이 없습니다"]
     if changed and changed != verified:
         # 후보에 없는 글자(직접 적은 것)는 확인 전이다 — 그 말이 없으면 확정된 줄 안다.
-        parts.append((f"후보에서 고른 {verified}곳은 확인됨 · " if verified else "")
+        parts.append((f"후보에서 고른 {verified}곳은 확인 완료 · " if verified else "")
                      + f"직접 적은 {changed - verified}곳은 [카톡방 찾기·확인] 으로 "
                      "확인해야 보냅니다")
     if unknown:
@@ -473,7 +473,7 @@ def search_rooms(
     targets = [r["company"] for r in room_match.rows(db)["rows"]
                if not r["room"] and r["query"]]
     if not targets:
-        return _back_rooms("찾을 기업이 없습니다 — 방 제목이 비어 있는 계약 기업만 찾습니다")
+        return _back_rooms("찾을 기업이 없습니다 — 카톡방 제목이 비어 있는 계약 기업만 찾습니다")
 
     job = SendJob(user_id=user.id, kind=VERIFY_KIND, status="queued",
                   total=len(targets), sent=0, failed=0)

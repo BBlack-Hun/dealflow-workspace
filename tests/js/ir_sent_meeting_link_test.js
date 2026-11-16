@@ -69,7 +69,7 @@ const deals_ = require("./_deals_dom.js");
   const warn = dom.document.getElementById("send-warnings");
 
   assert.ok(!warn.hidden, "못 고른 담당자를 두고 아무 말이 없다");
-  assert.ok(/담당자 1명/.test(warn.innerHTML),
+  assert.ok(/심사역 1명/.test(warn.innerHTML),
     "몇 명을 못 골랐는지 안 적었다: " + warn.innerHTML);
 }
 
@@ -99,7 +99,7 @@ const deals_ = require("./_deals_dom.js");
 
   assert.ok(!warn.hidden,
     "미리보기가 오자 못 고른 담당자 얘기가 사라졌다: " + warn.innerHTML);
-  assert.ok(/담당자 1명/.test(warn.innerHTML), warn.innerHTML);
+  assert.ok(/심사역 1명/.test(warn.innerHTML), warn.innerHTML);
 }
 
 // ── 7) 사람이 방식을 직접 바꾸면 그 말은 지운다 ────────────────────────────

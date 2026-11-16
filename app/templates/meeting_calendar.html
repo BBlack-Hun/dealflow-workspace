@@ -89,14 +89,14 @@
             완료 → 미팅 후기). 미팅 한 건의 상세 화면은 따로 없다. 남의 미팅은
             그 화면에 안 보이므로(제 것만 나온다) 잇지 않는다.
           #}
-          {% set tip = (m.time ~ ' ' if m.time else '') ~ m.kind ~ ' · ' ~ m.who ~ (' · ' ~ m.outcome if m.outcome else '') ~ (' · 담당 ' ~ m.owner if m.owner else '') %}
+          {% set tip = (m.time ~ ' ' if m.time else '') ~ m.kind ~ ' · ' ~ m.who ~ (' · ' ~ m.outcome if m.outcome else '') ~ (' · 팀원 ' ~ m.owner if m.owner else '') %}
           {% if m.user_id == user.id %}
           <a class="cal-chip {{ 'done' if m.done else 'plan' }}" title="{{ tip }}"
              href="/ir#{{ 'reviews' if m.done else 'meetings' }}">
           {% else %}
           <span class="cal-chip {{ 'done' if m.done else 'plan' }}" title="{{ tip }}">
           {% endif %}
-            {% if m.done %}✓ {% endif %}{% if m.time %}<b>{{ m.time }}</b> {% endif %}{{ m.company or '기업 미기재' }} ↔ {{ m.firm }}{% if m.owner %} <span class="muted">· 담당 {{ m.owner }}</span>{% endif %}
+            {% if m.done %}✓ {% endif %}{% if m.time %}<b>{{ m.time }}</b> {% endif %}{{ m.company or '기업 미기재' }} ↔ {{ m.firm }}{% if m.owner %} <span class="muted">· 팀원 {{ m.owner }}</span>{% endif %}
           {% if m.user_id == user.id %}</a>{% else %}</span>{% endif %}
           {% endfor %}
         </td>

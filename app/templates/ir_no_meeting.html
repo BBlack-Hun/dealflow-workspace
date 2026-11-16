@@ -12,7 +12,7 @@
   {# 220자 한 문단이었다 — 앞의 두 문장만 늘 보이고 나머지는 `자세히` 안으로(뜻은 그대로). #}
   <p class="muted">
     IR 자료를 요청한 심사역 · 기업 가운데 <b>아직 미팅이 없는</b> 건입니다(오늘 기준).
-    ‘보내지 않음’·‘드랍’ 요청은 기본으로 뺍니다.
+    ‘보내지 않음’·‘중단’ 요청은 기본으로 뺍니다.
   </p>
   <details class="muted">
     <summary>자세히</summary>
@@ -24,9 +24,9 @@
     <b>명단 기록</b>으로 함께 봅니다(앱 기록과 겹치면 뺍니다).
   </details>
   <p class="muted">
-    <b>드랍 의심</b> — 자료를 전달하고 {{ drop_days }}일이 지나도록 같은 투자사에 완료·예정 미팅이 없는 건입니다.
+    <b>중단 의심</b> — 자료를 전달하고 {{ drop_days }}일이 지나도록 같은 투자사에 완료·예정 미팅이 없는 건입니다.
     미팅 요청을 보냈으면 <b>어레인지중</b>이고 그날부터 다시 {{ drop_days }}일을 셉니다.
-    확인해서 [드랍 확정]을 누르면 요청 상태가 ‘드랍’(미팅 없이 끝남)이 되고, ‘보내지 않음·드랍 보기’에서 [드랍 취소]로 되돌립니다.
+    확인해서 [중단 확정]을 누르면 요청 상태가 ‘중단’(미팅 없이 끝남)이 되고, ‘보내지 않음·중단 보기’에서 [중단 취소]로 되돌립니다.
   </p>
 </header>
 
@@ -37,7 +37,7 @@
     <span class="seg-toggle">
       <a class="chip {% if view == 'none' %}active{% endif %}" href="{{ href(view='none') }}">미팅 없음 {{ n_none }}건</a>
       <a class="chip {% if view == 'scheduled' %}active{% endif %}" href="{{ href(view='scheduled') }}">미팅 예정 {{ n_planned }}건</a>
-      <a class="chip {% if view == 'drop' %}active{% endif %}" href="{{ href(view='drop') }}">드랍 의심 {{ n_drop }}건</a>
+      <a class="chip {% if view == 'drop' %}active{% endif %}" href="{{ href(view='drop') }}">중단 의심 {{ n_drop }}건</a>
     </span>
     <a class="secondary-btn" href="{{ href('/api/export/ir-no-meeting.xlsx') }}" download>엑셀</a>
   </div>
@@ -72,13 +72,13 @@
       <a class="chip {% if src == 'sheet' %}active{% endif %}" href="{{ href(src='sheet') }}">시트 이력만</a>
       <a class="chip {% if src == 'memo' %}active{% endif %}" href="{{ href(src='memo') }}">명단 기록만</a>
     </span>
-    <a class="chip {% if drop %}active{% endif %}" href="{{ href(drop='' if drop else 'show') }}">보내지 않음·드랍 보기</a>
+    <a class="chip {% if drop %}active{% endif %}" href="{{ href(drop='' if drop else 'show') }}">보내지 않음·중단 보기</a>
   </div>
 </div>
 
 <section class="panel">
   {% if view == 'drop' %}
-  <h2 class="panel-title">드랍 의심
+  <h2 class="panel-title">중단 의심
     <span class="hint">{{ rows|length }}건 · 전달(미팅 요청) 후 {{ drop_days }}일 넘게 미팅 없음 · 오래된 순</span>
   </h2>
   {% else %}
@@ -96,7 +96,7 @@
     <thead><tr>
       <th>기업명</th><th>투자사</th><th>심사역</th><th style="width:150px">IR 자료 요청일</th>
       <th style="width:150px">요청 상태</th><th class="num" style="width:64px">경과일</th>
-      {% if not who %}<th>담당자</th>{% endif %}
+      {% if not who %}<th>담당 팀원</th>{% endif %}
       <th class="num" style="width:64px" title="이 심사역이 이 기업 자료를 요청한 횟수">요청 건수</th><th style="width:80px">출처</th><th>비고</th>
       {% if view == 'scheduled' %}<th style="width:96px">미팅 예정일</th>{% endif %}
       {% if view == 'drop' %}<th class="num" style="width:72px" title="마지막 전달일(미팅 요청을 보냈으면 그날)부터">전달 후</th>{% endif %}
@@ -131,14 +131,14 @@
             <input type="hidden" name="ids" value="{{ r.lost_ids|join(',') }}">
             <input type="hidden" name="to" value="delivered">
             <input type="hidden" name="back" value="{{ href() }}">
-            <button type="submit" class="linkbtn">드랍 취소</button>
+            <button type="submit" class="linkbtn">중단 취소</button>
           </form>
           {% elif r.suspect and r.sent_ids %}
           <form method="post" action="/ir/no-meeting/status" class="inline-form">
             <input type="hidden" name="ids" value="{{ r.sent_ids|join(',') }}">
             <input type="hidden" name="to" value="lost">
             <input type="hidden" name="back" value="{{ href() }}">
-            <button type="submit" class="secondary-btn">드랍 확정</button>
+            <button type="submit" class="secondary-btn">중단 확정</button>
           </form>
           {% elif r.suspect %}{% for m in r.memos %}
           <form method="post" action="/ir/no-meeting/adopt" class="inline-form">

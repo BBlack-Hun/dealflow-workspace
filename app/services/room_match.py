@@ -325,7 +325,7 @@ def investor_reason(room: Optional[str], company_name: Optional[str],
     if not flat:
         return ""
     if flat in known.rooms:
-        return "투자사 담당자 방"
+        return "투자사 심사역 카톡방"
     company = key(company_name)
     title = key(room)
     for firm in known.firms:

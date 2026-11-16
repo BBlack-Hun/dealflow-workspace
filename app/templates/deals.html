@@ -28,7 +28,7 @@
   <h1 class="guard-title" id="attach-title">PC 에서 IR 자료를 첨부해주시기 바랍니다</h1>
   <p class="guard-body">
     구글 드라이브 링크를 문구에 실어 보내는 방식은 <b>더 이상 쓰지 않습니다.</b>
-    PC 카카오톡에서 해당 방에 <b>자료 파일을 직접 첨부해 보내신 뒤</b>,
+    PC 카카오톡에서 해당 카톡방에 <b>자료 파일을 직접 첨부해 보내신 뒤</b>,
     이 화면에서 안내 문구를 발송하세요.
     {# 방향을 말하지 않는다 — [보낼 자료] 칸은 넓은 화면에서 **오른쪽**
        미리보기 안에 있고, 좁은 화면(900px 이하)에서 칸이 세로로 쌓일 때만
@@ -113,7 +113,7 @@
     미팅 요청 <span>20~30분 미팅 제안</span>
   </button>
   <button type="button" class="mode-tab" data-mode="review" data-followup="1">
-    미팅 후기 <span>미팅 뒤 결과 묻기</span>
+    미팅 후기 <span>미팅 결과 확인</span>
   </button>
   <button type="button" class="mode-tab" data-mode="ask" data-followup="1">
     선호 분야 묻기 <span>무엇을 보고 싶은지 되묻기</span>
@@ -381,7 +381,7 @@
       {% if q.no_group and q.waiting %}
       <p class="queue-note hint">
         그룹을 안 정해 두신 분들입니다 —
-        <a href="/contacts">투자사 관리 현황</a> 의 <b>그룹</b> 칸을 채우면
+        <a href="/contacts">투자사 관리 현황</a> 의 <b>그룹</b> 열을 채우면
         그룹마다 다른 기업을 붙일 수 있습니다.
       </p>
       {% endif %}
@@ -536,7 +536,7 @@
       {# IR 자료 전달에서도 이 고르개가 IR 기업 목록 아래에 선다(0118). 그때는
          `data-only="share"` 칸이 숨고 이 안내(`data-only="ir"`)가 선다(`deals.js` 의 `syncCompanyPanel`). #}
       <p class="hint" data-only="ir" hidden>
-        <b>Series A 이상 딜 소싱</b> 기업도 함께 보낼 수 있습니다 — 그 탭의 <b>IR 자료 수신</b> 칸(윗줄 파일 이름)에
+        <b>Series A 이상 딜 소싱</b> 기업도 함께 보낼 수 있습니다 — 그 탭의 <b>IR 자료 수신</b> 열(윗줄 파일 이름)에
         적은 파일이 붙고, 번호 없이 이름으로 나갑니다. IR 기업 현황에도 있는 기업은 위 IR 기업 목록에서 고르세요.
       </p>
       <p class="hint" data-only="share">
@@ -607,7 +607,7 @@
   <section class="panel">
     <h2 class="panel-title">
       {# 소싱 제안일 때는 대상이 투자사 담당자가 아니다 — 제목도 바뀐다. #}
-      <span id="contact-head">② 대상 담당자</span>
+      <span id="contact-head">② 대상 심사역</span>
       <span class="count-pill" id="contact-pill" title="고른 사람 수"><b>0</b>명</span>
     </h2>
     {#
@@ -635,11 +635,11 @@
       {# 누르면 반응 없는 분만 남기고 고른다 · 다시 누르면 함께 풀린다(#211 · `deals.js`).
          수는 지금 조건 안의 반응 없는 분이다 — 판정은 `services/no_reaction` 한 곳. #}
       <button type="button" class="linkbtn" id="select-noreact" aria-pressed="false"
-              title="반응 없는 분만 남기고 그분들을 고릅니다">반응 없는 담당자만 · {{ no_reaction_count }}명</button>
+              title="반응 없는 분만 남기고 그분들을 고릅니다">반응 없는 심사역만 · {{ no_reaction_count }}명</button>
       {# 그분들 전부를 전화 리마인드용 엑셀로(i246 — 성함 · 전화번호 · 회사명 …,
          `data_io.export_no_reaction`). 거르기와 상관없이 위 처음 수 그대로다. #}
       {% if no_reaction_count %}<a class="linkbtn" id="noreact-export" href="/api/export/no-reaction.xlsx" download
-         title="반응 없는 담당자 {{ no_reaction_count }}명의 성함 · 전화번호 · 회사명을 엑셀로 받습니다(전화 리마인드용)">엑셀 받기</a>{% endif %}
+         title="반응 없는 심사역 {{ no_reaction_count }}명의 성함 · 전화번호 · 회사명을 엑셀로 받습니다(전화 리마인드용)">엑셀 받기</a>{% endif %}
     </div>
     {#
       **기준이 무엇인지, 왜 수가 다른지 여기서 말한다.**
@@ -720,7 +720,7 @@
     <div class="picker-search">
       <input type="search" id="contact-search"
              placeholder="이름 · 투자사 · 단계(Series A) · 분야 · 라운드 규모 검색 ({{ contacts|length }}명)"
-             autocomplete="off" aria-label="담당자 검색">
+             autocomplete="off" aria-label="심사역 검색">
       <label class="only-picked">
         <input type="checkbox" id="only-picked-contacts"> 선택한 것만
       </label>
@@ -745,7 +745,7 @@
            data-separate="{{ separate_group }}">
         {# 칩 글자(그룹 이름)는 투자사 관리 현황에 적힌 값 그대로다 — 분야처럼 읽히는
            이름도 그 칸의 값이라 고치지 않고, 무엇으로 묶은 줄인지는 라벨이 말한다. #}
-        <span class="filter-label" title="투자사 관리 현황의 [그룹] 칸 값으로 묶었습니다 — 칩 이름이 곧 그 칸의 값입니다">그룹</span>
+        <span class="filter-label" title="투자사 관리 현황의 [그룹] 열 값으로 묶었습니다 — 칩 이름이 곧 그 열의 값입니다">그룹</span>
         <button type="button" class="chip active" data-value="">
           전체 <b>{{ contacts|length }}</b></button>
         {% for g in contact_groups %}
@@ -818,7 +818,7 @@
         검토 가능 심사역 참여 안내 대상이 아니라 뺐습니다.</p>
       {% endif %}
       <div class="filter-line" id="bucket-filter">
-        <span class="filter-label">갈래</span>
+        <span class="filter-label">탭</span>
         <button type="button" class="chip active" data-value="">
           전체 <b>{{ sourcing_contacts|length }}</b></button>
         {% for b in sourcing_buckets %}
@@ -846,7 +846,7 @@
       {# 우리 쪽 담당 심사역. 39명을 통째로 훑는 것과 내 담당만 보는 것은
          다른 일이다. #}
       <div class="filter-line" id="assignee-filter">
-        <span class="filter-label">담당</span>
+        <span class="filter-label">팀원</span>
         <button type="button" class="chip active" data-value="">전체</button>
         {# 칩은 **지금 맡은 사람**마다 하나다(`sourcing.assignee_chips`). 탭을 열 때
            서버에서 다시 읽어 다시 세운다(`deals.js` 의 `rebuildAssigneeChips`) —
@@ -921,7 +921,7 @@
         </div>
       </label>
       {% else %}
-      <p class="muted">카톡 연결된 담당자가 없습니다.</p>
+      <p class="muted">카톡 연결된 심사역이 없습니다.</p>
       {% endfor %}
     </div>
 
@@ -979,7 +979,7 @@
           {% for p in recipient_counts.paused.people %}<a class="req-link" href="{{ p.href }}"
              title="이 투자사 상세 열기"><b>{{ p.name }}</b>
             <span class="muted">{{ p.firm }}</span>{% if p.room %}
-            <span class="room-badge muted">💬 방 있음</span>{% endif %}</a>{% if not loop.last %}<span class="sep">·</span>{% endif %}{% endfor %}
+            <span class="room-badge muted">💬 카톡방 있음</span>{% endif %}</a>{% if not loop.last %}<span class="sep">·</span>{% endif %}{% endfor %}
         </p>
       </div>
       {% endif %}
@@ -1017,7 +1017,7 @@
             {# 방이 있는데도 빠진 사람이 여기 선다. `방 확인` 과 `연결 단계` 는
                따로 관리되는 값이라, 방을 다시 확인해도 이 수는 안 움직인다 —
                그 사정이 줄에서 보여야 물음이 화면에서 풀린다. #}
-            <span class="room-badge muted">💬 방 있음</span>{% endif %}</a>{% if not loop.last %}<span class="sep">·</span>{% endif %}{% endfor %}
+            <span class="room-badge muted">💬 카톡방 있음</span>{% endif %}</a>{% if not loop.last %}<span class="sep">·</span>{% endif %}{% endfor %}
         </p>
       </div>
       {% endfor %}
@@ -1087,7 +1087,7 @@
               {# 어느 갈래도 투자사 딜소개 방을 이어받지 않는다 — 보내는 분 카톡의
                  딜 소싱 방을 [방 후보 찾기]로 찾아 확정해야 나간다. 고른 채 보내면
                  이 분만 빼고 이유를 띄운다(`routers/deals.py` 의 `NO_ROOM_NOTE`). #}
-              <span class="room-badge warn">⚠ 방 없음 — [딜 소싱]의 [방 후보 찾기]로 찾아 확정하세요</span>
+              <span class="room-badge warn">⚠ 카톡방 없음 — [딜 소싱]의 [카톡방 후보 찾기]로 찾아 확정하세요</span>
             {% endif %}
           </div>
         </div>
@@ -1168,7 +1168,7 @@
       {% endif %}
       <p class="hint">
         메일은 <b>서버가 바로 보냅니다</b> — 발송 프로그램을 켜 둘 필요가 없습니다.
-        메일 주소가 없는 담당자는 발송 전에 막힙니다.
+        메일 주소가 없는 심사역은 발송 전에 막힙니다.
         제목을 <b>비워 두면 회차명</b>이 그대로 제목이 됩니다.
         제목에 적은 <code>{담당자명}</code>·<code>{직함}</code>·<code>{투자사}</code>·<code>{개수}</code>
         는 문구와 똑같이 받는 분마다 채워집니다.
@@ -1212,7 +1212,7 @@
     </div>
     <div id="preview-tabs" class="preview-tabs"></div>
     <div id="preview-area" class="preview-area">
-      <p class="muted">기업과 담당자를 고르면 여기에 문구가 나옵니다.</p>
+      <p class="muted">기업과 심사역을 고르면 여기에 문구가 나옵니다.</p>
     </div>
     <div id="send-warnings" class="warn-box" hidden></div>
     {# ── 언제 보낼까 ───────────────────────────────────────────────────────
@@ -1232,8 +1232,8 @@
       <span class="hint muted">비워 두면 바로 보냅니다. 예약은
         {{ '%02d'|format(send_earliest_hour) }}:00~{{ '%02d'|format(send_latest_hour) }}:00 사이로만 고를 수 있습니다.</span>
     </div>
-    <button type="button" id="send-btn" class="primary-btn" disabled data-send="proxy">발송 목록 만들고 보내기</button>
-    <p class="hint muted">발송 목록을 만들면 보낼 차례를 기다렸다가, 연결된 발송 프로그램이 자동으로 보냅니다.</p>
+    <button type="button" id="send-btn" class="primary-btn" disabled data-send="proxy">발송 회차 만들고 보내기</button>
+    <p class="hint muted">발송 회차를 만들면 보낼 차례를 기다렸다가, 연결된 발송 프로그램이 자동으로 보냅니다.</p>
   </section>
 
   {#
@@ -1255,7 +1255,7 @@
   <section class="panel manual-panel" id="manual-send"
            data-today="{{ manual_today }}"
            data-with-companies="{{ manual_kinds_with_companies|join(',') }}">
-    <h2 class="panel-title">손으로 보냈다면
+    <h2 class="panel-title">직접 보냈다면
       <span class="hint">발송 프로그램을 안 쓰고 카톡에서 직접 보낸 것을 기록에 남깁니다</span>
     </h2>
     <div class="manual-row">
@@ -1274,7 +1274,7 @@
       <input type="number" id="manual-count" min="1" max="99"
              placeholder="8" aria-label="기업 개수만 적기">
       <button type="button" class="secondary-btn inline" id="manual-btn" disabled data-send>
-        손으로 보낸 것으로 기록</button>
+        직접 보낸 것으로 기록</button>
     </div>
     <p class="hint" id="manual-note">{{ manual_remind_note }}</p>
     <p class="hint" id="manual-state" hidden></p>
@@ -1285,7 +1285,7 @@
        되돌린 판도 목록에 남는다: 사라지면 사람은 자기가 되돌렸는지 애초에
        안 적었는지를 알 수 없다. #}
     <details class="manual-batches" id="manual-batches">
-      <summary>손으로 적은 기록 되돌리기</summary>
+      <summary>직접 기록 되돌리기</summary>
       <div class="manual-batch-list" id="manual-batch-list">
         <p class="muted">여는 중…</p>
       </div>
