@@ -741,3 +741,27 @@ def test_발송_화면과_수가_왜_다른지_대시보드가_말한다(logged,
     # 그래서 화면이 그 수를 이름까지 적어 주면 어긋남이 아니라 설명이 된다.
     assert sendable == 4                       # 준비 셋 + 답없는이
     assert pipeline["ready"] + pipeline["stuck"] - pipeline["on_hold"] == sendable
+
+
+def test_요약_줄은_합계를_먼저_말하고_내역이_합계를_채운다(logged, finished, db, users):
+    """`보낼 준비 완료 N명 · 방이 없어 못 보냄 M명` 만 있으면 머리의 명단 수와
+    더해 보아 몇 명이 빈다 — 빈 사람(더 진행하지 않기로 한 줄)은 아래 줄에만 있었다.
+
+    **셈은 그대로다**(`명단 = 준비 + 못 보냄 + 연결 안 끝남`). 화면이 합계를 앞에
+    적고, 끝난 줄의 수까지 내역에 적어 더하면 합계가 되게 한다. 끝난 줄의 수는
+    **링크가 아니다** — 아래 갈래 줄이 이미 그 사람들에게 간다.
+    """
+    from app.services.dashboard import user_dashboard
+
+    pipeline = user_dashboard(db, users["u1"])["pipeline"]
+    panel = _panel(logged.get("/").text)
+    summary = re.search(r'<p class="hint">딜소개 명단 (.*?)</p>', panel, re.S)
+    assert summary, f"합계가 먼저 서는 요약 줄이 없다: {panel}"
+    text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", summary.group(1)))
+    assert text.startswith(f"{pipeline['listed']}명 중"), text
+    closed = pipeline["total"] - pipeline["open"]
+    assert f"더 진행하지 않음 {closed}명" in text, text
+    assert (pipeline["ready"] + pipeline["stuck"] + pipeline["open"] + closed
+            == pipeline["listed"]), "내역을 더하면 합계가 되어야 한다"
+    assert "더 진행하지 않음" not in "".join(t for _, t in _panel_links(panel)), \
+        "끝난 줄의 수에 링크를 걸면 같은 사람에게 가는 길이 하나 더 생긴다"

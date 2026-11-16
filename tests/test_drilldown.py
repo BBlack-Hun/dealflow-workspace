@@ -328,7 +328,7 @@ def test_empty_address_reads_a_colleague_at_the_same_firm(db, users, data):
 # ── i242 — 관리자 대시보드의 카톡방 연결 상태 · 내 투자사 선호도 팀 전체 합계 ──
 
 # i252 — 이 칸의 이름. 옛 이름은 '내 투자사 선호'.
-REQUESTERS_TITLE = "IR 자료를 많이 요청하신 심사역 순"
+REQUESTERS_TITLE = "IR 자료 요청이 많은 심사역 순위"
 
 
 def test_member_dashboard_names_the_requesters_panel(client, db, users, data):

@@ -529,7 +529,10 @@ def monthly_reactions(db: Session, contact_ids: List[int],
             "key": key,
             # `9월` 로 짧게. 폰에서 `2026-09` 는 칸 폭을 혼자 다 먹는다.
             # 해가 바뀌면 그때만 해를 붙인다 — 12월과 작년 12월이 같아 보이면 안 된다.
-            "label": f"{mon}월" if year == today.year else f"{year % 100}년 {mon}월",
+            # **올해 1월에도 붙인다.** 작년 달에만 붙이면 `1월 | 25년 12월` 로 서서
+            # 해가 바뀌는 자리의 한쪽에만 해가 보인다 — 양쪽에 다 있어야 경계로 읽힌다.
+            "label": (f"{mon}월" if year == today.year and mon != 1
+                      else f"{year % 100}년 {mon}월"),
             "this_month": key == f"{today.year:04d}-{today.month:02d}",
             **got,
         })
@@ -734,12 +737,17 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None,
             # 몇 건인지 아래 줄이 밝힌다 — 숫자를 가르지는 않는다(가르면 사람이
             # 두 수를 더해야 하고, 보고에 적는 수는 어차피 합계다).
             {"key": "sent", "label": "이번 주 보낸 건수", "value": sent_this_week,
-             "sub": (f"{week_start.strftime('%m/%d')}부터 · 도착 성공"
+             "sub": (f"{report.day_label(week_start.isoformat())}부터 · 도착 성공"
                      + (f" · 손으로 적음 {len(manual)}" if manual else "")),
              "href": ("/deals?contacts=" + ",".join(str(i) for i in sent_ids)
                       if sent_ids else "/deals")},
         ],
         "next_send": next_send,
+        # 화면에 적는 날짜는 `11/18(수)` 꼴 하나다 — 업무 보고가 쓰는 그 함수
+        # (`report.day_label`). 화면이 `strftime` 을 따로 들고 있으면 `11월 18일`·
+        # `12/02` 처럼 한 카드 안에서 표기가 갈린다(실제로 그랬다).
+        "next_send_label": report.day_label(next_send.isoformat()),
+        "upcoming_labels": [report.day_label(d.isoformat()) for d in upcoming],
         "days_left": (next_send - today).days,
         "upcoming": upcoming,
         "rooms": _room_panel(db, user, sending, sheet_scope, react_team),
@@ -1054,6 +1062,9 @@ def recent_batches(db: Session, user_id: Optional[int] = None, limit: int = 5) -
             "date": (batch.sent_date if batch else None) or (job.started_at or "")[:10],
             "owner": owner.name if owner else "",
             "status": job.status,
+            # 화면에 적는 말. `done` 같은 저장값을 그대로 띄우지 않는다 — 발송 진행
+            # 화면·업무 보고와 같은 말(`report.SEND_STATUS`)을 쓴다.
+            "status_label": report.SEND_STATUS.get(job.status, job.status),
             "total": job.total, "sent": job.sent, "failed": job.failed,
         })
     return out

@@ -973,3 +973,53 @@ def test_the_category_column_is_a_little_wider_in_both_tables(client, db, users)
 
     assert widths["주간 업무"] == widths["반복 업무"], widths
     assert widths["주간 업무"] > 110, "항목 칸이 예전 폭 그대로입니다"
+
+
+# --- 상태 보기에 지금 값이 빠지지 않는다 (UX 점검 §18-1) ---------------------------
+#
+# 점검 보고서는 상태 칸이 `예정` 인데 보기가 `진행중`·`완료` 뿐이라 한 번 바꾸면
+# 되돌릴 수 없다고 적었다. 확인해 보니 저장값은 `todo`(화면 글자 `예정`)이고 보기
+# 셋이 다 서 있다 — 접근성 트리가 지금 고른 값을 칸 이름으로, **나머지**만 보기로
+# 읽어 생긴 오인이다. 그래도 보기에서 하나가 빠지는 순간 그 상태로는 돌아갈 길이
+# 없어지므로(`patch_task` 는 `STATUS_LABELS` 밖의 값을 거절한다) 여기서 잠근다.
+
+def test_every_status_is_offered_with_the_current_one_selected(client, db, users):
+    import re
+
+    from app.models import WeeklyTask
+    from app.services import weekly
+
+    start = weekly.week_start()
+    task = WeeklyTask(user_id=users["u1"].id, week_start=start.isoformat(),
+                      title="상태 보기", position=1)
+    db.add(task)
+    db.commit()
+    assert task.status == "todo", "새 줄의 저장값은 `todo`(화면 글자 `예정`)다"
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    for status in weekly.STATUS_LABELS:
+        client.patch(f"/api/todo/tasks/{task.id}", json={"status": status})
+        table = _task_table(client.get("/todo").text)
+        select = table.split(f'class="task-status" data-id="{task.id}"', 1)[1].split("</select>", 1)[0]
+        offered = re.findall(r'<option value="([^"]+)"', select)
+        assert offered == list(weekly.STATUS_LABELS), f"{status} 일 때 보기: {offered}"
+        chosen = re.findall(r'<option value="([^"]+)" selected', select)
+        assert chosen == [status], f"{status} 인데 골라진 것: {chosen}"
+
+
+def test_a_task_can_go_back_to_planned(client, db, users):
+    """`예정 → 진행중 → 예정` — 한 번 바꿔도 처음 상태로 되돌릴 수 있다."""
+    from app.models import WeeklyTask
+    from app.services import weekly
+
+    task = WeeklyTask(user_id=users["u1"].id, week_start=weekly.week_start().isoformat(),
+                      title="되돌리기", position=1)
+    db.add(task)
+    db.commit()
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    for status in ("doing", "todo"):
+        r = client.patch(f"/api/todo/tasks/{task.id}", json={"status": status})
+        assert r.status_code == 200 and r.json()["status"] == status
+    db.refresh(task)
+    assert task.status == "todo"
