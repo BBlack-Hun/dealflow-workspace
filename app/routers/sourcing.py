@@ -406,11 +406,11 @@ def sourcing_page(request: Request, db: Session = Depends(get_db),
                              "subject": r.mail_subject or ""}
                        for cid, r in receipts.items()
                        if r.source == sourcing_receipts.SOURCE_MAIL},
-        # 머리 줄 — `메일 확인: 마지막 10/15 18:00 · 이번 달 메일로 받은 분 N명 · …`.
+        # 머리 줄 — `메일 자동 확인 · 마지막 10/15 18:00 · 다음 …` / `이번 달 메일로 받은 분 N명 · …`.
         "mail_check": sourcing_mail.page_status(db),
         "is_admin": user.role == "admin",
         "linked_rooms": linked,
-        # 투자사 관리 현황의 줄과 **이어진** 줄 — `🔗 투자사 관리 현황: ○○ 명단`.
+        # 투자사 관리 현황의 줄과 **이어진** 줄 — `🔗 연결됨: ○○ 명단`.
         # 잇는 갈래(`sourcing_sync.BRANCHES`)의 줄만 이어진다.
         # 풍선말(어느 칸이 같이 바뀌는지)도 여기 실려 온다(`badges` 의 `title`).
         # [연결 풀기]를 누를 수 있는지도(`can_unlink` — `_may_unlink`).

@@ -157,7 +157,7 @@ def test_existing_links_are_not_undone(board, db, users):
     assert column(board, contact.id) == "O"
     assert picks(db, row) is None                 # 이어진 줄에는 후보 자리가 없다
     page = board.get(f"/sourcing?tab={SYNC}").text
-    assert f"투자사 관리 현황: {SHEET} 명단" in page
+    assert f"연결됨: {SHEET} 명단" in page
     assert 'data-testid="sourcing-vc-picks"' not in page
 
 
@@ -247,7 +247,7 @@ def test_confirm_links_fills_blank_cells_and_shows_the_badge(board, db, users):
     assert row.vc_contact_id == contact.id
     assert column(board, contact.id) == "O"
     page = board.get(f"/sourcing?tab={SYNC}").text
-    assert f"투자사 관리 현황: {SHEET} 명단" in page
+    assert f"연결됨: {SHEET} 명단" in page
     assert 'data-testid="sourcing-vc-picks"' not in page
 
 

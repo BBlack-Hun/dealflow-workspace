@@ -102,7 +102,7 @@ function pickAll(t, on) { t.all.checked = on; t.all.fire("change"); }
 // ── 1) 처음에는 아무것도 안 골라져 있고 단추가 꺼져 있다 ────────────────────
 {
   const t = build([row(1, "샘플가"), row(2, "샘플나")]);
-  assert.strictEqual(t.count.textContent, "0개 선택");
+  assert.strictEqual(t.count.textContent, "0곳 선택");
   assert.strictEqual(t.send.disabled, true,
     "아무것도 안 골랐는데 단추가 켜져 있다");
 }
@@ -111,10 +111,10 @@ function pickAll(t, on) { t.all.checked = on; t.all.fire("change"); }
 {
   const t = build([row(1, "샘플가"), row(2, "샘플나")]);
   check(boxes(t)[0], true);
-  assert.strictEqual(t.count.textContent, "1개 선택");
+  assert.strictEqual(t.count.textContent, "1곳 선택");
   assert.strictEqual(t.send.disabled, false);
   check(boxes(t)[0], false);
-  assert.strictEqual(t.count.textContent, "0개 선택");
+  assert.strictEqual(t.count.textContent, "0곳 선택");
   assert.strictEqual(t.send.disabled, true, "다 풀었는데 단추가 켜져 있다");
 }
 
@@ -128,7 +128,7 @@ function pickAll(t, on) { t.all.checked = on; t.all.fire("change"); }
   pickAll(t, true);
   assert.deepStrictEqual(picked(t), ["1", "3"],
     "검색으로 숨긴 줄까지 골라졌다 — 화면에 없는 기업이 명단에 선다");
-  assert.strictEqual(t.count.textContent, "2개 선택");
+  assert.strictEqual(t.count.textContent, "2곳 선택");
 
   pickAll(t, false);
   assert.deepStrictEqual(picked(t), [], "[전체 선택]을 풀어도 남아 있다");

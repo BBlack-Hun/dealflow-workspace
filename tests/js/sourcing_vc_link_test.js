@@ -6,7 +6,7 @@
 //
 //   ① 실어 준 후보를 그린다 — 이름 · 회사 · 명단 · 무엇이 같은지. 없으면 숨는다
 //   ② [이 분으로 확정] — 누구를 어느 줄과 잇는지 묻고, POST 하고, 그 자리에 연결
-//      표시(`🔗 투자사 관리 현황: ○○ 명단`)를 그린다. 이으며 채워진 빈 칸도 맞춘다
+//      표시(`🔗 연결됨: ○○ 명단`)를 그린다. 이으며 채워진 빈 칸도 맞춘다
 //   ③ 확인창에서 물리면 아무것도 안 보낸다 · 서버가 거절하면 그 말을 띄우고 그대로
 //   ④ 이름 · 번호를 고쳐 저장하면(`inline-saved`) 응답대로 후보나 연결 표시를 다시 그린다
 //   ⑤ [연결 풀기] — 관리자 · 그 줄의 담당에게만 선다(`can_unlink`). 묻고, POST 하고,
@@ -158,10 +158,12 @@ function titles(box, sel) {
     assert.deepStrictEqual(t.calls, [{ url: "/api/sourcing/5/link", method: "POST",
                                        body: { contact_id: 11 } }]);
     const link = D.queryAll(dom.box, "a.tag")[0];
-    assert.strictEqual(link.textContent, "🔗 투자사 관리 현황: 강민준 투자사 명단");
+    assert.strictEqual(link.textContent, "🔗 연결됨: 강민준 투자사 명단");
     assert.strictEqual(link.getAttribute("href"), "/contacts?sheet=x");
-    assert.strictEqual(link.getAttribute("title"), LINKED.vc_link.title);
-    assert.deepStrictEqual(texts(dom.box, '[data-testid="sourcing-vc-diff"]'), ["다른 칸: 회사"]);
+    // 풍선말 — 어느 화면과 이어졌는지(표시 글자에서 뺐다) + 서버가 준 같이 바뀌는 칸.
+    assert.strictEqual(link.getAttribute("title"),
+                       "투자사 관리 현황의 이 명단과 이어진 줄입니다 · " + LINKED.vc_link.title);
+    assert.deepStrictEqual(texts(dom.box, '[data-testid="sourcing-vc-diff"]'), ["값이 다른 칸: 회사"]);
     assert.strictEqual(D.queryAll(dom.box, ".js-vc-pick").length, 0, "이었는데 후보 단추가 남았다");
     assert.strictEqual(dom.box.hidden, false);
     assert.strictEqual(dom.box.getAttribute("data-testid"), "sourcing-vc-link");
@@ -212,14 +214,14 @@ function titles(box, sel) {
     dom.phone.textContent = "010 0000 0001";
     dom.table.fire("inline-saved", { detail: {
       row: dom.tr, cell: dom.phone, data: Object.assign({ ok: true }, LINKED) } });
-    assert.strictEqual(texts(dom.box, "a.tag")[0], "🔗 투자사 관리 현황: 강민준 투자사 명단");
+    assert.strictEqual(texts(dom.box, "a.tag")[0], "🔗 연결됨: 강민준 투자사 명단");
     assert.strictEqual(D.queryAll(dom.box, ".js-vc-pick").length, 0);
     assert.strictEqual(dom.phone.textContent, "010 0000 0001");
     assert.strictEqual(dom.email.textContent, "hong@example.com");
 
     // 그 값이 없는 응답(다른 칸을 고쳤다)은 아무것도 안 건드린다
     dom.table.fire("inline-saved", { detail: { row: dom.tr, cell: dom.email, data: { ok: true } } });
-    assert.strictEqual(texts(dom.box, "a.tag")[0], "🔗 투자사 관리 현황: 강민준 투자사 명단");
+    assert.strictEqual(texts(dom.box, "a.tag")[0], "🔗 연결됨: 강민준 투자사 명단");
 
     // 풀 수 없는 사람에게는 [연결 풀기]가 안 선다
     const noUnlink = Object.assign({ ok: true }, LINKED, {

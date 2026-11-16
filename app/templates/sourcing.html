@@ -11,17 +11,25 @@
   <p class="muted">
     우리 딜을 <b>같이 볼 사람</b> 명단입니다. 무엇을 찾는지에 따라 갈래가 나뉘고,
     같은 사람이 여러 갈래에 들어갈 수 있습니다.
+    {# 숫자 둘만 있으면 무엇과 무엇인지 안 읽힌다 — 앞에 이름을 붙인다.
+       숫자 꼴(`N / M명`)은 머리글 필터가 다시 적는 공용 꼴이라 그대로 둔다(`filters.js`). #}
+    <span title="검색 · 머리글 필터로 걸러 지금 보이는 사람 / 이 탭 전체">보이는 사람 / 전체</span>
     <b data-filter-count>{{ rows|length }} / {{ rows|length }}명</b>
   </p>
 </header>
 
-<p class="hint">
-  보내는 것은 <a href="/deals">딜 제안 관리</a>의 <b>[딜 소싱 제안]</b> 탭에서 합니다.
-  <b>카톡방 이름</b>이 비어 있으면 그 사람에게는 나가지 않습니다 — 보낼 방이 없기
-  때문입니다. 방은 <b>보내는 분 카톡의 딜 소싱 방</b>입니다 — 보낼 PC 에서 찾을 분을
-  체크하고 <b>[방 후보 찾기]</b> 를 누르면 그 카톡에서 찾아, 찾은 방이 하나면 그 방으로 바로 확정하고,
-  둘 이상이면 후보 중 하나를 눌러 확정합니다.
-</p>
+{# 앞 두 문장만 늘 보인다 — 방 찾는 차례는 `자세히` 안에 접는다(뜻은 그대로 옮겼다).
+   `<details>` 는 `<p>` 안에 못 들어가 `div` 로 감싼다 — 위아래 여백은 `<p>` 와 같게. #}
+<div class="hint" style="margin:1em 0">
+  발송은 <a href="/deals">딜 제안 관리</a> › <b>[딜 소싱 제안]</b> 탭에서 합니다.
+  <b>카톡방 이름</b>이 비어 있으면 그 분께는 나가지 않습니다 — 보낼 방이 없기 때문입니다.
+  <details>
+    <summary>자세히 — 방 찾는 법</summary>
+    방은 <b>딜을 보낼 PC 의 카톡에 있는 딜 소싱 방</b>입니다.
+    ① 보낼 PC 에서 표 왼쪽 체크박스로 찾을 분을 고르고 ② <b>[방 후보 찾기]</b>를 누르면 그 PC 의 카톡에서 찾습니다.
+    ③ 찾은 방이 하나면 그 방으로 바로 확정되고, 둘 이상이면 카톡방 칸의 후보 중 하나를 눌러 확정합니다.
+  </details>
+</div>
 
 {% if msg %}<p class="flash">{{ msg }}</p>{% endif %}
 
@@ -32,11 +40,15 @@
   {% if not mail_check.on %}
   <p class="hint">{{ mail_check.off_text }}{% if is_admin %} — <a href="/team#sourcing-mail">팀 현황 › 딜 소싱 메일 확인</a>에서 편지함을 넣으세요{% endif %}</p>
   {% else %}
+  {# 한 줄에 넷이 붙어 있으면 무엇이 시각이고 무엇이 수인지 안 읽힌다 — 언제(마지막 · 다음)와
+     몇 명(받은 분 · 주소 없는 분)을 두 줄로 나눈다. 다음 회차 꼬리 `(매일 회차)` 는
+     화면에서만 `(매일)` 로 줄인다(`sourcing_mail.SLOT_LABELS` — 팀 현황도 같은 값을 쓴다). #}
   <p class="hint">
-    메일 확인: {% if mail_check.running %}<b>확인 중…</b>{% elif mail_check.last_label %}마지막 {{ mail_check.last_label }}{% else %}아직 안 함{% endif %}
-    · 이번 달 메일로 받은 분 <b>{{ mail_check.mail_count }}명</b>
+    <b>메일 자동 확인</b>
+    · {% if mail_check.running %}<b>확인 중…</b>{% elif mail_check.last_label %}마지막 {{ mail_check.last_label }}{% else %}아직 안 함{% endif %}
+    {% if mail_check.next_label %}<span class="muted">· 다음 {{ mail_check.next_label|replace(' 회차)', ')') }}</span>{% endif %}
+    <br>이번 달 메일로 받은 분 <b>{{ mail_check.mail_count }}명</b>
     · 메일 주소 없는 분 {{ mail_check.no_address }}명
-    {% if mail_check.next_label %}<span class="muted">· 다음 {{ mail_check.next_label }}</span>{% endif %}
   </p>
   {% if mail_check.failed %}
   <p class="warn-text" data-testid="sourcing-mail-failed">{{ mail_check.failed }}
@@ -176,7 +188,10 @@
        aria-disabled="true"
        data-base="/deals?mode=sourcing&amp;topic={{ invite_topic }}"
        title="표에서 체크한 분 중 참여 확인 전(제안 대기중 · 물어보는 중)인 분을 받는 사람으로 골라 딜 제안 관리에서 엽니다 — 거기서 미리보기 뒤 보냅니다">검토 가능 심사역 참여 안내 (선택 0명)</a>
-    <span class="hint" id="sourcing-invite-hint" data-testid="sourcing-invite-hint">왼쪽 체크박스로 받을 분을 고르세요</span>
+    {# 시리즈 A 탭에서는 바로 앞 단추 옆에 같은 말(`왼쪽 체크박스로 …`)이 이미 선다 —
+       두 번 적지 않는다(아래 `syncInviteBtn`). #}
+    <span class="hint" id="sourcing-invite-hint" data-testid="sourcing-invite-hint"
+          {% if share_tab %}hidden{% endif %}>{% if not share_tab %}왼쪽 체크박스로 받을 분을 고르세요{% endif %}</span>
     {# 전화로 한 명 승낙받고 바로 적을 곳이 없어서, 메모지에 적어 뒀다가
        나중에 시트에 옮겨야 했다. 지금 보고 있는 갈래에 바로 넣는다. #}
     {# 잇는 갈래(`sync_tab`)에 넣으면 투자사 관리 현황에도 선다 — 있던 분과 잇거나, 없으면
@@ -329,10 +344,12 @@
           {% set vc = vc_links.get(r.id) %}
           {% if vc %}
           <div class="cell-sub" data-testid="sourcing-vc-link">
+            {# 표시는 짧게(`연결됨: ○○ 명단`), 어느 화면과 이어졌는지는 풍선말에 —
+               [이 분으로 확정] 뒤 화면이 그리는 표시(`sourcing_vc_link.js`)와 같은 글자. #}
             <a class="tag soft" href="{{ vc.href }}"
-               title="{{ vc.title }}">🔗 투자사 관리 현황: {{ vc.sheet }} 명단</a>
+               title="투자사 관리 현황의 이 명단과 이어진 줄입니다 · {{ vc.title }}">🔗 연결됨: {{ vc.sheet }} 명단</a>
             {% if vc.diff %}<span class="muted" data-testid="sourcing-vc-diff"
-                  title="이을 때 이미 달랐던 칸입니다 — 어느 쪽에서든 한 번 고치면 같아집니다">다른 칸: {{ vc.diff|join(' · ') }}</span>{% endif %}
+                  title="이을 때 이미 달랐던 칸입니다 — 어느 쪽에서든 한 번 고치면 같아집니다">값이 다른 칸: {{ vc.diff|join(' · ') }}</span>{% endif %}
           </div>
           {# [연결 풀기] — 관리자 · 이어진 투자사 줄의 담당만(`routers/sourcing._may_unlink`). 두 줄 다
              지우지 않는다. 누르는 일은 `sourcing_vc_link.js` 가 한다. #}
@@ -434,7 +451,7 @@
             {% if mine_state == 'not_found' %}
             <span class="room-badge warn">이 계정 카톡에서 못 찾음</span>
             {% else %}
-            <span class="muted">{{ mine.state_label if mine else '아직 안 찾아봄' }}</span>
+            <span class="room-badge muted">{{ mine.state_label if mine else '아직 안 찾아봄' }}</span>
             {% endif %}
             {% if r.id in no_room %}
             <form method="post" action="/sourcing/rooms/search" class="inline-form js-room-search" data-send="proxy">
@@ -475,12 +492,15 @@
              보내는 분 카톡의 딜 소싱 방을 찾아 확정해야 한다(`sourcing_rooms`). #}
           {% set pick = room_picks.get(r.id) %}
           {% if r.id in no_room and not room_sender %}
+          {# 상태 · 오류를 **딱지 하나씩**으로 — 글자로 이어 붙이면 `방 없음 아직 안 찾아봄 ·
+             지난 찾기 오류` 가 한 문장으로 읽힌다. 상태 글자는 IR · 스타트업 방 찾기도 쓰는
+             공용 값이라(`startup_room_pick.STATE_LABELS`) 그대로 두고 모양만 나눈다. #}
           <div class="cell-sub sourcing-room" data-testid="sourcing-no-room">
             <span class="room-badge warn">방 없음</span>
-            <span class="muted">{{ pick.state_label }}</span>
-            {# 마지막 찾기가 발송기 오류로 끝났다 — 후보는 그 전 것 그대로다. #}
-            {% if pick.error %}<span class="muted" data-testid="sourcing-room-error"
-                  title="{{ pick.error }}">· 지난 찾기 오류</span>{% endif %}
+            <span class="room-badge muted">{{ pick.state_label }}</span>
+            {# 마지막 찾기가 발송기 오류로 끝났다 — 후보는 그 전 것 그대로다. 무슨 오류인지는 풍선말. #}
+            {% if pick.error %}<span class="room-badge bad" data-testid="sourcing-room-error"
+                  title="지난 [방 후보 찾기]가 오류로 끝났습니다(후보는 그 전 것 그대로): {{ pick.error }}">지난 찾기 오류</span>{% endif %}
             <form method="post" action="/sourcing/rooms/search" class="inline-form js-room-search" data-send="proxy">
               <input type="hidden" name="tab" value="{{ selected or 'all' }}">
               <input type="hidden" name="ids" value="{{ r.id }}">
@@ -811,7 +831,8 @@
       }
       if (!inviteHint) return;
       var notes = [], held = [];
-      if (!got.ids.length) notes.push("왼쪽 체크박스로 받을 분을 고르세요");
+      // 시리즈 A 탭이면 앞 단추 옆에 같은 말이 이미 있다 — 두 번 적지 않는다.
+      if (!got.ids.length && !shareBtn) notes.push("왼쪽 체크박스로 받을 분을 고르세요");
       if (got.hidden) notes.push("체크한 " + got.hidden + "명은 지금 검색 · 필터에 가려 있습니다 — 함께 엽니다");
       if (got.joined) held.push("참여 중 " + got.joined + "명");
       if (got.out) held.push("불참여 " + got.out + "명");

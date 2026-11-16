@@ -5,7 +5,7 @@
 // 같거나 번호가 여러 줄에 맞으면 서버가 그 줄들을 후보로 실어 주고
 // (`data-vc-picks` — `sourcing_sync.link_candidates`), 여기서 이름 아래에 그린다.
 // [이 분으로 확정]을 누르면 그 줄과 잇고, 그 자리에 연결 표시
-// (`🔗 투자사 관리 현황: ○○ 명단`)를 그린다. 무엇이 후보인지는 서버가 정한다 —
+// (`🔗 연결됨: ○○ 명단`)를 그린다. 무엇이 후보인지는 서버가 정한다 —
 // 이름 · 번호를 맞추는 규칙을 여기 또 적지 않는다. IR 기업 현황 › Series A 이상
 // 딜 소싱 탭의 [이 분으로 확정](`series_a.js`)과 같은 짜임이다.
 //
@@ -67,12 +67,14 @@
   function renderLinked(box, link) {
     if (!box || !link) return;
     box.innerHTML = "";
-    var a = el("a", "tag soft", "🔗 투자사 관리 현황: " + link.sheet + " 명단");
+    // 서버가 그리는 표시(`sourcing.html`)와 같은 글자 — 어느 화면인지는 풍선말에 적는다.
+    var a = el("a", "tag soft", "🔗 연결됨: " + link.sheet + " 명단");
     a.setAttribute("href", link.href || "");
-    a.setAttribute("title", link.title || "");
+    a.setAttribute("title", "투자사 관리 현황의 이 명단과 이어진 줄입니다" +
+                            (link.title ? " · " + link.title : ""));
     box.appendChild(a);
     if (link.diff && link.diff.length) {
-      var diff = el("span", "muted", "다른 칸: " + link.diff.join(" · "));
+      var diff = el("span", "muted", "값이 다른 칸: " + link.diff.join(" · "));
       diff.setAttribute("data-testid", "sourcing-vc-diff");
       diff.setAttribute("title", "이을 때 이미 달랐던 칸입니다 — 어느 쪽에서든 한 번 고치면 같아집니다");
       box.appendChild(diff);

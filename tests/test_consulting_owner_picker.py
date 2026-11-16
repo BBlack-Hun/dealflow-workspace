@@ -133,7 +133,7 @@ def test_a_new_consultant_shows_up_before_getting_any_rows(stage, sign_in):
     client = sign_in("member")
     counts = dict(_picker(client.get(f"/consulting?sheet={STARTUP}").text))
     assert counts.get("컨설병") == 0, counts
-    for who in ("강민준 팀원", "컨설갑", "컨설을"):
+    for who in ("강민준 (팀원)", "컨설갑", "컨설을"):
         assert who in counts, counts
     # 눌러도 전체로 돌아가지 않는다 — 그 사람의 빈 표가 왜 비었는지 말한다.
     body = client.get(f"/consulting?sheet={STARTUP}&owner={stage['idle'].id}").text
@@ -170,7 +170,7 @@ def test_an_owner_who_is_not_a_consultant_is_marked_as_such(stage, sign_in):
     """
     picker = _picker(sign_in("member").get("/consulting").text)
     flat = {name for name, _n in picker}
-    assert "강민준 팀원" in flat, picker
+    assert "강민준 (팀원)" in flat, picker
     # 컨설턴트에게는 안 붙는다 — 같은 말을 두 번 하는 것뿐이다.
     assert "컨설갑" in flat, picker
 
@@ -187,12 +187,12 @@ def test_the_number_next_to_a_name_is_what_you_get_when_you_click_it(stage, sign
     client = sign_in("member")
     body = client.get("/consulting").text            # 첫 탭(스타트업)
     counts = dict(_picker(body))
-    assert counts["강민준 팀원"] == 2, counts
+    assert counts["강민준 (팀원)"] == 2, counts
     assert counts["컨설갑"] == 1, counts
     assert counts["컨설을"] == 0, counts            # 이 탭에는 줄이 없다
 
     # 실제로 눌러 본다 — 적힌 수와 나오는 줄 수가 같아야 한다.
-    for name, uid in [("강민준 팀원", stage["member"].id),
+    for name, uid in [("강민준 (팀원)", stage["member"].id),
                       ("컨설갑", stage["first"].id),
                       ("컨설을", stage["second"].id)]:
         picked = client.get(f"/consulting?sheet={STARTUP}&owner={uid}").text

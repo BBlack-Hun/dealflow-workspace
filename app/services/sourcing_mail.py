@@ -934,7 +934,7 @@ def _latest(db: Session, *statuses: str, slots: Optional[Sequence[str]] = None
 
 
 def page_status(db: Session, now: Optional[datetime] = None) -> dict:
-    """딜 소싱 머리 줄 — `메일 확인: 마지막 10/15 18:00 · 이번 달 메일로 받은 분 N명 ·
+    """딜 소싱 머리 줄 — `메일 자동 확인 · 마지막 10/15 18:00 · 다음 …` / `이번 달 메일로 받은 분 N명 ·
     메일 주소 없는 분 M명` 과 실패 · 도는 중 · 다음 회차."""
     settings = load_settings(db)
     if not settings.active:
