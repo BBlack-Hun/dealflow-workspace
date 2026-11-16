@@ -101,7 +101,7 @@ def test_a_member_sees_all_of_their_own_lists(world):
     html = _login("01000000001").get("/startup?sheet=all").text
     tabs = _tabs(html)
     # `전체` 가 눌려 있고, 숫자는 내 두 명단의 보이는 줄(감춘 줄 빼고 3).
-    assert re.search(r'class="sheet-tab active" href="/startup\?sheet=all"[^>]*>\s*전체 <span>3</span>',
+    assert re.search(r'class="sheet-tab active" href="/startup\?sheet=all"[^>]*>\s*전체 <span>3곳</span>',
                      tabs), tabs
     assert _firms(html) == {"샘플가기업", "샘플가기업둘", "샘플나기업"}, _firms(html)
     # 남의 명단 · 투자사 명단 · 감춘 줄은 안 선다.
@@ -111,7 +111,7 @@ def test_a_member_sees_all_of_their_own_lists(world):
 
 def test_an_admin_sees_the_whole_team(world):
     html = _login(ADMIN_PHONE).get("/startup?sheet=all").text
-    assert re.search(r'href="/startup\?sheet=all"[^>]*>\s*전체 <span>4</span>', _tabs(html))
+    assert re.search(r'href="/startup\?sheet=all"[^>]*>\s*전체 <span>4곳</span>', _tabs(html))
     assert _firms(html) == {"샘플가기업", "샘플가기업둘", "샘플나기업", "샘플다기업"}
     assert "팀 전체" in html
 
@@ -120,7 +120,7 @@ def test_the_all_tab_stands_on_every_tab_with_the_same_count(world):
     """명단 탭을 보고 있어도 `전체` 가 서고 숫자가 같다 — 눌렀을 때 나올 수다."""
     html = _login("01000000001").get(f"/startup?sheet={quote(LIST_A)}").text
     tabs = _tabs(html)
-    assert re.search(r'<a class="sheet-tab " href="/startup\?sheet=all"[^>]*>\s*전체 <span>3</span>',
+    assert re.search(r'<a class="sheet-tab " href="/startup\?sheet=all"[^>]*>\s*전체 <span>3곳</span>',
                      tabs), tabs
 
 
@@ -208,7 +208,7 @@ def test_the_investor_all_tab_is_unchanged(world):
     # 팀원의 투자사 `전체` 는 #29 에서 `내 명단 N명 · 팀 전체 M명` 이 됐다 — 그
     # 밖(달 칸 · 명단 칸 · 내려받기)은 그대로다.
     assert re.search(r'class="sheet-tab active" href="/contacts\?sheet=all"[^>]*>\s*'
-                     r'전체 <span[^>]*>내 명단 1명 / 확인 0 · 팀 전체 1명</span>', tabs), tabs
+                     r'전체 <span[^>]*>내 명단 1명 / 카톡방 확인 0 · 팀 전체 1명</span>', tabs), tabs
     assert "list-view-line" not in html and "data-f-list_label" not in html
     assert "엑셀 내려받기" in html
     assert "샘플가기업" not in html

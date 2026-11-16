@@ -14,12 +14,15 @@
 <header class="page-head">
   <h1>{{ page_title }}</h1>
   <p class="muted">
-    {{ page.row_label }} <b data-filter-count>{{ rows|length }} / {{ rows|length }}명</b>
-    · 행을 클릭하면 오른쪽에 상세·활동 이력이 열립니다{#
+    {# 두 수는 `검색·필터에 걸려 보이는 수 / 이 탭 전체` 다(`filters.js` 가 고쳐 쓴다).
+        단위는 화면이 정한다(`ListPage.row_unit` — 사람은 명, 기업은 곳). #}
+    {{ page.row_label }} <b data-unit="{{ page.row_unit }}" data-filter-count>{{ rows|length }} / {{ rows|length }}{{ page.row_unit }}</b>
+    (보이는 수 / 전체)
+    · 행을 누르면 오른쪽에 상세·활동 이력이 열립니다{#
       정렬은 **투자사 명함 표에만** 붙어 있다(아래 `layout.key == 'investor'`).
       다른 배치의 표에서도 이 줄이 뜨면, 눌러도 아무 일이 없는 머리글을
       찾아 헤매게 된다. #}{% if layout.key == 'investor' %}
-    · <b>이름</b> 머리글을 눌러 정렬합니다{% endif %}
+    · 표 맨 위 <b>이름</b>을 누르면 정렬됩니다{% endif %}
   </p>
 </header>
 
@@ -37,16 +40,16 @@
 {% if page.doc_href %}
 <p class="hint">
   📄 <a href="{{ page.doc_href }}">{{ page.doc_label }}</a> —
-  계약을 마친 기업에 <b>귀사 IR 자료를 요청한 투자사</b>를 월 1회 드립니다 —
-  인쇄용 <b>문서</b>(한 달치)와 <b>카톡 문구</b>(그 달 말까지 누적) 둘 다
-  그 화면에서 나옵니다 (투자사 이름은 가려서 나갑니다).
+  계약을 마친 기업마다 <b>그 기업의 IR 자료를 요청한 투자사</b>를 월 1회 정리해 드립니다.
+  그 화면에서 인쇄용 <b>문서</b>(한 달치)와 <b>카톡 문구</b>(그 달 말까지 누적)가 함께 나옵니다.
+  투자사 이름은 가려서 나갑니다.
 </p>
 {% endif %}
 
 {% if page.investors %}
 {% if team_wide %}
 <p class="hint team-banner">
-  👑 <b>관리자 화면</b> — 팀 전체의 투자사가 보입니다.
+  <b>관리자 화면</b> — 팀 전체의 투자사가 보입니다.
   발송 대상은 <a href="/deals">딜 제안 관리</a>에서 <b>본인 담당분만</b> 고를 수 있습니다.
 </p>
 {% endif %}
@@ -68,32 +71,43 @@
     이미 팀 전체라 지금처럼 수 하나다(`team_total` 이 `None`).
   #}
   {% if page.investors or tabs %}
-  <a class="sheet-tab {% if not selected_sheet %}active{% endif %}" href="{{ page.href }}?sheet=all"{% if not page.investors %} title="이 화면의 명단 전부 — 달 칸은 명단마다 달라 고정 칸만 보입니다"{% elif team_total is not none %} title="표에는 내 명단이 보입니다 — 팀 전체는 인원 수만 적습니다"{% else %} title="{{ total_count }}명 중 카톡방 확인됨 {{ total_confirmed }}명"{% endif %}>
+  <a class="sheet-tab {% if not selected_sheet %}active{% endif %}" href="{{ page.href }}?sheet=all"{% if not page.investors %} title="이 화면의 명단 전부 — 두 명단에 같이 있는 기업은 한 번만 셉니다. 달 칸은 명단마다 달라 고정 칸만 보입니다"{% elif team_total is not none %} title="표에는 내 명단이 보입니다 — 팀 전체는 인원 수만 적습니다"{% else %} title="{{ total_count }}명 중 카톡방 확인됨 {{ total_confirmed }}명"{% endif %}>
     {% if team_total is not none %}
-    전체 <span data-testid="all-tab-counts">내 명단 {{ total_count }}명 / 확인 {{ total_confirmed }} · 팀 전체 {{ team_total }}명</span>
+    전체 <span data-testid="all-tab-counts">내 명단 {{ total_count }}명 / 카톡방 확인 {{ total_confirmed }} · 팀 전체 {{ team_total }}명</span>
     {% elif page.investors %}
-    전체 <span data-testid="all-tab-counts">{{ total_count }}명 / 확인 {{ total_confirmed }}</span>
+    전체 <span data-testid="all-tab-counts">{{ total_count }}명 / 카톡방 확인 {{ total_confirmed }}</span>
     {% else %}
-    전체 <span>{{ total_count }}</span>
+    전체 <span>{{ total_count }}{{ page.row_unit }}</span>
     {% endif %}
   </a>
   {% endif %}
   {% for t in tabs %}
   {# 투자사로 세지 않는 명단은 **탭을 감추지 않는다.** 감춰 놓고 켜는 자리까지
-     감추면 되돌리려고 DB 를 직접 고쳐야 한다. 대신 표시를 달아 둔다. #}
-  <a class="sheet-tab {% if selected_sheet == t.key %}active{% endif %}{% if t.is_hidden %} muted-tab{% endif %}"
+     감추면 되돌리려고 DB 를 직접 고쳐야 한다. 대신 표시를 달아 둔다.
+     표시(흐리게 · `제외` 꼬리표)는 **투자사 화면에서만** 단다 — 스타트업 화면의
+     명단은 원래 투자사가 아니라 전부 그 값이라, 탭마다 `제외` 가 붙고 전부
+     흐려져서 막힌 명단처럼 읽혔다. 뜻은 말풍선(`title`)에 그대로 남는다. #}
+  <a class="sheet-tab {% if selected_sheet == t.key %}active{% endif %}{% if t.is_hidden and page.investors %} muted-tab{% endif %}"
      href="{{ page.href }}?sheet={{ t.key|urlencode }}"
-     title="{{ t.kind_label }}{% if page.investors %} · {{ t.shown }}명 중 카톡방 확인됨 {{ t.shown_confirmed }}명{% endif %} · 연결 완료 {{ t.connected }}명{% if t.owner %} · 담당 {{ t.owner }}{% endif %}{% if t.is_deal_list %} · 딜소개를 보내는 명단{% endif %}{% if t.is_hidden %} · 투자사로 세지 않는 명단{% endif %}{% if t.hidden_rows %} · 감춘 줄 {{ t.hidden_rows }}개{% endif %}">
-    {% if t.kind == 'pool' %}<span class="pool-dot" title="투자사 풀">◇</span>{% endif %}{% if t.is_hidden %}<span class="pool-dot" title="투자사로 세지 않는 명단">🚫</span>{% endif %}{#
-      딜 소개를 보내는 명단인지 **탭에서 바로 보여야 한다.** 발송 대상의
+     title="{{ t.kind_label }}{% if page.investors %} · {{ t.shown }}명 중 카톡방 확인됨 {{ t.shown_confirmed }}명{% else %} · 표에 보이는 {{ page.row_label }} {{ t.shown }}{{ page.row_unit }} (탭 이름 속 숫자는 이름에 적힌 글자라 지금 수와 다를 수 있습니다){% endif %} · 연결 완료 {{ t.connected }}{{ page.row_unit }}{% if t.owner %} · 담당 {{ t.owner }}{% endif %}{% if t.is_deal_list %} · 딜소개를 보내는 명단{% endif %}{% if t.is_hidden %} · 투자사로 세지 않는 명단{% endif %}{% if t.hidden_rows %} · 감춘 줄 {{ t.hidden_rows }}개{% endif %}">
+    {#
+      꼬리표는 **글자로** 단다. 예전에는 ◇ · 🚫 · ✉ 그림 하나씩이었는데, 그림만으로는
+      무슨 뜻인지 말풍선을 띄워 봐야 알았고 🚫 는 막힌 명단처럼 보였다.
+      딜 소개를 보내는 명단인지는 **탭에서 바로 보여야 한다.** 발송 대상의
       모집단이 이 표시로 정해지는데, 어느 탭이 그 명단인지 화면에 없으면
       "왜 이 사람이 발송 목록에 없지" 를 설정 화면까지 들어가 봐야 안다.
-    #}{% if t.is_deal_list %}<span class="pool-dot" title="딜소개를 보내는 명단">✉</span>{% endif %}{{ t.label }} {#
-      투자사 화면은 `총원 / 확인` 을 같이 적는다(11/13) — 탭 이름의 `119명` 은 가져올
-      때 붙은 글자라 실제 줄 수와 다르다. 총원은 이 탭을 눌렀을 때 표에 뜨는 줄 수,
-      확인은 그중 [방 연결 확인] 이 `확인됨` 으로 끝난 줄(`dashboard.room_confirmed`).
-      스타트업 화면은 방 확인의 뜻이 달라(대표와의 방) 지금처럼 수 하나다.
-    #}{% if page.investors %}<span data-testid="tab-counts">{{ t.shown }}명 / 확인 {{ t.shown_confirmed }}</span>{% else %}<span>{{ t.count }}</span>{% endif %}
+    #}{% if t.kind == 'pool' %}<span class="pool-dot" title="담당이 정해지지 않은 명단(투자사 풀)">담당 없음</span>{% endif %}{#
+    #}{% if t.is_hidden and page.investors %}<span class="pool-dot" title="투자사 수 · 딜소개 발송 대상에서 빠지는 명단">제외</span>{% endif %}{#
+    #}{% if t.is_deal_list %}<span class="pool-dot" title="딜소개를 보내는 명단">딜소개</span>{% endif %}{{ t.label }} {#
+      투자사 화면은 `총원 / 카톡방 확인` 을 같이 적는다(11/13) — 탭 이름의 `119명` 은
+      가져올 때 붙은 글자라 실제 줄 수와 다르다. 총원은 이 탭을 눌렀을 때 표에 뜨는
+      줄 수, 확인은 그중 [방 연결 확인] 이 `확인됨` 으로 끝난 줄(`dashboard.room_confirmed`).
+      스타트업 화면은 방 확인의 뜻이 달라(대표와의 방) 수 하나다 — 같은 까닭으로
+      **이름 속 숫자와 이 수가 다를 수 있다**(`A (40) + B (34)` 옆에 40 — 계산이 틀린
+      것이 아니다). 이름은 저장된 글자라 줄이 늘고 줄어도 그대로고, 이 수는 지금 표에
+      뜨는 줄(감춘 줄 빼고)이다. 그래서 단위를 붙이고, 감춘 줄이 있으면 그 수를 옆에
+      적어 두 수가 어디서 갈리는지 보이게 한다.
+    #}{% if page.investors %}<span data-testid="tab-counts">{{ t.shown }}명 / 카톡방 확인 {{ t.shown_confirmed }}</span>{% else %}<span data-testid="tab-counts">{{ t.shown }}{{ page.row_unit }}{% if t.hidden_rows and t.shown == t.count %} · 감춘 줄 {{ t.hidden_rows }}개{% endif %}</span>{% endif %}
   </a>
   {% endfor %}
 
@@ -106,7 +120,7 @@
     줄 전체가 `if ref_sheets` 안에 있었는데, 자료는 구글 시트에서 가져와야만
     생겨서 없는 화면에는 만들 자리도 없었다 — 첫 자료를 세울 길이 사라진다.
   #}
-  <span class="tab-divider" title="여기부터는 참고 자료입니다">|</span>
+  <span class="tab-divider" aria-hidden="true">|</span><span class="tab-divider-label">참고 자료</span>
   {% for s in ref_sheets %}
   <a class="sheet-tab ref-tab {% if ref and ref.id == s.id %}active{% endif %}"
      href="{{ page.href }}?sheet={{ sheet_q|urlencode }}&ref={{ s.id }}"
@@ -165,9 +179,10 @@
 {% endif %}
 {# 이름 칸 바로 아래에 같은 이름이 또 적혀 있었다 — 두 번 읽을 이유가 없다. #}
 {# 상자를 열면 이름 고치기만 보이게 나머지는 한 겹 더 접는다(10/28 사용자 요청).
-   안내 줄이 늘 하나는 서서 이 상자가 빈 채로 서는 사람은 없다. 개수는 이 여는 줄에. #}
+   안내 줄이 늘 하나는 서서 이 상자가 빈 채로 서는 사람은 없다. 개수는 이 여는 줄에.
+   여는 줄 이름은 **안에 든 것**을 적는다 — `그 밖의 설정` 이면 열어 봐야 안다. #}
 <details class="sheet-fold sheet-fold-more">
-  <summary>그 밖의 설정{% if month_columns %} · 달 칸 {{ month_columns|length }}개{% endif %}{% if hidden_months %} · 🙈 숨긴 칸 {{ hidden_months|length }}개{% endif %}</summary>
+  <summary>담당·발송 대상·달 칸{% if month_columns %} · 달 칸 {{ month_columns|length }}개{% endif %}{% if hidden_months %} · 숨긴 칸 {{ hidden_months|length }}개{% endif %}</summary>
 {#
   명단 안내 줄(`담당 명단 · ○○ · 연결 완료 125/125명`)은 뺐다 — 탭에 이미
   건수가 붙어 있고, 담당은 탭 이름이 곧 말해 준다. 같은 말이 두 번 나왔다.
@@ -238,7 +253,7 @@
 #}
 {% if t.is_deal_list and not t.is_hidden %}
 <p class="hint">
-  ✉ <b>딜소개를 보내는 명단</b>입니다 — 딜 제안 관리의 대상 담당자가 이 명단에서
+  <b>딜소개를 보내는 명단</b>입니다 — 딜 제안 관리의 대상 담당자가 이 명단에서
   나옵니다{% if not t.deal_list_set %} (담당이 지정돼 있어 자동으로 그렇게 잡혔습니다){% endif %}.
   명단에 있어도 카톡방 연결이 끝나야 실제로 보낼 수 있습니다.
 </p>
@@ -251,7 +266,7 @@
 
 {% if t.is_hidden %}
 <p class="hint">
-  🚫 <b>투자사로 세지 않는 명단</b>입니다 — 대시보드·팀 현황의 투자사 수와
+  <b>투자사로 세지 않는 명단</b>입니다 — 대시보드·팀 현황의 투자사 수와
   딜소개 발송 대상에서 빠집니다. 줄은 그대로 있습니다.
 </p>
 {% endif %}
@@ -318,7 +333,7 @@
 #}
 {% if hidden_months %}
 <div class="month-cols hidden-cols">
-  <span class="hint">🙈 숨긴 칸 <b>{{ hidden_months|length }}개</b> — 표·수정창·엑셀에서
+  <span class="hint">숨긴 칸 <b>{{ hidden_months|length }}개</b> — 표·수정창·엑셀에서
     빠져 있습니다. 적힌 내용은 그대로 있습니다.</span>
   {% for c in hidden_months %}
   <span class="month-col-edit">
@@ -348,10 +363,10 @@
   {# **몇 달치를 펴는지는 여기 안 적는다.** 그 숫자는
      `services/monthly_columns.VISIBLE_MONTHS` 한 곳이고, 화면이 "최근 석 달"
      이라고 적어 두면 그 값을 고치는 날 이 글자만 낡는다. #}
-  🗂 옛 달 칸 <b>{{ folded_months|length }}개</b>가 접혀 있습니다 —
-  <a class="linkbtn" href="{{ page.href }}?sheet={{ selected_sheet|urlencode }}&months=all">펴기</a>
+  지난 달 칸 <b>{{ folded_months|length }}개</b>가 접혀 있습니다 —
+  <a class="linkbtn" href="{{ page.href }}?sheet={{ selected_sheet|urlencode }}&months=all">모두 펴기</a>
   {% else %}
-  🗂 옛 달 칸까지 펴 둔 상태입니다 —
+  지난 달 칸까지 모두 펴 둔 상태입니다 —
   <a class="linkbtn" href="{{ page.href }}?sheet={{ selected_sheet|urlencode }}">최근 칸만 보기</a>
   {% endif %}
 </p>
@@ -402,13 +417,13 @@
 #}
 {% if hidden_count or show_hidden %}
 <p class="hint hidden-rows-line">
-  🙈 감춘 줄 <b>{{ hidden_count }}개</b>
+  감춘 줄 <b>{{ hidden_count }}개</b>
   {% if show_hidden %}
   — 지금 함께 보고 있습니다.
   <a class="linkbtn" href="{{ page.href }}?sheet={{ sheet_q|urlencode }}">다시 감추기</a>
   {% else %}
   — 표와 발송 대상에서 빠져 있습니다.
-  <a class="linkbtn" href="{{ page.href }}?sheet={{ sheet_q|urlencode }}&hidden=1">함께 보기</a>
+  <a class="linkbtn" href="{{ page.href }}?sheet={{ sheet_q|urlencode }}&hidden=1">감춘 줄도 보기</a>
   {% endif %}
 </p>
 {% endif %}
@@ -416,7 +431,7 @@
 {#
   ── 감춘 줄 골라 지우기 ──────────────────────────────────────────────────
 
-  **[함께 보기] 안에서만 선다.** 평소 화면에는 감춘 줄도, 체크상자도, 이
+  **[감춘 줄도 보기] 안에서만 선다.** 평소 화면에는 감춘 줄도, 체크상자도, 이
   막대도 없다 — 감춘 것이 기본으로 섞여 나오면 감춘 뜻이 없고, 지우는 단추가
   늘 떠 있으면 '감춘 다음에 본다' 는 한 걸음이 무의미해진다.
 
@@ -655,6 +670,9 @@
    모든 단계가 0인 띠만 남는다 — 그 화면이 고장 난 것으로 읽힌다. #}
 {% if page.investors %}
 <div class="funnel" title="딜소개 → IR → 미팅 으로 이어지는 단계. 가장 멀리 간 곳을 셉니다.">
+  {# 누적으로 읽혔다(`접촉 전 1` 이 남은 사람인지 지나간 사람인지) — 한 사람은
+     **한 단계에만** 선다(`deal_stage.funnel`). 말풍선만으로는 안 읽혀 글자로 둔다. #}
+  <span class="funnel-caption">사람마다 가장 멀리 간 단계 하나에만 셉니다</span>
   {% for f in funnel %}
   <button type="button" class="funnel-step {{ f.cls }}{% if not f.count %} zero{% endif %}"
           data-preset="dealstage={{ f.label|urlencode }}">
@@ -934,7 +952,7 @@
            눌러 들어온다. 선언이 없으면 그 쿼리는 조용히 버려진다 —
            눌러도 306명이 그대로 나오던 것이 그래서였다.
            같은 축(얼마나 진행됐나)이라 이 칸에 함께 둔다. #}
-        <th style="width:106px" data-filters="dealstage:진행 단계|connect:연결 상태">진행 단계<div class="th-filters"></div></th>
+        <th style="width:106px" data-filters="dealstage:단계|connect:연결 상태">진행 단계<div class="th-filters"></div></th>
         {# 마지막 일 — **진행 단계 바로 옆**이다.
            고객사가 헷갈린다고 한 것이 이 두 값이다: "딜소개에 있다가 IR 자료
            요청에 있다가". 단계는 *어디까지 갔나*(사다리 꼭대기, 내려가지 않는다)
@@ -1018,7 +1036,7 @@
         {% if pool_view %}
         <td class="stick stick-lead"><input type="checkbox" class="pool-cb" value="{{ r.id }}"></td>
         {% endif %}
-        {# **감춘 줄에만 상자를 세운다.** [함께 보기] 는 감춘 줄과 보이는 줄을
+        {# **감춘 줄에만 상자를 세운다.** [감춘 줄도 보기] 는 감춘 줄과 보이는 줄을
            한 표에 섞어 보여 주는 자리다 — 여기서 상자가 모든 줄에 서면
            [전체 선택] 한 번에 멀쩡한 줄이 딸려 들어간다. #}
         {% if delete_view %}
@@ -1369,7 +1387,7 @@
     #}
     {% if tabs %}
     <p>이 명단에 보이는 줄이 없습니다.</p>
-    <p class="muted">감춘 줄이 있으면 위의 <b>[함께 보기]</b> 로 확인하세요.</p>
+    <p class="muted">감춘 줄이 있으면 위의 <b>[감춘 줄도 보기]</b>로 확인하세요.</p>
     {% else %}
     <p><strong>아직 이 화면에 올려 둔 명단이 없습니다.</strong></p>
     <p class="muted">
@@ -1860,13 +1878,13 @@
       줄 하나만 감추기. **지우는 것이 아니다** — 표에서 안 보이게 하고 발송
       대상에서 뺀다. 원본 구글 시트가 17~32번 줄을 숨긴 채로 돌아다녀서
       열여섯 줄만 보고 "없는 기업" 이라고 판단한 일이 있었다. 같은 조작을
-      앱에도 두되, 되돌리는 자리(표 위의 [함께 보기])를 늘 함께 둔다.
+      앱에도 두되, 되돌리는 자리(표 위의 [감춘 줄도 보기])를 늘 함께 둔다.
 
       명단 단위 숨김(탭 옆의 [투자사로 세지 않기])과 어휘를 맞춘다 —
       둘 다 "감춘다" 이고, 둘 다 지우지 않는다.
     #}
     <button type="button" class="secondary-btn" id="hide-btn"
-            title="표에서 안 보이게 합니다. 줄은 지워지지 않고, 위의 [함께 보기]로 되돌립니다.">
+            title="표에서 안 보이게 합니다. 줄은 지워지지 않고, 위의 [감춘 줄도 보기]로 되돌립니다.">
       이 줄 감추기</button>
     {# 카톡방 확인은 **보낼 방**을 찾는 일이다 — 투자사 화면은 딜소개, 스타트업
        화면은 안내 카톡. 방을 확인할 일이 없는 화면에는 세우지 않는다

@@ -848,8 +848,12 @@
     // 검색은 컬럼 필터와 **AND** 로 묶는다 — 둘이 서로 tr.hidden 을 덮어쓰면
     // 검색과 필터가 번갈아 서로를 지운다(딜 소싱 표와 같은 규칙).
     var box = document.getElementById("vc-search");
+    var countBox = document.querySelector("[data-filter-count]");
     filters = window.DealflowFilters.init({
       table: "#contacts-table",
+      // 세는 단위는 화면이 정한다(`ListPage.row_unit` — 사람은 명, 기업은 곳).
+      // 안 넘기면 공용 부품의 기본값 `명` 이 붙어 기업 화면에 `11 / 11명` 이 뜬다.
+      unit: (countBox && countBox.getAttribute("data-unit")) || "명",
       extra: function (tr) {
         var q = ((box && box.value) || "").trim().toLowerCase();
         return !q || (tr.getAttribute("data-search") || "").indexOf(q) !== -1;

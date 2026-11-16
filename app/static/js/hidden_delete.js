@@ -1,4 +1,4 @@
-// 감춘 줄 골라 지우기 — 투자사 관리 현황의 [함께 보기] 안에서만.
+// 감춘 줄 골라 지우기 — 투자사 관리 현황의 [감춘 줄도 보기] 안에서만.
 //
 // 감추기는 지우기가 아니다(`models.VcContact.is_hidden`). 현황 시트를 새로
 // 올리면 새 시트에 없는 줄이 감기고, 되돌릴 수 있게 그대로 남는다. 이 파일은
@@ -92,7 +92,7 @@
   }
 
   function done(n) {
-    // **보던 자리로 돌아간다.** 명단 탭과 [함께 보기] 를 잃으면, 지운 뒤에
+    // **보던 자리로 돌아간다.** 명단 탭과 [감춘 줄도 보기] 를 잃으면, 지운 뒤에
     // 남은 감춘 줄을 다시 찾아 들어가야 한다.
     window.location.href = window.location.pathname +
       "?sheet=" + encodeURIComponent(bar.getAttribute("data-sheet") || "") +

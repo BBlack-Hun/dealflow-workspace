@@ -136,7 +136,7 @@ def test_세우는_부품이_화면에_온다(client, db, users):
 def test_사람이_눌러_볼_수_있다고_적혀_있다(client, db, users):
     """칸이 스무 개 넘는 표다. 어디를 누르면 세워지는지 화면에 한 줄 없으면
     아무도 머리글을 눌러 보지 않는다."""
-    assert "머리글을 눌러 정렬" in _page(client, db, users)
+    assert "<b>이름</b>을 누르면 정렬" in _page(client, db, users)
 
 
 def test_선언한_칸은_반드시_값을_싣는다():

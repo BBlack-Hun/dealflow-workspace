@@ -154,7 +154,7 @@ def test_대시보드의_단계_링크가_그대로_동작한다(client, db, con
     client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
     body = client.get("/contacts").text
 
-    assert "dealstage:진행 단계" in body                 # 머리글이 선언한다
+    assert "dealstage:단계" in body                 # 머리글이 선언한다
     assert 'data-f-dealstage="IR 자료 요청"' in body     # 줄이 값을 싣는다
     assert "connect:연결 상태" in body                   # 같은 칸의 둘째 필터도
 

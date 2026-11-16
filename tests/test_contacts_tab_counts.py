@@ -84,13 +84,13 @@ def _login(phone):
 
 
 def _tab_counts(html: str) -> dict:
-    """탭 이름 → (총원, 확인). 탭 안의 `N명 / 확인 K` 를 읽는다."""
+    """탭 이름 → (총원, 확인). 탭 안의 `N명 / 카톡방 확인 K` 를 읽는다."""
     nav = re.search(r'<nav class="sheet-tabs">(.*?)</nav>', html, re.S).group(1)
     out = {}
     for href, body in re.findall(
             r'<a class="sheet-tab[^"]*"\s+href="/contacts\?sheet=([^"]+)"[^>]*>(.*?)</a>',
             nav, re.S):
-        m = re.search(r'data-testid="(?:tab|all-tab)-counts">(?:내 명단 )?(\d+)명 / 확인 (\d+)',
+        m = re.search(r'data-testid="(?:tab|all-tab)-counts">(?:내 명단 )?(\d+)명 / 카톡방 확인 (\d+)',
                       body)
         assert m, f"탭에 `총원 / 확인` 이 없다: {body}"
         out[href] = (int(m.group(1)), int(m.group(2)))
@@ -145,7 +145,7 @@ def test_a_member_sees_confirmed_for_their_own_list(world):
     """팀원의 `전체` 는 내 명단이 표다 — `/ 확인` 도 내 명단 몫이다."""
     html = _login("01000000001").get("/contacts?sheet=all").text
     tab = re.search(r'data-testid="all-tab-counts">([^<]*)<', html).group(1)
-    assert tab == "내 명단 6명 / 확인 2 · 팀 전체 8명", tab
+    assert tab == "내 명단 6명 / 카톡방 확인 2 · 팀 전체 8명", tab
     assert _table(html) == (6, 2)
 
 
@@ -154,7 +154,8 @@ def test_the_startup_tabs_keep_one_number(world):
     html = _login("01000000001").get(f"/startup?sheet={_key(STARTUP_LIST)}").text
     nav = re.search(r'<nav class="sheet-tabs">(.*?)</nav>', html, re.S).group(1)
     assert "확인 " not in nav, nav
-    assert "샘플 스타트업 가 <span>1</span>" in nav, nav
+    # 단위는 기업이라 `곳`(UX 정리) — 수는 여전히 하나다.
+    assert '샘플 스타트업 가 <span data-testid="tab-counts">1곳</span>' in nav, nav
 
 
 def test_counting_does_not_ask_the_db_per_tab(db, users):
