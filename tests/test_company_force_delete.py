@@ -560,7 +560,7 @@ def test_화면이_두_탭과_백업_되돌리기를_적는다(portal):
     assert "옛 스타트업DB 칸" in html and "두 탭에서" not in html
     # 되돌리는 길과 그 한계.
     assert "/team/restore" in html
-    assert "DB 전체를 그날로 되돌리는 일" in html
+    assert "앱 데이터 전체를 그날로 되돌리는 일" in html
     assert "/team/edit-log" in html, "수정 로그로 가는 길이 없다"
 
 
@@ -578,7 +578,7 @@ def test_팀원_화면에도_강제_삭제_상자가_있다(portal):
     assert 'id="co-force"' in html
     assert 'id="co-delete"' in html
     assert 'id="co-force-name"' in html, "기업명을 적는 칸이 없다"
-    assert "DB 전체를 그날로 되돌리는 일" in html, "되돌리기의 한계가 안 적혀 있다"
+    assert "앱 데이터 전체를 그날로 되돌리는 일" in html, "되돌리기의 한계가 안 적혀 있다"
     assert "/team/edit-log" in html, "수정 로그로 가는 길이 없다"
 
 

@@ -15,11 +15,17 @@ from __future__ import annotations
 
 import io
 import json
+import re
 from datetime import date
 
 import pytest
 
 from .conftest import DEMO_PASSWORD
+
+
+def _candidates_head(page, n):
+    """`소개 후보` 머리 — 제목 옆 곳 수 알약(UX 문구 정리 뒤 모양)."""
+    return re.search(r'소개 후보\s*<span class="count-pill on"><b>%d</b>곳</span>' % n, page)
 
 openpyxl = pytest.importorskip("openpyxl")
 
@@ -85,11 +91,11 @@ def test_화면은_10곳만_펼치고_엑셀에_계약_칸(stage, client, db, us
     client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
 
     page = client.get("/report?month=2026-08").text
-    assert "소개 후보 — 8월 딜소개 하지 않은 기업 12곳" in page
+    assert _candidates_head(page, 12) and "8월 딜소개 하지 않은 기업" in page
     head, _, more = page.partition("더 보기 — 나머지 2곳")
     assert more, "10곳이 넘으면 나머지는 접혀야 한다"
     assert "샘플더09" in head and "샘플큰나" in more, "금액 높은 순으로 10곳이 먼저 선다"
-    assert "소개 후보 —" not in client.get("/report?span=year&year=2026").text
+    assert 'id="intro-left"' not in client.get("/report?span=year&year=2026").text
 
     wb = openpyxl.load_workbook(io.BytesIO(
         client.get("/api/export/report.xlsx?month=2026-08").content))
@@ -107,7 +113,7 @@ def test_소개_0인_달은_빈칸_문구가_후보보다_먼저(stage, client, 
     page = client.get("/report?month=2026-09").text
     empty = page.index("이 기간에 소개한 기업이 없습니다.")
     assert "9월 딜소개 한 기업" in page[:empty]
-    assert empty < page.index("소개 후보 — 9월 딜소개 하지 않은 기업 3곳")
+    assert empty < _candidates_head(page, 3).start() and "9월 딜소개 하지 않은 기업" in page
     # 보낸 달도 소개한 기업 표가 먼저다.
     aug = client.get("/report?month=2026-08").text
-    assert aug.index("<summary><b>샘플보냄</b></summary>") < aug.index("소개 후보 — 8월 딜소개 하지 않은 기업")
+    assert aug.index("<summary><b>샘플보냄</b></summary>") < aug.index('id="intro-left"')

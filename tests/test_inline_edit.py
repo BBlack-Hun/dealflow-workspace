@@ -357,15 +357,43 @@ def test_the_screen_never_does_arithmetic_on_the_money_fields():
 
 
 def test_the_version_is_at_the_top(logged_in):
-    """맨 아래에 두면 스크롤해야 보여서, 정작 물어볼 때 아무도 못 찾는다."""
+    """맨 아래에 두면 스크롤해야 보여서, 정작 물어볼 때 아무도 못 찾는다.
+
+    늘 보이는 글자가 아니라 맨 위 제품 이름의 **툴팁**이다 — 화면 공유·캡처마다
+    따라 나갔다. 툴팁이 없는 폰에서는 설치 화면의 연결 정보 표에서 본다.
+    """
     from app import version
 
     html = logged_in.get("/companies").text
     assert "app-foot" not in html
     brand = html.index('class="brand"')
     menu = html.index('class="menu"')
-    ver = html.index(f"v{version.VERSION}")
-    assert brand < ver < menu, "버전이 상단 브랜드 옆에 있어야 한다"
+    ver = html.index(f'title="CONTACTVC ASSET v{version.VERSION}"')
+    assert brand < ver < menu, "버전이 상단 브랜드 툴팁에 있어야 한다"
+    assert f"<th>앱 버전</th><td>v{version.VERSION}</td>" in logged_in.get("/setup").text
+
+
+def test_the_sidebar_does_not_show_login_id_or_pc_name(logged_in, db, users):
+    """사이드바는 모든 화면에 늘 선다 — 로그인 아이디(휴대폰 번호 꼴)와 PC 이름이
+    화면 공유·캡처마다 따라 나갔다. PC 이름은 배지 툴팁으로만 남는다."""
+    from sqlalchemy import select
+
+    from app import clock
+    from app.models import AgentDevice
+
+    dev = db.execute(select(AgentDevice).where(AgentDevice.user_id == users["u1"].id)
+                     ).scalars().first()
+    dev.last_poll_at = clock.now_iso()
+    dev.hostname = "test-pc.local"
+    db.commit()
+
+    html = logged_in.get("/companies").text
+    foot = html[html.index('class="sidebar-foot"'):html.index('<main class="content">')]
+    assert users["u1"].phone not in foot
+    assert '<span id="agent-badge-label">발송 프로그램 연결됨</span>' in foot
+    assert 'title="연결된 PC: test-pc.local"' in foot
+    assert foot.count("test-pc.local") == 1, "PC 이름은 툴팁 한 곳에만"
+    assert '<a class="agent-setup" href="/setup">발송 프로그램 설치</a>' in foot
 
 
 def test_the_edit_modal_is_in_eok_too(logged_in, company):

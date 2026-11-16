@@ -103,6 +103,7 @@ def remind_context(db: Session, user: User, today: date) -> dict:
     for row in sends:
         by_stage.setdefault(row["next_stage"], []).append(row)
 
+    rules = _rule_views(db)
     return {
         "due": due,
         "due_groups": [
@@ -130,7 +131,10 @@ def remind_context(db: Session, user: User, today: date) -> dict:
             "call": len(calls),
             "call_overdue": sum(1 for r in calls if r["overdue"]),
         },
-        "rules": _rule_views(db),
+        "rules": rules,
+        # 판 머리의 한 줄도 **지금 설정에서** 짓는다. 예전에는 `첫째·셋째 수요일` 이
+        # 박혀 있어, 관리자가 주기를 바꾸면 머리와 바로 아래 목록이 서로 다른 말을 했다.
+        "cycle_desc": next((r["desc"] for r in rules if r["key"] == "deal_cycle"), ""),
         "next_send": cadence.upcoming_send_dates(db, today)[0],
         "no_sector_rows": no_sector_rows(db, user, today),
         "ask_again_days": ASK_AGAIN_DAYS,
@@ -170,9 +174,10 @@ def _rule_views(db: Session) -> List[dict]:
         rule = cadence.get_rule(db, key)
         if rule.get("kind") == "monthly_weekday":
             weekdays = "월화수목금토일"
-            nth = ", ".join(f"{n}번째" for n in cadence._nth_list(rule.get("nth_weeks")))
+            # `1·2·3·4번째` — 넷을 `1번째, 2번째, …` 로 늘어놓으면 한 줄을 넘는다.
+            nth = "·".join(str(n) for n in cadence._nth_list(rule.get("nth_weeks")))
             wd = rule.get("weekday")
-            desc = f"매월 {nth} {weekdays[wd]}요일" if wd is not None else "-"
+            desc = f"매월 {nth}번째 {weekdays[wd]}요일" if wd is not None else "-"
         else:
             lo, hi = rule.get("offset_min_days"), rule.get("offset_max_days")
             # **무엇을 기준으로 센 며칠인가.** 전에는 전부 `딜소개` 라고 적혀

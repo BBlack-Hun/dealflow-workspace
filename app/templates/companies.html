@@ -66,9 +66,8 @@
 <header class="page-head">
   <h1>{{ page_title }}</h1>
   <p class="muted">
-    딜소개 문구는 여기 있는 내용으로 만들어집니다.
-    <b>팀 전체가 함께 쓰는 표</b>입니다 — 한 기업을 여러 사람이 서로 다른 투자사에게
-    소개하므로, 고치면 팀 모두에게 반영됩니다.
+    이 표의 내용으로 딜소개 문구가 만들어집니다.
+    <b>팀 전체가 함께 쓰는 표</b>라서, 고치면 팀 모두에게 반영됩니다.
   </p>
 </header>
 
@@ -86,12 +85,13 @@
        · id 로 꾸미지 않는다). #}
     <input type="search" id="co-search" placeholder="모든 칸에서 찾기 (기업명 · 연락처 · 메모 …)"
            style="min-width:300px"
-           title="표에 보이는 글 칸을 모두 찾습니다 — 기업명 · 대표자명 · 연락처 · 이메일 · 기업 한줄 소개 · 딜 소개 문구 · 분야 · 매출 · 투자라운드 · 특이사항 · 지역 · 정책자금 · 담당자 · 계약 칸 · 메모 · IR 자료 수신 · 추가 칸, [수정] 창의 대표 카톡방 · 합치기 전 값까지. 전화번호는 하이픈이 있든 없든, 뒷자리만으로도 찾아집니다. O/X 칸 · 수정한 날짜 · 수정한 팀원 · 소개 횟수는 찾지 않습니다(O/X 칸 · 수정한 팀원은 머리글 필터로 거릅니다)."
+           title="표의 글자 칸을 모두 찾습니다(기업명 · 대표자명 · 연락처 · 이메일 · 한줄 소개 · 메모 · 추가 칸 등, [수정] 창의 대표 카톡방 · 합치기 전 값까지).&#10;전화번호는 하이픈 없이, 뒷자리만으로도 찾습니다.&#10;O/X 칸 · 수정한 날짜 · 수정한 팀원 · 소개 횟수는 찾지 않습니다 — O/X 칸 · 수정한 팀원은 머리글 필터로 거르세요."
            value="{{ q }}" autocomplete="off">
     {# 내려받기 둘은 **관리자 + 팀 현황에서 켜 준 계정**(11/01 · 0132) — 라우터도 같은
        판정으로 막는다(`deps.may_export_companies` · `data_io.export_companies*`). #}
     {% if can_export %}
-    <a class="secondary-btn" href="/api/export/companies.xlsx" download>엑셀 내려받기</a>
+    <a class="secondary-btn" href="/api/export/companies.xlsx" download
+       title="필터·검색과 상관없이 모든 기업 · 모든 칸을 받습니다">엑셀 내려받기(전체)</a>
     {# ── 지금 화면 내려받기 (10/17 회의 #43) ─────────────────────────────────
        위 단추는 언제나 **전체**다(그대로 둔다). 이것은 지금 걸어 둔 머리글 필터 ·
        검색 · 정렬 그대로, 이 탭에 **보이는 칸**만 받는다. 화면 글을 긁지 않고
@@ -117,9 +117,11 @@
 
 <!-- 297개를 하나씩 여닫으며 넣을 수는 없다. 시트에서 두 열을 복사해 붙인다. -->
 <section class="panel" id="ir-bulk" hidden>
-  <h2 class="panel-title">IR 자료 파일명 일괄 입력
+  {# 머리는 div, 제목만 h2 — 단추 글자(`닫기 ✕`)가 제목에 섞여 읽히지 않게. #}
+  <div class="panel-title">
+    <h2>IR 자료 파일명 일괄 입력</h2>
     <button type="button" class="linkbtn" id="ir-bulk-close">닫기 ✕</button>
-  </h2>
+  </div>
   <p class="hint">
     시트에서 <b>기업명</b>과 <b>파일명</b> 두 열을 복사해 그대로 붙여넣으세요.
     한 줄에 하나씩, 탭 또는 쉼표로 나뉩니다. <b>(주)</b>·띄어쓰기 차이는 알아서 맞춥니다.
@@ -132,7 +134,7 @@
     <textarea name="pasted" rows="8" class="bulk-paste"
       placeholder="샘플애그&#9;샘플애그_IR_2026.pdf&#10;샘플메디&#9;샘플메디 IR deck.pdf"></textarea>
     <div class="detail-actions">
-      <button class="primary-btn inline" type="submit">반영</button>
+      <button class="primary-btn inline" type="submit">붙여 넣은 파일명 반영</button>
       <span class="hint">이름이 안 맞는 줄은 건너뛰고, 몇 건인지 알려드립니다.</span>
     </div>
   </form>
@@ -148,14 +150,15 @@
    조합값 그대로라 그 뒤로 재료를 고치면 저절로 따라온다(과제 168 · 170 —
    `one_liner.follow`). 사람이 쓴 줄은 따라오지 않으니, 맞추고 싶으면 여기서 고른다. #}
 <section class="panel" id="ol-bulk" hidden>
-  <h2 class="panel-title">전체 자동조합
+  <div class="panel-title">
+    <h2>전체 자동조합</h2>
     <button type="button" class="linkbtn" id="ol-bulk-close">닫기 ✕</button>
-  </h2>
+  </div>
   <p class="hint" id="ol-summary">불러오는 중…</p>
   <div class="assign-bar">
     <label class="only-picked"><input type="checkbox" id="ol-pick-all"> 전체 선택</label>
     <span class="muted" id="ol-count">0곳 선택</span>
-    <button type="button" class="primary-btn inline" id="ol-apply" disabled>고른 곳에 적용</button>
+    <button type="button" class="primary-btn inline" id="ol-apply" disabled>체크한 곳에 적용</button>
     <button type="button" class="secondary-btn" id="ol-undo" hidden>되돌리기</button>
     <span class="hint" id="ol-undo-note"></span>
   </div>
@@ -680,7 +683,7 @@
         {% for f, yy in revenue_years %}
         <th class="num" style="width:74px" data-filters="{{ f }}:{{ yy }}년 매출">{{ yy }}년 매출<div class="th-filters"></div></th>
         {% endfor %}
-        <th class="num" data-filters="revenue_recent:{{ recent_label }}" style="width:108px" title="올해 매출 — 해가 안 끝나 지금까지 알려진 최근 매출을 적습니다 · 해가 바뀌면 지난해 칸으로 옮겨 적힙니다 · 단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 1억 미만은 `5천만원` · 모르면 `~`">{{ recent_label }}<div class="th-filters"></div></th>
+        <th class="num" data-filters="revenue_recent:{{ recent_label }}" style="width:108px" title="올해 매출 — 지금까지 알려진 최근 매출을 적습니다(해가 바뀌면 지난해 칸으로 옮겨집니다).&#10;단위: 억 — 예: 18.3 · 5-10억 · 1억 미만은 5천만원&#10;모르면 ~">{{ recent_label }}<div class="th-filters"></div></th>
         {# 내년 예상매출(과제 169 · `revenue_years.forecast` — 2026년이면 `27년 예상매출`). 연도 칸과
            같은 꼴(글자 그대로 · 금액 구간 필터)이고, 딜 소개 문구에 `27년(예상)` 으로 실린다. #}
         {% if forecast %}
@@ -1442,7 +1445,7 @@
        그림의 「26년 (현재 최근매출액으로 반영)」. 올해 칸은 연도 칸이 아니라 이 칸이고,
        해가 바뀌면 지난해 칸으로 옮겨 적힌다(이 창 머리 주석).
        **이름은 표 머리글(`26년 매출` — #82, 예전 `최근 매출액(26년)`) 그대로**여야 한다 — 설명은 `title`. #}
-    <label class="field" title="올해 매출 — 해가 안 끝나 지금까지 알려진 최근 매출을 적습니다 · 해가 바뀌면 지난해 칸으로 옮겨 적힙니다 · 단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 1억 미만은 `5천만원` · 모르면 `~`"><span>{{ recent_label }}</span><input type="text" id="f-revenue_recent" placeholder="18.3 · 5천만원 · 5-10억 · ~"></label>
+    <label class="field" title="올해 매출 — 지금까지 알려진 최근 매출을 적습니다(해가 바뀌면 지난해 칸으로 옮겨집니다).&#10;단위: 억 — 예: 18.3 · 5-10억 · 1억 미만은 5천만원&#10;모르면 ~"><span>{{ recent_label }}</span><input type="text" id="f-revenue_recent" placeholder="18.3 · 5천만원 · 5-10억 · ~"></label>
     {% if forecast %}
     <label class="field" title="내년 예상 매출 — 단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 1억 미만은 `5천만원` · 모르면 `~` · Series A 이상 딜 소싱의 같은 해 칸과 함께 고쳐집니다"><span>{{ forecast[1] }}</span><input type="text" id="f-{{ forecast[0] }}" placeholder="18.3 · 5천만원 · 5-10억 · ~"></label>
     {% endif %}
@@ -1471,7 +1474,7 @@
      소개할 때 사용하는 문구". 딸린 두 상자([자동 조합으로 바꾸기] 안내와
      `합치기 전 값`)도 같이 따라온다. #}
   <h3 class="form-section">3. 기업소개
-    <span class="hint">딜 소개 문구 자동 조합의 재료입니다</span></h3>
+    <span class="hint">딜 소개 문구의 재료</span></h3>
   <div class="form-grid">
     {# ── 기업 한줄 소개 (`business_desc`) ──────────────────────────────
        **이름을 `사업분야` 라고 적으면 안 된다.** 옆 탭에 `대분류`
@@ -1494,9 +1497,9 @@
        한 번에 그 줄이 사라진다. #}
     <label class="field wide"><span>기업 한줄 소개</span>
       <textarea id="f-business_desc" rows="2"
-                placeholder="조합의 첫 토막 — 예: B2B 농산물 선도거래 플랫폼"></textarea></label>
-    <label class="field wide"><span>특이사항 (장점)</span><textarea id="f-competitiveness" rows="2"
-           placeholder="5줄 이상이면 딜 소개 문구 자동 조합에서 빠집니다"></textarea></label>
+                placeholder="예: B2B 농산물 선도거래 플랫폼"></textarea></label>
+    <label class="field wide" title="5줄 이상이면 딜 소개 문구 자동 조합에서 빠집니다"><span>특이사항 (장점) <b class="hint">4줄까지</b></span><textarea id="f-competitiveness" rows="2"
+           placeholder="장점을 4줄 이내로"></textarea></label>
     {# 이름은 **표 머리글(IR 기업 현황)과 한 글자도 다르지 않게** 둔다.
        `기업 한줄 소개` 였는데, 그 이름은 이제 아래 `소개 내용` 의 재료 칸
        (`business_desc`)이 쓴다 — 두 칸이 같은 이름을 쓰면 어느 쪽이 조합
@@ -1599,8 +1602,8 @@
 
      엑셀 내려받기에는 **일부러 남겼다** — 남겨 둔 281줄을 읽을 수 있는 자리가
      거기뿐이다(`routers/data_io.py` 의 `COMPANY_HEADERS`). #}
-  <h3 class="form-section">그 밖
-    <span class="hint">기업 정보가 아니라 운영 쪽 칸입니다</span></h3>
+  <h3 class="form-section">4. 운영 정보
+    <span class="hint">계약 · 발송 · 메모</span></h3>
   <div class="form-grid">
     {# **주소 칸이 아니다**(0056). 자료 폴더 안의 **파일 이름 하나**를 적는다 —
        폴더 경로는 PC 마다 달라서 각자 `/setup` 에서 정하고, 발송기가
@@ -1618,9 +1621,9 @@
       찾고, 한 글자만 달라도 못 찾는다. 그래서 안내에 "그대로 붙여 넣으라" 고
       적는다(투자사 담당자 방 이름과 같은 규칙이다).
     #}
-    <label class="field wide"><span>대표 카톡방</span>
+    <label class="field wide" title="비워 두면 월간 발송 대상에서 빠집니다"><span>대표 카톡방 <b class="hint">비우면 월간 발송 제외</b></span>
       <input type="text" id="f-kakao_room_name"
-             placeholder="카톡에 보이는 방 제목을 그대로 (비면 월간 발송 대상에서 빠집니다)"></label>
+             placeholder="카톡에 보이는 방 제목 그대로"></label>
     <label class="field"><span>소개 상태</span>
       <select id="f-summary_status">
         {% for key, label in summary_labels.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
@@ -1735,25 +1738,27 @@
   </p>
   {# **왜 이름 옆에 `(담당)` 이 붙는지** 한 줄로 밝힌다. 이 말이 없으면
      같은 표의 두 이름이 서로 다른 것을 뜻한다는 것을 알 길이 없다. #}
-  <p class="hint">
-    <b>(담당)</b> 이 붙은 이름은 <b>추정</b>입니다 — <b>시트</b>·<b>손으로
-    적음</b> 줄에는 보낸 사람이 안 적혀 있어, 그 투자사를 <b>지금 담당하는
-    팀원</b>을 대신 적습니다. 담당이 바뀌면 과거 발송도 새 담당자 앞으로 옮겨
-    붙습니다. <b>앱 발송</b>만 실제로 보낸 사람이 남습니다.
-  </p>
+  <details class="hint">
+    <summary><b>(담당)</b> 이 붙은 이름은 <b>추정</b>입니다 — 보낸 사람이 기록되지 않아 지금 담당 팀원을 적었습니다.</summary>
+    <b>시트</b>·<b>손으로 적음</b> 줄에는 보낸 사람이 안 적혀 있어, 그 투자사를
+    <b>지금 담당하는 팀원</b>을 대신 적습니다. 담당이 바뀌면 과거 발송도 새 담당자
+    앞으로 옮겨 붙습니다. <b>앱 발송</b>만 실제로 보낸 사람이 남습니다.
+  </details>
   {# ── 이 표에 안 잡히는 것 ────────────────────────────────────────────────
      기업 줄에서 출발하는 집계라 둘이 빠진다. 조용히 빠지면 사람은 합계가 왜
      안 맞는지 물을 자리가 없다. 숫자는 서버가 세어 준다(한 훑기에서 나온다). #}
   {% if sent_count_only.rounds or sent_unmatched %}
+  {# 경고 둘은 **한 줄씩** — 이어 적으면 하나로 읽힌다. #}
   <p class="hint warn">
     {% if sent_count_only.rounds %}
-    개수만 적혀 <b>기업을 알 수 없는 회차가 {{ sent_count_only.rounds }}개</b>
+    · 개수만 적혀 <b>기업을 알 수 없는 회차가 {{ sent_count_only.rounds }}개</b>
     있습니다({{ sent_count_only.rows }}줄{% if sent_count_only.days %} ·
     {{ sent_count_only.days|join(', ') }}{% endif %}) — 이 표에는 한 줄도 안
     잡힙니다.
     {% endif %}
+    {% if sent_count_only.rounds and sent_unmatched %}<br>{% endif %}
     {% if sent_unmatched %}
-    이력에만 있고 기업 목록에 없는 이름이 <b>{{ sent_unmatched }}곳</b>
+    · 이력에만 있고 기업 목록에 없는 이름이 <b>{{ sent_unmatched }}곳</b>
     있습니다 — 그만큼 어느 기업 줄에도 안 붙습니다.
     {% endif %}
   </p>
@@ -1812,8 +1817,8 @@
     {# 무엇이 같이 지워지는지 **숫자로**. `companies.js` 가 채운다. #}
     <ul class="force-del-plan" id="co-force-plan"></ul>
     <p class="warn-box">
-      이 기업은 <b>IR 기업 현황 표에서 줄째로</b> 사라집니다 — 옛 스타트업DB 칸
-      (대표자명 · 매출 · 특이사항 …)도 같은 줄이라 함께 지워집니다.
+      이 기업 줄이 <b>IR 기업 현황 표에서 통째로</b> 사라집니다 — 같은 줄의 옛 스타트업DB 칸
+      (대표자명 · 매출 · 특이사항 …)도 함께 지워집니다.
     </p>
     {#
       **되돌리는 길을 정확히 적는다.** 사용자는 `어차피 백업하고 있으니 복구
@@ -1824,10 +1829,10 @@
     #}
     <p class="warn-box">
       <b>되돌리기</b> — 이 줄 하나만 되살리는 길은 없습니다.
-      <a href="/team/restore">데이터 되돌리기</a> 의 백업은
-      <b>DB 전체를 그날로 되돌리는 일</b>이라, 그 뒤에 팀이 한 다른 작업도
+      <a href="/team/restore">데이터 되돌리기</a>의 백업은
+      <b>앱 데이터 전체를 그날로 되돌리는 일</b>이라, 그 뒤에 팀이 한 다른 작업도
       함께 사라집니다. 누가 언제 무엇을 지웠는지는
-      <a href="/team/edit-log">수정 로그</a> 에 남습니다.
+      <a href="/team/edit-log">수정 로그</a>에 남습니다.
     </p>
     {# 적는 칸과 단추는 **상자 바닥에 붙여 둔다**(`.force-del-act` 의 `sticky`).
        위의 숫자와 안내는 좁은 폭에서 여섯 줄이 넘어 굴려야 하는데, 굴리는

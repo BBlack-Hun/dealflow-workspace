@@ -1018,11 +1018,17 @@ def test_month_keys_cross_the_year_boundary():
 
     assert month_keys(date(2027, 1, 15), 4) == ["2027-01", "2026-12",
                                                 "2026-11", "2026-10"]
-    # 해가 다른 달은 이름에 해를 붙인다 — 12월과 작년 12월이 같아 보이면 안 된다
+    # 해가 다른 달은 이름에 해를 붙인다 — 12월과 작년 12월이 같아 보이면 안 된다.
+    # 해가 바뀌는 자리의 **양쪽**(올해 1월 · 작년 12월)에 다 붙어야 경계로 읽힌다 —
+    # 한쪽에만 있으면 `1월 | 26년 12월` 이 같은 해의 이어진 달처럼 보인다.
     from app.services.dashboard import monthly_reactions
     labels = [m["label"] for m in monthly_reactions(None, [], date(2027, 1, 15))]
-    assert labels[0] == "1월"
+    assert labels[0] == "27년 1월"
     assert labels[1] == "26년 12월"
+    # 해 안쪽의 달은 그대로 짧게 선다(폰에서 칸 폭).
+    labels = [m["label"] for m in monthly_reactions(None, [], date(2026, 11, 16))]
+    assert labels[:2] == ["11월", "10월"]
+    assert labels[labels.index("26년 1월") + 1] == "25년 12월"
 
 
 def test_the_dashboard_shows_the_monthly_reaction_table(client, db, users):
@@ -1041,7 +1047,7 @@ def test_the_dashboard_shows_the_monthly_reaction_table(client, db, users):
     this_month = f"{date.today():%Y-%m}"
     assert f'href="/report?month={this_month}"' in body
     # 달로 못 가르는 것을 왜 뺐는지 화면이 말해야, 사용자가 찾아 나서지 않는다
-    assert "달로 가르지 않았습니다" in body
+    assert "월별로 나누지 않았습니다" in body
 
 
 # --- 관리자가 팀 회차를 조회 -------------------------------------------------
@@ -1492,7 +1498,49 @@ def test_달별_반응_안내문은_한_번만_선다():
     raw = Path("app/templates/dashboard.html").read_text(encoding="utf-8")
     html = re.sub(r"\{#.*?#\}", "", raw, flags=re.S)   # 화면에 안 뜨는 주석은 뺀다
 
-    assert html.count("달로 가르지 않았습니다") == 1
+    assert html.count("월별로 나누지 않았습니다") == 1
     assert html.count("달 이름을 누르면") == 1
     # 짝이 어긋나면 아래 패널들이 이 구역 안으로 빨려 들어간다.
     assert html.count("<section") == html.count("</section>")
+
+
+def test_recent_batches_say_the_status_in_words(client, db, users):
+    """`최근 발송 회차` 의 상태 칸에 저장값(`done`)이 그대로 떴다 — 발송 진행
+    화면·업무 보고가 쓰는 말(`report.SEND_STATUS`)로 적는다. 값은 그대로 싣는다."""
+    from app.models import SendJob
+    from app.services import report
+    from app.services.dashboard import recent_batches
+
+    db.add(SendJob(user_id=users["u1"].id, kind="deal_intro", status="done",
+                   total=3, sent=3, failed=0))
+    db.commit()
+
+    [row] = recent_batches(db, user_id=users["u1"].id)
+    assert row["status"] == "done"
+    assert row["status_label"] == report.SEND_STATUS["done"]
+
+    table = _dash(client).split("최근 발송 회차", 1)[1].split("</table>", 1)[0]
+    assert f'<span class="status-badge">{report.SEND_STATUS["done"]}</span>' in table
+    assert '<span class="status-badge">done</span>' not in table
+
+
+def test_the_next_send_date_reads_one_way(client, db, users):
+    """같은 카드에 `11월 18일` 과 `11/25`·`12/02` 가 섞여 섰다 — `11/18(수)` 꼴 하나로."""
+    import re
+
+    from app.services import report
+    from app.services.dashboard import user_dashboard
+
+    data = user_dashboard(db, users["u1"])
+    first = data["upcoming"][0]
+    assert data["next_send_label"] == report.day_label(first.isoformat())
+    assert data["upcoming_labels"] == [report.day_label(d.isoformat())
+                                       for d in data["upcoming"]]
+    body = _dash(client)
+    assert f"다음 딜소개 {data['next_send_label']}까지" in body
+    hero = body.split('class="hero-card"', 1)[1].split("</section>", 1)[0]
+    # 큰 날짜와 작은 요일은 모양만 다르고 글자는 `11/18(수)` 꼴이다.
+    date_part = hero.split('class="hero-date"', 1)[1].split("</span>", 1)[0]
+    assert re.sub(r"<[^>]+>|\s", "", date_part).lstrip(">") == data["next_send_label"], date_part
+    for label in data["upcoming_labels"][1:]:
+        assert f'<span class="pill">{label}</span>' in hero

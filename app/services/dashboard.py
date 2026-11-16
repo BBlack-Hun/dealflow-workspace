@@ -529,7 +529,10 @@ def monthly_reactions(db: Session, contact_ids: List[int],
             "key": key,
             # `9월` 로 짧게. 폰에서 `2026-09` 는 칸 폭을 혼자 다 먹는다.
             # 해가 바뀌면 그때만 해를 붙인다 — 12월과 작년 12월이 같아 보이면 안 된다.
-            "label": f"{mon}월" if year == today.year else f"{year % 100}년 {mon}월",
+            # **올해 1월에도 붙인다.** 작년 달에만 붙이면 `1월 | 25년 12월` 로 서서
+            # 해가 바뀌는 자리의 한쪽에만 해가 보인다 — 양쪽에 다 있어야 경계로 읽힌다.
+            "label": (f"{mon}월" if year == today.year and mon != 1
+                      else f"{year % 100}년 {mon}월"),
             "this_month": key == f"{today.year:04d}-{today.month:02d}",
             **got,
         })
@@ -734,12 +737,17 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None,
             # 몇 건인지 아래 줄이 밝힌다 — 숫자를 가르지는 않는다(가르면 사람이
             # 두 수를 더해야 하고, 보고에 적는 수는 어차피 합계다).
             {"key": "sent", "label": "이번 주 보낸 건수", "value": sent_this_week,
-             "sub": (f"{week_start.strftime('%m/%d')}부터 · 도착 성공"
+             "sub": (f"{report.day_label(week_start.isoformat())}부터 · 도착 성공"
                      + (f" · 손으로 적음 {len(manual)}" if manual else "")),
              "href": ("/deals?contacts=" + ",".join(str(i) for i in sent_ids)
                       if sent_ids else "/deals")},
         ],
         "next_send": next_send,
+        # 화면에 적는 날짜는 `11/18(수)` 꼴 하나다 — 업무 보고가 쓰는 그 함수
+        # (`report.day_label`). 화면이 `strftime` 을 따로 들고 있으면 `11월 18일`·
+        # `12/02` 처럼 한 카드 안에서 표기가 갈린다(실제로 그랬다).
+        "next_send_label": report.day_label(next_send.isoformat()),
+        "upcoming_labels": [report.day_label(d.isoformat()) for d in upcoming],
         "days_left": (next_send - today).days,
         "upcoming": upcoming,
         "rooms": _room_panel(db, user, sending, sheet_scope, react_team),
@@ -1054,6 +1062,9 @@ def recent_batches(db: Session, user_id: Optional[int] = None, limit: int = 5) -
             "date": (batch.sent_date if batch else None) or (job.started_at or "")[:10],
             "owner": owner.name if owner else "",
             "status": job.status,
+            # 화면에 적는 말. `done` 같은 저장값을 그대로 띄우지 않는다 — 발송 진행
+            # 화면·업무 보고와 같은 말(`report.SEND_STATUS`)을 쓴다.
+            "status_label": report.SEND_STATUS.get(job.status, job.status),
             "total": job.total, "sent": job.sent, "failed": job.failed,
         })
     return out
@@ -1170,8 +1181,13 @@ def admin_dashboard(db: Session, today: Optional[date] = None) -> dict:
             # 최근 활동의 `미팅` — 갈래 넷을 합친다(`meeting_kind.ALL`).
             # 한 갈래만 세면 시트 머리글이 다른 명단만 조용히 0 이 된다.
             "meeting": sum(acts.get(k, 0) for k in mk.ALL),
-            "agent": (f"{names.get(via, via)} 발송기로 보냄 · " if via else "")
-                     + _agent_label(device),
+            # 발송 프로그램 칸 — 상태 · PC 이름 · 남의 발송기로 보내는지를 **따로** 싣는다.
+            # 한 글자로 이어 붙이면(`○○ 발송기로 보냄 · 연결됨 · PC이름`) 표에서도
+            # 고르개 한 줄에서도 상태 넷이 한 덩이로 읽혔다(UX 점검 11/16).
+            # PC 이름은 관리자가 어느 PC 인지 알아야 해서 그대로 보인다.
+            "agent": _agent_label(device),
+            "agent_host": (device.hostname or "") if device else "",
+            "agent_via_name": names.get(via, str(via)) if via else "",
             # 발송기 고르개(`routers/dashboard.set_send_via`) — 지금 고른 계정과,
             # 이 발송기로 맡긴 계정들(맡은 쪽은 남에게 다시 맡길 수 없다).
             "send_via": via,
@@ -1224,14 +1240,17 @@ def admin_dashboard(db: Session, today: Optional[date] = None) -> dict:
                       if c.user_id not in {u.id for u in users}])
 
     return {
+        # 단위(`unit`)는 숫자 바로 뒤에 붙고, `sub` 는 그 아래 한 줄이다. 단위를
+        # `sub` 에 두면 `11` 아래 줄에 `명` 하나만 떨어져 섰다(UX 점검 11/16).
         "kpis": [
-            {"key": "users", "label": "팀원", "value": len(users), "sub": "명", "href": "/team"},
+            {"key": "users", "label": "팀원", "value": len(users), "unit": "명",
+             "sub": "", "href": "/team"},
             {"key": "contacts", "label": "전체 투자사", "value": len(contacts),
-             "sub": "명", "href": "/contacts"},
+             "unit": "명", "sub": "", "href": "/contacts"},
             {"key": "companies", "label": "소개 가능 기업", "value": len(introducible),
-             "sub": f"등록 {len(companies)}개 중", "href": "/companies"},
-            {"key": "sent", "label": "이번 달 발송", "value": sum(sent_by_user.values()),
-             "sub": "건 성공", "href": "/team"},
+             "unit": "곳", "sub": f"등록 {len(companies)}곳 중", "href": "/companies"},
+            {"key": "sent", "label": "이번 달 발송 성공", "value": sum(sent_by_user.values()),
+             "unit": "건", "sub": "", "href": "/team"},
         ],
         "members": rows,
         # 맡길 수 있는 발송기 — 딜소개를 보내고 정지되지 않았고 연결키가 있고
@@ -1293,11 +1312,12 @@ def _agent_label(device: Optional[AgentDevice]) -> str:
         mins = (clock.now() - ts).total_seconds() / 60
     except ValueError:
         return "확인 불가"
+    # PC 이름은 여기 붙이지 않는다 — 표가 `agent_host` 로 따로 적는다.
     if mins < 2:
-        return f"연결됨 · {device.hostname or '이름 없음'}"
+        return "연결됨"
     if mins < 60:
-        return f"{int(mins)}분 전"
-    return f"{int(mins // 60)}시간 전"
+        return f"{int(mins)}분 전 연결"
+    return f"{int(mins // 60)}시간 전 연결"
 
 
 def _admin_warnings(rows: List[dict], unassigned: int) -> List[dict]:
@@ -1324,17 +1344,17 @@ def _admin_warnings(rows: List[dict], unassigned: int) -> List[dict]:
     if no_agent:
         out.append({"level": "bad", "label": "발송 프로그램 미연결",
                     "detail": ", ".join(no_agent),
-                    "hint": "그 PC에서 [발송 프로그램 설치]를 해야 발송이 나갑니다"})
+                    "hint": "각 계정이 쓰는 PC에서 [발송 프로그램 설치]를 해야 발송이 나갑니다"})
     pending = [r["name"] for r in rows if r["password_pending"]]
     if pending:
-        out.append({"level": "warn", "label": "초기 비밀번호를 아직 안 바꾼 계정",
+        out.append({"level": "warn", "label": "초기 비밀번호 미변경",
                     "detail": ", ".join(pending),
-                    "hint": "첫 로그인 시 변경 화면으로 유도됩니다"})
+                    "hint": "다음 로그인 때 비밀번호 변경 화면이 뜹니다"})
     blocked = [f"{r['name']}({r['missing']}명)" for r in senders if r["missing"]]
     if blocked:
-        out.append({"level": "warn", "label": "카톡방이 없거나 연결 실패한 담당자",
+        out.append({"level": "warn", "label": "카톡방 없음·연결 실패",
                     "detail": ", ".join(blocked),
-                    "hint": "그 담당자에게는 발송이 나가지 않습니다"})
+                    "hint": "괄호 속 인원에게는 발송되지 않습니다"})
     empty = [r["name"] for r in senders if r["contacts"] == 0 and r["role"] != "admin"]
     if empty:
         out.append({"level": "muted", "label": "담당 투자사가 없는 계정",

@@ -105,6 +105,12 @@ def still_ok(db: Session, rec: AutomationSend) -> str:
     return "" if due_rows(db, user, clock.today()) else "물어볼 결과 문의가 남아 있지 않습니다"
 
 
+def summary(values: dict) -> str:
+    """판 첫 칸 — 저장된 시각으로."""
+    return (f"평일 {values['time']} — 오늘 결과를 물어볼 미팅이 있는 팀원의 카톡방에 "
+            "'[결과 문의] ○○님(투자사) 외 N건' + 결과 문의 화면 링크 한 통")
+
+
 runner.register(runner.Spec(
     key=KEY, kind="deal_intro", topic=KEY, plan=plan, collect=collect,
-    still_ok=still_ok, fields=FIELDS))
+    still_ok=still_ok, fields=FIELDS, summary=summary))

@@ -89,8 +89,8 @@
 <header class="page-head">
   <h1>{{ page_title }}</h1>
   <p class="muted">
-    딜소개를 보내면 여기로 답이 옵니다. 받은 요청을 놓치면 그 회차에서
-    <b>가장 뜨거운 반응</b>을 흘려보내게 됩니다.
+    딜소개에 대한 투자사의 반응이 여기에 모입니다. 받은 요청을 놓치면 그 회차의
+    <b>좋은 반응</b>을 놓치게 됩니다.
   </p>
 </header>
 
@@ -100,7 +100,7 @@
 <div class="kpi-row slim">
   <div class="kpi-card static"><span class="kpi-label">보낼 자료</span>
     <span class="kpi-value {% if counts.open %}warn{% endif %}">{{ counts.open }}</span></div>
-  <div class="kpi-card static"><span class="kpi-label">3일 넘게 못 보냄</span>
+  <div class="kpi-card static"><span class="kpi-label">3일 이상 못 보낸 자료</span>
     <span class="kpi-value {% if counts.overdue %}bad{% endif %}">{{ counts.overdue }}</span></div>
   <div class="kpi-card static"><span class="kpi-label">오늘 미팅</span>
     <span class="kpi-value">{{ counts.today }}</span></div>
@@ -112,12 +112,14 @@
 
 <!-- 열린 것부터. 아직 안 보낸 자료가 제일 급하다. -->
 <section class="panel" id="requests">
-  <h2 class="panel-title">보낼 자료
-    <span class="count-pill {% if counts.open %}on{% endif %}"><b>{{ counts.open }}</b>건</span>
+  {# 머리는 div, 제목(+ 건수)만 h2 — 단추 글자가 제목에 섞여 읽히지 않게. #}
+  <div class="panel-title">
+    <h2>보낼 자료
+      <span class="count-pill {% if counts.open %}on{% endif %}"><b>{{ counts.open }}</b>건</span></h2>
     {# 10/17 회의(#40): `요청 받음` → `IR 자료 요청 받음`. 이 단추가 이 화면에서
        그 말이 서는 자리라 같이 맞춘다(폼 안 칸 이름 `요청받은 기업` 은 그대로). #}
     <button type="button" class="linkbtn" id="new-request-btn">{{ labels.requested }} 기록하기</button>
-  </h2>
+  </div>
 
   <div class="member-form" id="new-request" {% if not preselect_contact %}hidden{% endif %}>
     {# `pick-form` — 좁은 화면에서 칸을 **한 줄씩** 세우는 표시. 이 폼들은
@@ -158,6 +160,19 @@
   </div>
 
   {% if request_groups %}
+  {# 자료 파일명이 없는 기업은 **판에 한 번만** 알린다. 같은 기업을 여러 담당자가
+     요청하면 묶음마다 같은 경고가 되풀이됐다. 묶음 안에서는 그 기업 딱지에 표시만. #}
+  {% set nf = namespace(names=[]) %}
+  {% for g in request_groups %}{% for n in g.no_file %}{% if n not in nf.names %}{% set nf.names = nf.names + [n] %}{% endif %}{% endfor %}{% endfor %}
+  {% if nf.names %}
+  {# 파일명이 비어 있으면 붙일 것을 못 찾는다 — 발송기가 붙이든 사람이
+     붙이든 마찬가지다. 그 기업은 빼고 보내고 글 끝에 추후 안내만 나간다(#53). #}
+  <p class="hint warn">
+    ⚠ 자료 파일명이 없는 기업 {{ nf.names|length }}곳: {{ nf.names|join(', ') }} —
+    이번엔 빼고 추후 발송 안내만 나갑니다(요청은 남습니다).
+    <a href="/companies">IR 기업 현황</a>에 자료 파일명을 등록하면 함께 보낼 수 있습니다.
+  </p>
+  {% endif %}
   <!-- 한 담당자가 여러 기업을 한꺼번에 요청하는 일이 잦다.
        한 번에 보내야 대화가 자연스럽고, 화면을 여러 번 오갈 일도 없다. -->
   <div class="send-groups">
@@ -193,11 +208,11 @@
         {% endif %}
       </div>
       <p class="hint">
-        {% for r in g.rows %}<span class="tag {% if r.overdue %}bad{% endif %}">{{ r.company_name }}</span>{% endfor %}
+        {% for r in g.rows %}{% set nofile = r.company_name in g.no_file %}<span class="tag {% if r.overdue %}bad{% endif %}"{% if nofile %} title="자료 파일명 없음 — 이번엔 빼고 추후 발송 안내만 나갑니다"{% endif %}>{{ r.company_name }}{% if nofile %} · 파일명 없음{% endif %}</span>{% endfor %}
       </p>
       {% if g.missing %}
       <p class="hint warn">
-        ⚠ 우리 DB 에 없는 기업: {{ g.missing|join(', ') }} —
+        ⚠ IR 기업 현황에 없는 기업: {{ g.missing|join(', ') }} —
         <a href="/companies">IR 기업 현황</a>에서 등록해야 함께 보낼 수 있습니다.
       </p>
       {% endif %}
@@ -206,15 +221,6 @@
         Series A 이상 딜 소싱 기업: {{ g.series_a|join(', ') }} — IR 자료 파일명이 없어
         [자료 보내기] 에는 안 실립니다. 자료를 직접 보내고 [{{ labels.delivered }}] 를 눌러 주세요.
         (<a href="/companies?tab=series-a">Series A 이상 딜 소싱</a> 탭의 <b>IR 자료 수신</b> 칸 윗줄에 파일명을 적으면 함께 보낼 수 있습니다.)
-      </p>
-      {% endif %}
-      {% if g.no_file %}
-      {# 파일명이 비어 있으면 붙일 것을 못 찾는다 — 발송기가 붙이든 사람이
-         붙이든 마찬가지다. 그 기업은 빼고 보내고 글 끝에 추후 안내만 나간다(#53). #}
-      <p class="hint warn">
-        ⚠ 자료 파일명이 없는 기업: {{ g.no_file|join(', ') }} —
-        이번엔 빼고 추후 발송 안내만 나갑니다(요청은 남습니다).
-        <a href="/companies">IR 기업 현황</a>에 자료 파일명을 등록하면 함께 보낼 수 있습니다.
       </p>
       {% endif %}
     </div>
@@ -230,7 +236,7 @@
        `기다린 날` → `IR 자료를 보내지 않은 기간`(10/26) — 78px 에서는 세 줄로
        접혀 칸을 78 → 152px 로 넓혔다. 머리글은 한 줄에 든다(헤드리스 크롬 126px ·
        tests/test_ui_layout.py 의 어림 151px). #}
-    <thead><tr><th style="width:96px">IR 자료 요청일</th><th>심사역</th><th>기업명</th><th class="num" style="width:104px">투자유치희망금액</th><th style="width:104px">자료</th><th class="num" style="width:152px">IR 자료를 보내지 않은 기간</th><th style="width:168px"></th></tr></thead>
+    <thead><tr><th style="width:96px">IR 자료 요청일</th><th>심사역</th><th>기업명</th><th class="num" style="width:104px">투자유치희망금액</th><th style="width:104px">자료</th><th class="num" style="width:152px">IR 자료를 보내지 않은 기간</th><th style="width:168px">처리</th></tr></thead>
     <tbody>
       {% for r in open_requests %}
       <tr class="{% if r.overdue %}overdue-row{% endif %}">
@@ -251,7 +257,7 @@
           {% elif r.series_a %}
             {{ series_a_tag(r.series_a) }}
           {% else %}
-            <span class="muted" title="우리 DB에 없는 기업명입니다">기업 미등록</span>
+            <span class="muted" title="IR 기업 현황에 없는 기업명입니다">기업 미등록</span>
           {% endif %}
         </td>
         <td class="num {% if r.overdue %}bad{% endif %}">{{ r.waited }}일</td>
@@ -273,27 +279,26 @@
   {% endif %}
   {# 안내도 갈래를 따라간다 — 안 그러면 넘어가는 화면을 두고 안 넘어간다고
      말하거나, 그 반대가 된다. 가르는 값은 창·스크립트와 **같은 하나**다. #}
+  {# 앞의 세 줄만 늘 보이고 나머지는 `자세히` 안으로 — 290자짜리 한 문단이었다.
+     **뜻은 하나도 안 지운다**(옮기기만). #}
+  {% if ir_auto_attach %}
   <p class="hint">
-    {% if ir_auto_attach %}
-    <b>[자료 보내기]</b> 를 누르면 담당자와 요청받은 기업이 <b>이미 선택된 채로</b>
-    딜 제안 관리가 열립니다.
-    발송에 성공하면 이 목록에서 <b>자동으로 빠집니다</b> —
-    돌아와서 [{{ labels.delivered }}] 단추를 누를 필요가 없습니다.<br>
-    자료 파일은 <b>발송 프로그램이 붙여 보냅니다</b> — 위 표의 파일이
-    자료 폴더에 있는지만 확인해 주세요. 파일명은 있는데 폴더에 파일이 하나라도
-    없으면 <b>그 분께는 문구도 나가지 않습니다</b>(자료 없이 "보내드렸습니다" 만 가는 일은 없습니다).<br>
+    <b>[자료 보내기]</b>를 누르면 담당자와 기업이 <b>선택된 채로</b> 딜 제안 관리가 열립니다.<br>
+    발송에 성공하면 이 목록에서 <b>자동으로 빠집니다</b>.<br>
+    자료 파일은 <b>발송 프로그램이 붙여 보냅니다</b> — 위 표의 파일이 자료 폴더에 있는지만 확인해 주세요.
+  </p>
+  <details class="hint">
+    <summary>자세히</summary>
+    돌아와서 [{{ labels.delivered }}] 단추를 누를 필요가 없습니다.
+    파일명은 있는데 폴더에 파일이 하나라도 없으면 <b>그 분께는 문구도 나가지 않습니다</b>(자료 없이 "보내드렸습니다" 만 가는 일은 없습니다).<br>
     자료 파일명이 없는 기업은 <b>이번엔 빼고</b> 보내고, 글 끝에 "추후 보내 드리겠습니다"
     한 줄이 붙습니다 — 그 요청은 이 목록에 남습니다.
-    {% else %}
-    <b>[자료 보내기]</b> 를 누르면 <b>이 화면에서</b> 보낼 자료와 나갈 문구가
-    바로 뜹니다 — 딜 제안 관리로 넘어가지 않습니다.
-    발송에 성공하면 이 목록에서 <b>자동으로 빠집니다</b> —
-    돌아와서 [{{ labels.delivered }}] 단추를 누를 필요가 없습니다.
-    문구를 복사해 손으로 보내셨다면 <b>[{{ labels.delivered }}]</b> 단추를 눌러 주세요 —
-    앱이 보내지 않은 것은 앱이 알 수 없습니다.<br>
-    자료 파일은 <b>PC 카톡에서 직접 첨부</b>해 주세요 — 위 표의 파일 이름으로
-    자료를 찾아 붙이시면 됩니다. 자료 파일명이 없는 기업은 <b>이번엔 빼고</b>
-    보내고, 글 끝에 "추후 보내 드리겠습니다" 한 줄이 붙습니다 — 그 요청은 이 목록에 남습니다.
+  </details>
+  {% else %}
+  <p class="hint">
+    <b>[자료 보내기]</b>를 누르면 <b>이 화면에서</b> 보낼 자료와 문구가 바로 뜹니다.<br>
+    발송에 성공하면 이 목록에서 <b>자동으로 빠집니다</b>.<br>
+    자료 파일은 <b>PC 카톡에서 직접 첨부</b>해 주세요 — 위 표의 파일 이름으로 찾아 붙이시면 됩니다.
     {# 발송기에 맡기는 길은 **쓸 수 있는 계정에만** 알린다.
 
        예전에는 이 한 줄이 누구에게나 보였다. 그때는 `/setup` 에 가서 폴더를
@@ -306,12 +311,20 @@
        켜졌는가"(폴더까지 정해졌는가)이고 여기는 "쓸 수 있는가" 다 — 켜 주긴
        했는데 아직 폴더를 안 넣은 계정이 그 사이에 있고, 그 사람에게는 이
        문장이 정확히 필요하다. #}
-    {% if may_auto_attach %}
+    {% if may_auto_attach %}<br>
     발송 프로그램에 맡기시려면
     <a href="/setup">[발송 프로그램]</a> 화면에서 이 PC 의 자료 폴더를 정하세요.
     {% endif %}
-    {% endif %}
   </p>
+  <details class="hint">
+    <summary>자세히</summary>
+    딜 제안 관리로 넘어가지 않습니다. 앱이 보낸 것은 돌아와서 [{{ labels.delivered }}] 단추를 누를 필요가 없습니다.
+    문구를 복사해 손으로 보내셨다면 <b>[{{ labels.delivered }}]</b> 단추를 눌러 주세요 —
+    앱이 보내지 않은 것은 앱이 알 수 없습니다.<br>
+    자료 파일명이 없는 기업은 <b>이번엔 빼고</b>
+    보내고, 글 끝에 "추후 보내 드리겠습니다" 한 줄이 붙습니다 — 그 요청은 이 목록에 남습니다.
+  </details>
+  {% endif %}
 </section>
 
 
@@ -431,15 +444,18 @@
   {% include "_upcoming_followups.html" %}
 
   <section class="panel" id="rules">
+    {# 머리 줄은 **지금 설정값**이다(`followups.remind_context` 의 `cycle_desc`) —
+       글자로 박아 두면 주기를 바꾼 뒤 아래 목록과 다른 말을 한다. #}
     <h2 class="panel-title">발송 주기
-      <span class="hint">기본은 매월 첫째·셋째 수요일 — 관리자가 바꿉니다</span>
+      <span class="hint">{% if cycle_desc %}딜소개 {{ cycle_desc }} — {% endif %}관리자가 바꿉니다</span>
     </h2>
     <ul class="import-stats">
       {% for rule in rules %}
       <li><span>{{ rule.label }}</span><b>{{ rule.desc }}</b></li>
       {% endfor %}
     </ul>
-    <p class="hint">다음 딜소개 회차: <b>{{ next_send.strftime('%m월 %d일') }}</b></p>
+    {# 다른 화면과 같은 꼴 `11/18(수)`. #}
+    <p class="hint">다음 딜소개 회차: <b>{{ next_send.month }}/{{ next_send.day }}({{ '월화수목금토일'[next_send.weekday()] }})</b></p>
 
     {% if user.role == 'admin' %}
     <details class="tpl-new">
@@ -505,8 +521,9 @@
    흔하고, 그때 멈출 자리가 없으면 이미 답한 사람에게 전화를 건다.
 #}
 <section class="panel" id="calls">
+  {% set call_rule = rules|selectattr('key', 'equalto', 'call')|first %}
   <h2 class="panel-title">전화 요청
-    <span class="hint">미팅 요청을 보내고 사흘 뒤 — <b>전화는 직접</b> 거셔야 합니다</span>
+    <span class="hint">{% if call_rule %}{{ call_rule.desc }}{% else %}미팅 요청 뒤{% endif %} — <b>전화는 직접</b> 거셔야 합니다</span>
   </h2>
   {#
     ── 답 없음 · 전화 요청 (10/17 회의 #37) ──────────────────────────────────
@@ -642,11 +659,9 @@
     {# 차례(11/14): 자료 전달 5~6일 뒤 검토 요청 → 검토 요청 4~5일 뒤 미팅 요청. #}
     {% if meeting_ask_missing or meeting_waiting %}
     <p class="hint {% if meeting_ask_overdue %}warn{% endif %}">
-      {% if meeting_ask_missing %}{{ labels.not_reviewed }} {{ meeting_ask_missing }}명
-      (전달 {{ review_ask_days }}일 지남 {{ review_due }}명){% endif %}
+      {% if meeting_ask_missing %}{{ labels.not_reviewed }} {{ meeting_ask_missing }}명(전달 {{ review_ask_days }}일 지남 {{ review_due }}명){% endif %}
       {% if meeting_ask_missing and meeting_waiting %} · {% endif %}
-      {% if meeting_waiting %}{{ labels.not_asked }} {{ meeting_waiting }}명
-      (검토 요청 {{ meeting_after_review_days }}일 지남 {{ meeting_due }}명){% endif %}
+      {% if meeting_waiting %}{{ labels.not_asked }} {{ meeting_waiting }}명(검토 요청 {{ meeting_after_review_days }}일 지남 {{ meeting_due }}명){% endif %}
     </p>
     {% endif %}
     {% if done_requests %}
@@ -678,7 +693,7 @@
       <thead><tr>
         <th style="width:96px">IR 자료 요청일</th><th>심사역</th><th>기업명</th>
         <th class="num" style="width:104px">투자유치희망금액</th>
-        <th style="width:236px">상태</th><th style="width:284px"></th>
+        <th style="width:236px">상태</th><th style="width:284px">처리</th>
       </tr></thead>
       <tbody>
         {# 지난 줄은 위에 세워 두고(`routers/ir.py`), 20줄이 넘더라도
@@ -789,10 +804,11 @@
 
 <!-- 미팅 스케줄 -->
 <section class="panel" id="meetings">
-  <h2 class="panel-title">미팅 스케줄
-    <span class="count-pill {% if scheduled %}on{% endif %}"><b>{{ scheduled|length }}</b>건 예정</span>
+  <div class="panel-title">
+    <h2>미팅 스케줄
+      <span class="count-pill {% if scheduled %}on{% endif %}"><b>{{ scheduled|length }}</b>건 예정</span></h2>
     <button type="button" class="linkbtn" id="new-meeting-btn">미팅 등록</button>
-  </h2>
+  </div>
 
   <div class="member-form" id="new-meeting" hidden>
     <form class="pick-form" method="post" action="/ir/meetings">
@@ -894,7 +910,7 @@
     {# 마지막 칸에 폭을 준다 — 안 주면 표가 앞의 칸에 다 나눠 주고, 손댈 것이
        모인 이 칸만 좁아져 [구글 캘린더에 추가] 뒤의 [취소] 가 화면 밖으로
        밀린다(1512px 에서 실제로 그랬다). #}
-    <thead><tr><th style="width:132px">날짜 · 시간</th><th>심사역</th><th>구분</th><th style="width:92px">대면·화상</th><th>기업명</th><th class="num" style="width:104px">투자유치희망금액</th><th class="num">남음</th><th style="width:320px"></th></tr></thead>
+    <thead><tr><th style="width:132px">날짜 · 시간</th><th>심사역</th><th>구분</th><th style="width:92px">대면·화상</th><th>기업명</th><th class="num" style="width:104px">투자유치희망금액</th><th class="num">남음</th><th style="width:320px">처리</th></tr></thead>
     <tbody>
       {% for m in scheduled %}
       <tr>
@@ -977,7 +993,7 @@
   {# 미팅 후기 — 끝난 미팅에 결과를 물었는지 보는 자리. 탭이 여기로 온다. #}
   <section class="panel wide" id="reviews">
     <h2 class="panel-title">미팅 후기
-      <span class="hint">끝난 미팅 {{ finished|length }}건 · 열흘쯤 뒤 결과를 묻습니다</span>
+      <span class="hint">끝난 미팅 {{ finished|length }}건 · {{ followup_days }}일 뒤 결과를 묻습니다</span>
     </h2>
     {% if finished %}
     {# 결과가 한 칸(진행/보류/거절)뿐이면 **왜** 그런지가 남지 않는다 —
@@ -998,7 +1014,7 @@
         <th class="num" style="width:104px">투자유치희망금액</th>
         <th style="width:72px">결과</th>
         <th style="width:220px">미팅 후기</th>
-        <th style="width:284px">결과 문의</th><th style="width:96px"></th>
+        <th style="width:284px">결과 문의</th><th style="width:96px">처리</th>
       </tr></thead>
       <tbody>
         {% for m in finished[:20] %}
@@ -1060,14 +1076,14 @@
              `새로 적어도 됩니다` 를 세우지 않는다(`inline_edit.js` · 다른 콤보 칸 안내는 그대로). #}
           <td class="cell" data-field="outcome" data-type="pick" data-fixed-choices data-choices-only
               data-choices="{{ outcomes.values()|join(',') }}"
-              data-placeholder="눌러서 고르기"
+              data-placeholder="결과 고르기"
               title="눌러서 결과 고르기 — 비우면 결과 미정">{{ m.outcome_label }}</td>
           {% else %}<td>{{ m.outcome_label or '-' }}</td>{% endif %}
           {# 미팅 자리에서 들은 것. 열흘 뒤 통화와 다른 시점의 이야기라 칸을
              나눠 둔다 — 한 칸에 섞으면 언제 들은 말인지 알 수 없다. #}
           <td title="{{ m.note or '' }}">
             <div class="cell clamp2" data-field="note" data-type="long" data-memo-date
-                 data-placeholder="눌러서 후기 적기">{{ m.note or '' }}</div>
+                 data-placeholder="후기 적기">{{ m.note or '' }}</div>
           </td>
           <td class="muted">
             {% if m.status == 'canceled' %}취소

@@ -51,9 +51,10 @@ def week_start(day: Optional[date] = None) -> date:
 
 
 def week_label(start: date) -> str:
+    """`11/16~11/22`. 달이 같아도 같은 꼴로 적는다 — 화면의 다른 날짜(`11/18(수)`)와
+    한 표기로 맞춘다. 예전에는 같은 달이면 `11월 16~22일`, 달이 넘어가면 `11/30~12/6`
+    으로 주마다 꼴이 바뀌었다."""
     end = start + timedelta(days=6)
-    if start.month == end.month:
-        return f"{start.month}월 {start.day}~{end.day}일"
     return f"{start.month}/{start.day}~{end.month}/{end.day}"
 
 
@@ -68,7 +69,9 @@ def parse_weekdays(value: Optional[str]) -> List[int]:
 
 def weekday_label(value: Optional[str]) -> str:
     days = parse_weekdays(value)
-    return " · ".join(f"{WEEKDAYS[d]}" for d in days) if days else "요일 없음"
+    # 요일을 안 고른 규칙은 고장이 아니라 **그렇게 둔 것**이다 — `없음` 으로 적으면
+    # 빠진 값처럼 읽힌다.
+    return " · ".join(f"{WEEKDAYS[d]}" for d in days) if days else "요일 지정 안 함"
 
 
 def parse_nth_weeks(value: Optional[str]) -> List[int]:

@@ -183,7 +183,8 @@ def test_turning_the_menu_off_turns_a5_off_too(db, users, client):
                         follow_redirects=False)
     db.expire_all()
     assert automation.load(db, automation.STARTUP_MONTHLY).enabled == 0
-    assert "A5" in unquote(answer.headers["location"])
+    # 알림 글에 자동 발송도 꺼졌다고 적힌다(내부 번호 `A5` 대신 화면 이름으로).
+    assert "매월 자동 발송도 껐습니다" in unquote(answer.headers["location"])
     assert a5.header(db)["on"] is False
 
 
@@ -467,14 +468,18 @@ def test_the_missed_month_shows_in_the_startup_header(db, users, client, monkeyp
 
 
 # 리뷰 11 — A5 가 꺼져 있으면(또는 시험 모드면) 이 달 발송이 안 나간다고 알린다.
-OFF_NEEDLE = "스타트업 월간 발송(A5)이"
+# 화면에 뜨는 줄이라 내부 번호(`A5`)는 글자에 없다 — 못 나간 달 줄(`스타트업 월간 발송 —`)과
+# 갈리는 앞머리로 찾는다.
+OFF_NEEDLE = "스타트업 월간 발송이 "
 
 
 def test_a5_off_reminds_ten_days_before_the_slot(db, users):
     _turn_on(db, user_id=1)                          # 메뉴 켜짐 · A5 줄 없음 = 꺼짐
     [line] = _lines(db, users["u1"], date(2026, 10, 18), OFF_NEEDLE)
-    assert line["title"] == ("스타트업 월간 발송(A5)이 꺼져 있어 이번 달 발송이 안 "
-                             "나갑니다 — 팀 현황 › 자동화에서 켜세요")
+    assert line["title"] == "스타트업 월간 발송이 꺼져 있습니다 — 이번 달 발송은 나가지 않습니다"
+    # 무엇을 하면 되는지(어디서 켜는지)는 설명 줄로 옮겼다 — 뜻은 그대로 남아야 한다.
+    assert "팀 현황 › 자동화에서 켜세요" in line["detail"]
+    assert "A5" not in line["title"] + line["detail"], "내부 번호가 화면 글자에 남았다"
     assert "10/28" in line["detail"] and line["href"] == "/team#automations"
     assert _lines(db, users["u1"], date(2026, 10, 17), OFF_NEEDLE) == []   # 11일 전
     assert _lines(db, users["u2"], date(2026, 10, 18), OFF_NEEDLE) == []   # 남의 일
@@ -487,6 +492,8 @@ def test_a5_off_reminds_after_the_slot_passed_without_a_job(db, users):
     _turn_on(db, user_id=1)
     [line] = _lines(db, users["u1"], date(2026, 10, 30), OFF_NEEDLE)
     assert line["level"] == "urgent" and "손으로" in line["detail"]
+    # 날짜가 지난 달에도 어디서 켜는지는 남는다(제목에서 설명 줄로 옮겼다).
+    assert "팀 현황 › 자동화에서 켜세요" in line["detail"]
 
 
 def test_no_off_reminder_when_the_month_already_has_a_job(db, users):
@@ -508,6 +515,7 @@ def test_test_mode_a5_reminds_too(db, users):
     _a5(db, test=True)
     [line] = _lines(db, users["u1"], date(2026, 10, 18), OFF_NEEDLE)
     assert "시험 모드" in line["title"]
+    assert "실제 발송으로 바꾸세요" in line["detail"]
 
 
 def test_a_real_a5_gets_no_off_reminder(db, users):

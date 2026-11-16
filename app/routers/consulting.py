@@ -1225,8 +1225,8 @@ def consulting_page(request: Request, db: Session = Depends(get_db),
             #  뒤죽박죽인 표에서만 지난달이 접힐 수 있다.)
             "prev_month_shown": bool(prev_label) and any(
                 c.label == prev_label for c in shown),
-            # `0월 마지막주 리마인드톡 미완료 기업` — 그 달 숫자를 넣는다.
-            "pending_label": (f"{_prev_month()}월 마지막주 리마인드톡 미완료 기업"),
+            # `0월 마지막주 리마인드 톡 미완료 기업` — 그 달 숫자를 넣는다.
+            "pending_label": (f"{_prev_month()}월 마지막주 리마인드 톡 미완료 기업"),
         },
     })
     # 관리자가 붙인 추가 칸 — 탭을 가리지 않고 같은 칸(달 칸과 따로 · #8).

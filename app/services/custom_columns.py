@@ -52,9 +52,11 @@ TARGETS = {
     "sourcing": {"label": "딜 소싱", "href": "/sourcing",
                  "tables": ("sourcing_contacts",),
                  "where": "딜 소싱 명단 — 갈래(탭)를 가리지 않고 같은 칸"},
-    "forecast": {"label": "매출예상리스트", "href": "/report/forecast",
+    # 탭 글자는 업무 보고 탭과 같게 띄어 쓴다(보이는 글자뿐 — 열쇠는 `forecast`,
+    # 칸 붙는 자리 묶음 이름은 `anchor_groups` 의 `매출예상리스트` 그대로).
+    "forecast": {"label": "매출 예상 리스트", "href": "/report/forecast",
                  "tables": ("revenue_forecasts",),
-                 "where": "업무 보고 › 매출예상리스트"},
+                 "where": "업무 보고 › 매출 예상 리스트"},
 }
 
 #: 줄의 표 → 화면. 표 하나는 한 화면에만 속한다.

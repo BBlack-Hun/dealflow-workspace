@@ -224,10 +224,10 @@ def test_감춘_줄과_되돌리는_자리가_따라온다(lists, db):
 
     body = lists.get(f"{home}?sheet={quote(label)}").text
     assert hidden.name not in body
-    assert "감춘 줄" in body and "함께 보기" in body
+    assert "감춘 줄" in body and "감춘 줄도 보기" in body
 
     both = lists.get(f"{home}?sheet={quote(label)}&hidden=1").text
-    assert hidden.name in both, "[함께 보기] 로도 감춘 줄이 안 나옵니다"
+    assert hidden.name in both, "[감춘 줄도 보기] 로도 감춘 줄이 안 나옵니다"
 
 
 def test_필터와_인라인_수정이_새_화면에서_붙는다(lists):

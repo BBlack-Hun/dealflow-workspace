@@ -865,10 +865,10 @@ def test_KPI_는_지난달_빈칸을_센다(allowed, db, users):
                     [{1: "카톡 완료"}, {0: "이번달만 했다"}, {}])
 
     body = allowed.get("/consulting").text
-    assert f"{prev}월 마지막주 리마인드톡 미완료 기업" in body
+    assert f"{prev}월 마지막주 리마인드 톡 미완료 기업" in body
     assert "이전달 연락 기록 있음" not in body, "옛 이름이 남아 있습니다"
     # 값은 KPI 카드 안에서 읽는다 — 다른 숫자와 섞이지 않게.
-    card = body.split(f"{prev}월 마지막주 리마인드톡 미완료 기업")[1]
+    card = body.split(f"{prev}월 마지막주 리마인드 톡 미완료 기업")[1]
     assert ">2<" in card.split("</div>")[0]
 
 
@@ -992,7 +992,8 @@ def test_칩_넷이_한_줄도_흘리지_않는다(allowed, db, users):
     assert unmatched == [""], unmatched
 
     # 화면에도 그 칩이 서 있어야 한다.
-    assert 'data-cs-filter="other"' in body and ">그 외<" in body
+    # `그 외` 만으로는 무엇이 걸리는지 안 읽혀 괄호로 적는다(UX 점검).
+    assert 'data-cs-filter="other"' in body and ">그 외 (백업팀 전환·기타)<" in body
     assert 'data-cs-filter="nocontact"' in body and ">연락 기록 없음<" in body
     # 머리글 필터가 값별로 고르는 일은 그대로다 — 칩과 어긋나면 안 된다.
     tags = re.findall(r'data-f-mgmt="([^"]*)"', body)

@@ -273,6 +273,13 @@ def describe(db: Session, row: Optional[Automation]) -> str:
     return text
 
 
+def summary(values: dict) -> str:
+    """판 첫 칸 — 저장된 시각과 `DAYS` 로."""
+    later = "·".join(str(n) for n in DAYS[1:])
+    return (f"계약 완료(무료·유료) {DAYS[0]}일 뒤 {values['time']} 계약 담당 팀원 카톡방에 "
+            f"계약서 우편 발송 알림, 계약서 수신이 O 가 아니면 {later}일 뒤 같은 방에 수신 확인")
+
+
 runner.register(runner.Spec(
     key=KEY, kind="deal_intro", topic=POST_KIND, plan=plan, collect=collect,
-    still_ok=still_ok, describe=describe, fields=FIELDS))
+    still_ok=still_ok, describe=describe, fields=FIELDS, summary=summary))

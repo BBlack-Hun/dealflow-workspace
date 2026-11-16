@@ -112,7 +112,7 @@ def test_year_view_links_each_month_to_its_calendar(client, meetings):
     html = _login(client).get("/ir/calendar?view=year&y=2026").text
     assert "/ir/calendar?view=month&ym=2026-10" in html
     assert "/ir/calendar?view=month&ym=2026-11" in html
-    assert "완료 1 · 예정 2" in html
+    assert "완료 1건 · 예정 2건" in html
 
 
 # --- 3. 누가 무엇을 보나 ----------------------------------------------------

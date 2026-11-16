@@ -434,7 +434,7 @@ def test_the_sourcing_page_shows_participation_and_the_link(board, db, users):
     body = board.get(f"/sourcing?tab={SYNC}").text
     assert 'data-filters="participation:참여"' in body
     assert 'data-f-participation="불참여"' in body
-    assert f"투자사 관리 현황: {SHEET} 명단" in body
+    assert f"연결됨: {SHEET} 명단" in body
 
 
 def test_a_bad_participation_word_is_refused(board, db, users):
@@ -535,7 +535,7 @@ def test_the_sourcing_page_flags_fields_that_differed_when_linked(board, db, use
     sc(db, firm="가나다벤처스(주)")
     mark(board, contact.id, "O")
     body = board.get(f"/sourcing?tab={SYNC}").text
-    assert "다른 칸: 회사" in body
+    assert "값이 다른 칸: 회사" in body
 
 
 # ── ⑦ 불참여는 보내지 않는다 ────────────────────────────────────────────────
@@ -1473,7 +1473,7 @@ def test_linking_fills_only_empty_sectors_and_flags_a_difference(board, db, user
     [row] = sync_rows(db)
     assert row.sectors == "핀테크" and row.round_size == "10억"
     body = board.get(f"/sourcing?tab={SYNC}").text
-    assert "다른 칸: 선호 투자분야" in body
+    assert "값이 다른 칸: 선호 투자분야" in body
 
 
 def test_comma_spacing_alone_is_not_a_different_field(board, db, users):

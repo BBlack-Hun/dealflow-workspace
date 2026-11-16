@@ -1126,7 +1126,7 @@ def restore_participation(rows: List[SourcingContact], kept: List[tuple]) -> int
 # ── 화면 ────────────────────────────────────────────────────────────────────
 
 def badges(db: Session, rows: Iterable[SourcingContact]) -> Dict[int, dict]:
-    """딜 소싱 표의 연결 표시 — `투자사 관리 현황: ○○ 명단`.
+    """딜 소싱 표의 연결 표시 — `🔗 연결됨: ○○ 명단`(풍선말에 투자사 관리 현황).
 
     `{소싱 줄 번호: {"sheet": 명단 이름, "href": 그 명단 주소, "diff": [다른 칸 이름],
     "title": 풍선말}}`. `diff` 는 **이을 때 이미 달랐던 칸**이다(모듈 머리말) —

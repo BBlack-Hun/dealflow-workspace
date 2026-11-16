@@ -156,6 +156,30 @@ def test_deal_mode_still_requires_companies(client, seed):
     assert r.status_code == 400
 
 
+def test_no_company_is_an_empty_state_not_a_per_person_warning(client, seed):
+    """기업을 아직 안 고른 기본 문구 — `○○○: 선택된 기업이 없습니다.` 가 경고 칸에
+    사람마다 서면 오류문이 본문처럼 읽혔다. 미리보기 위 한 줄(`empty_note`)로만 서고,
+    문구 본문에는 그 글자가 들어가지 않는다."""
+    from app.routers.deals import NO_COMPANIES_NOTE
+    from app.services import message_composer as mc
+
+    empty = client.post("/api/deals/preview", json={"company_ids": [], "contact_ids": []}).json()
+    assert empty["empty_note"] == NO_COMPANIES_NOTE
+    assert empty["previews"], "기본 문구가 안 섰다"
+    for p in empty["previews"]:
+        assert mc.NO_COMPANIES not in p["warnings"], p["warnings"]
+        assert mc.NO_COMPANIES not in p["message"]
+    assert mc.NO_COMPANIES not in empty["warnings"]
+
+    # 기업을 고르면 빈 상태 줄은 없다.
+    picked = client.post("/api/deals/preview",
+                         json={"company_ids": [seed["company_id"]], "contact_ids": []}).json()
+    assert picked["empty_note"] == ""
+    # 문구만 보내는 방식은 기업을 안 고르는 것이 정상이다 — 빈 상태가 아니다.
+    ask = client.post("/api/deals/preview", json={"mode": "ask", "contact_ids": []}).json()
+    assert ask["empty_note"] == ""
+
+
 # --- 인사말 유무 ------------------------------------------------------------
 
 def test_ask_mode_has_no_greeting_by_default(client, seed):
@@ -384,8 +408,8 @@ def test_mode_tabs_follow_the_actual_flow(client, db, seed):
     assert "disabled" not in block[:2300]
 
     # '기업 소개' 는 '딜 소개' 로 바뀌었다 — 다른 화면 용어와 맞춘다
-    assert "딜 소개<span>" in body
-    assert "기업 소개<span>" not in body
+    assert "딜 소개 <span>" in body
+    assert "기업 소개 <span>" not in body and "기업 소개<span>" not in body
 
 
 def test_meeting_review_is_a_text_only_mode(client, db, seed):

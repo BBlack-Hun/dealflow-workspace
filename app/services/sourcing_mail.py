@@ -934,7 +934,7 @@ def _latest(db: Session, *statuses: str, slots: Optional[Sequence[str]] = None
 
 
 def page_status(db: Session, now: Optional[datetime] = None) -> dict:
-    """딜 소싱 머리 줄 — `메일 확인: 마지막 10/15 18:00 · 이번 달 메일로 받은 분 N명 ·
+    """딜 소싱 머리 줄 — `메일 자동 확인 · 마지막 10/15 18:00 · 다음 …` / `이번 달 메일로 받은 분 N명 ·
     메일 주소 없는 분 M명` 과 실패 · 도는 중 · 다음 회차."""
     settings = load_settings(db)
     if not settings.active:
@@ -955,6 +955,8 @@ def page_status(db: Session, now: Optional[datetime] = None) -> dict:
         "running": running(db, now) is not None,
         "next_label": (f"{stamp(nxt.at.isoformat())} ({SLOT_LABELS[nxt.key]})"
                        if nxt else ""),
+        # 시각만 — 팀 현황 판은 바로 앞에 `매일 18:00` 이 이미 적혀 있어 `(매일 회차)` 가 겹친다.
+        "next_at_label": stamp(nxt.at.isoformat()) if nxt else "",
     }
 
 
@@ -980,6 +982,8 @@ def panel(db: Session) -> dict:
         "test_ok": bool(tested and tested.status == STATUS_OK),
         "test_label": stamp(tested.started_at) if tested else "",
         "status": page_status(db) if settings.active else None,
+        # 매일 확인 시각 — 판의 글자가 이 값을 읽는다(글자에 박아 두면 값이 바뀔 때 거짓말이 된다).
+        "check_time": CHECK_TIME,
     }
 
 

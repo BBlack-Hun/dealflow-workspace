@@ -6,7 +6,7 @@
 // 읽어 본다 — 한쪽만 바뀌면 검색칸이 아무 일도 안 하는 칸이 된다.
 //
 // 잠그는 것:
-//   · 문구 이름 · 본문 · 구간 제목줄(종류 · 설명)로 찾아진다.
+//   · 문구 이름 · 본문 · 구간 제목줄(종류) · 그 아래 설명 줄로 찾아진다.
 //   · 대소문자 · 띄어쓰기를 안 따진다. 여러 낱말은 **모두** 들어야 걸린다.
 //   · 남은 문구가 없는 갈래 · 구간은 제목째 숨는다. 하나도 없으면 `검색 결과 없음`.
 //   · **고치던 칸이 안 날아간다** — 고친 글자로 찾아지고, 걸러도 값이 그대로다.
@@ -42,6 +42,9 @@ const PAGE = fs.readFileSync(
   assert.ok(/\/edit" class="tpl-item" data-tpl-row>/.test(PAGE),
     "문구 줄에 data-tpl-row 가 없다");
   assert.ok(/class="panel-title tpl-kind-title"/.test(PAGE), "구간 제목줄 이름이 바뀌었다");
+  // 설명은 제목줄 밖 제 줄이다 — 검색이 그 줄을 따로 읽는다.
+  assert.ok(/<\/h2>\s*\{#[\s\S]*?#\}\s*\{% if g\.desc %\}<p class="hint tpl-kind-desc">/.test(PAGE),
+    "구간 설명 줄(tpl-kind-desc)이 제목줄 바로 아래에 없다");
   assert.ok(/<textarea name="body"/.test(PAGE) && /<input type="text" name="name"/.test(PAGE),
     "문구 칸(이름 · 본문) 모양이 바뀌었다");
   assert.ok(/js\/templates_search\.js/.test(PAGE), "templates_search.js 를 안 싣는다");
@@ -76,16 +79,23 @@ function slot(rows, bucket) {
   return D.el("div", { class: "tpl-slot" }, kids.concat(rows));
 }
 
-function section(kind, head, slots) {
+function section(kind, head, slots, desc) {
   const h2 = D.el("h2", { class: "panel-title tpl-kind-title" });
   h2.textContent = head;
+  // 설명 줄 — 실제 화면처럼 제목줄 밖에 선다(`templates.html` 의 `tpl-kind-desc`).
+  const lead = [h2];
+  if (desc) {
+    const p = D.el("p", { class: "hint tpl-kind-desc" });
+    p.textContent = desc;
+    lead.push(p);
+  }
   // 새 문구 만들기 칸 — 문구가 아니라 안 걸러야 한다.
   const draft = D.el("details", { class: "tpl-new" }, [
     D.el("form", {}, [D.el("input", { type: "text", name: "name", value: "" }),
                       D.el("textarea", { name: "body" })])
   ]);
   return D.el("div", { class: "panel", id: kind },
-              [h2].concat(slots, [draft]));
+              lead.concat(slots, [draft]));
 }
 
 function build() {
@@ -93,26 +103,23 @@ function build() {
   const r = {
     deal: row("기본 안내", "아래 기업들을 소개드립니다.\n검토 부탁드립니다."),
     dealMine: row("짧은 안내", "IR 자료가 필요하시면 말씀해 주세요.",
-                  ["내 문구", "꺼진 문구 — 발송에 쓰이지 않습니다"]),
+                  ["내 문구", "꺼짐 — 발송에 안 쓰임"]),
     remind: row("리마인드 기본", "지난주 보내 드린 기업 중 관심 있으신 곳이 있을까요?"),
     srcA: row("시리즈 A 이상", "대표님, 딜 소싱에 함께해 주실 수 있을까요?"),
     srcB: row("개인 참여", "개인 투자자분께 드리는 안내입니다."),
     greet: row("첫 인사", "안녕하세요, 처음 인사드립니다.")
   };
-  const deal = section("closing_day1",
-    "안내문 — 딜소개 딜 제안 관리 · 딜 소개 탭 기업 목록 위에 오는 안내 문구",
-    [slot([r.deal, r.dealMine])]);
-  const remind = section("closing_remind",
-    "안내문 — 리마인드 딜 제안 관리 · 리마인드 탭 딜소개 발송 6~7일 뒤에 보냅니다",
-    [slot([r.remind])]);
-  const sourcing = section("sourcing_intro",
-    "딜 소싱 제안 딜 제안 관리 · 딜 소싱 제안 탭 갈래마다 하나씩",
-    [slot([r.srcA], "시리즈 A 이상"), slot([r.srcB], "개인 참여")]);
+  const deal = section("closing_day1", "안내문 — 딜소개 딜 제안 관리 탭",
+    [slot([r.deal, r.dealMine])], "기업 목록 위에 오는 안내 문구");
+  const remind = section("closing_remind", "안내문 — 리마인드 딜 제안 관리 탭",
+    [slot([r.remind])], "딜소개 발송 6~7일 뒤에 보냅니다");
+  const sourcing = section("sourcing_intro", "딜 소싱 제안 딜 제안 관리 탭",
+    [slot([r.srcA], "시리즈 A 이상"), slot([r.srcB], "개인 참여")], "갈래마다 하나씩");
   // 문구가 하나도 없는 종류 — 제목이 걸리면 구간이 남아야 거기서 새로 만든다.
-  const call = section("connect_call", "연결 — 전화 응대 카톡방 연결 전 첫 통화",
-    [slot([])]);
-  const opening = section("opening_first", "인사말 — 첫 연락 처음 딜소개를 보내는 담당자에게",
-    [slot([r.greet])]);
+  const call = section("connect_call", "연결 — 전화 응대",
+    [slot([])], "카톡방 연결 전 첫 통화");
+  const opening = section("opening_first", "인사말 — 첫 연락",
+    [slot([r.greet])], "처음 딜소개를 보내는 담당자에게");
 
   const others = D.el("details", { id: "others" }, [D.el("summary", {}), opening, call]);
   others.open = false;
@@ -209,7 +216,7 @@ function main() {
     type(dom, "기업 목록 위");
     assert.deepStrictEqual(visibleNames(dom), ["deal", "dealMine"],
       "구간 설명이 걸렸는데 그 구간 문구가 다 안 남는다");
-    type(dom, "꺼진");
+    type(dom, "꺼짐");
     assert.deepStrictEqual(visibleNames(dom), ["dealMine"], "꼬리표로 안 찾아진다");
   }
 

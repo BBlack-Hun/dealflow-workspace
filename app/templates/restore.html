@@ -12,8 +12,10 @@
 {% block content %}
 <header class="page-head">
   <h1>{{ page_title }}</h1>
+  {# 되돌리면 무엇이 사라지는지를 첫 줄에 — 전에는 아래 확인 화면에서야 나왔다(UX 점검 11/16). #}
   <p class="muted">
-    저장된 지점으로 데이터 전체를 되돌립니다. 관리자만 볼 수 있습니다.
+    저장된 지점으로 데이터 전체를 되돌립니다. <b>그 지점 뒤에 바뀐 내용은 사라집니다</b>(되돌리기
+    직전 상태는 따로 백업해 둡니다). 관리자 전용 화면입니다.
     <a class="linkbtn" href="/team">팀 현황으로</a>
   </p>
 </header>
@@ -40,13 +42,13 @@
   {% endif %}
   <ul class="import-stats">
     <li><span>가장 새 일일 백업</span><b>{{ health.latest or '없음' }}</b></li>
-    <li><span>뜬 시각</span>
+    <li><span>백업 시각</span>
       <b>{{ health.latest_at.strftime('%Y-%m-%d %H:%M') if health.latest_at else '-' }}</b></li>
     <li><span>보관 기간</span><b>최근 {{ keep_days }}일</b></li>
   </ul>
   <p class="hint">
     하루 한 번, 최근 {{ keep_days }}일치를 남기고 오래된 것은 지웁니다.
-    배포 직전 백업(<code>predeploy-*</code>)은 성격이 다른 백업이라 이 규칙으로 지우지 않습니다.
+    업데이트 직전 백업(<code>predeploy-*</code>)은 성격이 다른 백업이라 이 규칙으로 지우지 않습니다.
     되돌리기 직전·탭 삭제 직전 같은 작업 전 사본은 30일 뒤 지웁니다.
   </p>
 </section>
@@ -80,23 +82,27 @@
 {% if picked %}
 <section class="panel">
   <h2 class="panel-title">되돌리면 이렇게 바뀝니다</h2>
+  {# 사람이 읽는 것(시각 · 종류)이 먼저, 파일 이름은 그 아래 작게 — 관리자가 파일
+     이름으로 지점을 부르므로 감추지 않는다. #}
   <ul class="import-stats">
-    <li><span>되돌릴 지점</span><b>{{ picked.name }}</b></li>
-    <li><span>종류</span><b>{{ picked.kind }}</b></li>
-    <li><span>뜬 시각</span><b>{{ picked.at.strftime('%Y-%m-%d %H:%M') }}</b></li>
+    <li><span>되돌릴 지점</span><b>{{ picked.at.strftime('%Y-%m-%d %H:%M') }} · {{ picked.kind }}</b></li>
     <li><span>크기</span><b>{{ picked.size_mb }}</b></li>
   </ul>
+  <p class="hint">파일 <code>{{ picked.name }}</code></p>
 
-  {# 스키마 판은 `import-stats` 밖에 둔다. 그 목록은 180px 짜리 칸에 이름과
-     값을 양끝으로 미는 모양이라, `0051_one_liner_single_source` 처럼 긴 값이
-     들어오면 **이름 쪽이 짜부라져 세로로 쪼개진다**(`스키/마/판`). #}
+  {# 데이터 구조 판(알렘빅 판)은 `import-stats` 밖에 둔다. 그 목록은 180px 짜리 칸에
+     이름과 값을 양끝으로 미는 모양이라, `0051_one_liner_single_source` 처럼 긴 값이
+     들어오면 **이름 쪽이 짜부라져 세로로 쪼개진다**(`스키/마/판`). 판 이름은 숨기지
+     않고 접어 둔다 — 쉬운 말 사유가 먼저다. #}
   {% if not picked.safe %}
   <div class="warn-box"><b>⚠ 이 지점으로는 되돌릴 수 없습니다.</b>
-    <p class="hint">{{ picked.note }}</p></div>
+    <p class="hint">{{ picked.note }}</p>
+    <details class="hint"><summary>데이터 구조 판</summary>
+      <code>{{ picked.revision or '읽을 수 없음' }}</code></details></div>
   {% else %}
-  <p class="hint">
-    스키마 판 <code>{{ picked.revision or '읽을 수 없음' }}</code> — {{ picked.note }}
-  </p>
+  <p class="hint">{{ picked.note }}</p>
+  <details class="hint"><summary>데이터 구조 판</summary>
+    <code>{{ picked.revision or '읽을 수 없음' }}</code></details>
   {% endif %}
 
   {% if risk and risk.warning %}
@@ -126,15 +132,15 @@
     </table>
   </div>
   <p class="hint">
-    음수는 <b>사라지는 것</b>입니다. 되돌리기 직전 상태는 자동으로 한 벌 떠 두므로,
-    잘못 되돌렸으면 30일 안에 <code>before-restore-*</code> 지점으로 다시 돌아올 수 있습니다.
+    음수는 <b>사라지는 것</b>입니다. 되돌리기 직전 상태는 자동으로 백업해 두므로,
+    잘못 되돌렸으면 30일 안에 <b>되돌리기 직전</b>(<code>before-restore-*</code>) 지점으로 다시 돌아올 수 있습니다.
   </p>
 
   {% if picked.safe and not sending %}
   <form method="post" action="/team/restore/apply">
     <input type="hidden" name="name" value="{{ picked.name }}">
-    <button class="danger-btn" type="submit">
-      {{ picked.name }} 지점으로 되돌리기
+    <button class="danger-btn" type="submit" title="{{ picked.name }}">
+      {{ picked.at.strftime('%Y-%m-%d %H:%M') }} ({{ picked.kind }}) 지점으로 되돌리기
     </button>
     <a class="linkbtn" href="/team/restore">취소</a>
   </form>
@@ -148,20 +154,23 @@
   {% if points %}
   <div class="table-wrap">
     <table class="grid-table compact">
+      {# `파일` 칸은 그대로 둔다 — 관리자가 파일 이름으로 지점을 부른다. 다만 사람이 읽는
+         날짜 · 종류가 앞이고, 파일 이름은 옅게. 데이터 구조 판은 번호만 보이고 긴 이름은
+         풍선말로(숨기지 않는다 · UX 점검 11/16). #}
       <thead><tr>
         <th>날짜</th><th>종류</th><th>파일</th><th class="num">크기</th>
-        <th>스키마 판</th><th></th>
+        <th title="앱 업데이트마다 바뀌는 데이터 구조 번호 · 지금 앱보다 새 판이면 되돌릴 수 없습니다">데이터 구조 판</th><th></th>
       </tr></thead>
       <tbody>
         {% for p in points %}
         <tr {% if picked and picked.name == p.name %}class="picked-row"{% endif %}>
           <td>{{ p.at.strftime('%Y-%m-%d %H:%M') }}</td>
           <td>{{ p.kind }}</td>
-          <td class="muted">{{ p.name }}</td>
+          <td class="muted"><small>{{ p.name }}</small></td>
           <td class="num">{{ p.size_mb }}</td>
           <td>
-            {% if p.safe %}<span class="muted">{{ p.revision }}</span>
-            {% else %}<span class="warn-text" title="{{ p.note }}">되돌릴 수 없음</span>{% endif %}
+            {% if p.safe %}<span class="muted" title="{{ p.revision }}">{{ (p.revision or '').split('_')[0] }}</span>
+            {% else %}<span class="warn-text" title="{{ p.note }}{% if p.revision %} ({{ p.revision }}){% endif %}">되돌릴 수 없음</span>{% endif %}
           </td>
           <td>
             {% if p.safe %}<a class="linkbtn" href="/team/restore?pick={{ p.name }}">고르기</a>
@@ -176,8 +185,7 @@
   <p class="muted">되돌릴 수 있는 지점이 없습니다.</p>
   {% endif %}
   <p class="hint">
-    올린 시트 파일은 목록에 없습니다 — 이 앱은 <b>파일을 보관하지 않고</b> 읽어서
-    데이터로 넣기 때문입니다. 그래서 시트에서 온 내용은 위 표에 이미 들어 있습니다.
+    올린 시트 파일은 따로 보관하지 않습니다 — 내용은 데이터로 들어가 위 지점들에 함께 담겨 있습니다.
   </p>
 </section>
 {% endblock %}

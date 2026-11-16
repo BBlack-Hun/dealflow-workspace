@@ -168,7 +168,7 @@ def test_table_shows_the_stage_and_can_filter_on_it(client, db, contact):
     body = client.get("/contacts").text
 
     assert 'data-f-dealstage="IR 자료 요청"' in body      # 행에 값이 붙는다
-    assert "dealstage:진행 단계" in body                  # 컬럼 필터가 열린다
+    assert "dealstage:단계" in body                  # 컬럼 필터가 열린다
     assert "funnel-step" in body                          # 눌러서 거를 수 있다
 
 

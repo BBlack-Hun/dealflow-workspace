@@ -856,9 +856,13 @@ def agent_status(db: Session, user_id: Optional[int] = None) -> dict:
     if not online:
         label = "발송 프로그램 연결 안 됨"
     elif is_mock:
-        label = f"연습 모드 — 실제로 보내지 않음{f' · {host}' if host else ''}"
+        label = "연습 모드 — 실제로 보내지 않음"
     else:
-        label = f"발송 프로그램 연결됨{f' · {host}' if host else ''}"
+        label = "발송 프로그램 연결됨"
+    # PC 이름은 배지 글자에 싣지 않고 **툴팁**으로 둔다 — 배지는 모든 화면 왼쪽
+    # 아래에 늘 서서 화면 공유·캡처마다 PC 이름이 따라 나갔다. 어느 PC 인지는
+    # 배지에 대 보면 뜬다(`base.html` · `agent_badge.js`).
+    tip = f"연결된 PC: {host}" if online and host else ""
     if via != uid:
         owner = db.get(User, via)
         label = (f"{owner.name if owner else via} 발송기로 보냄 · "
@@ -871,4 +875,5 @@ def agent_status(db: Session, user_id: Optional[int] = None) -> dict:
         "hostname": host,
         "is_mock": is_mock,
         "label": label,
+        "tip": tip,
     }

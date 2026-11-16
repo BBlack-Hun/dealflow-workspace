@@ -361,6 +361,9 @@ class ListPage:
     # 아니라 우리가 챙기는 쪽이다. 눌러도 아무 일이 없는 단추가 더 나쁘다.
     investors: bool
     row_label: str      # 세는 것의 이름. 투자사 화면은 사람, 스타트업은 기업이다
+    # 세는 단위 — 사람은 `명`, 기업은 `곳`. 머리말 수·탭 수·필터 수가 같이 읽는다.
+    # 단위를 화면에 `명` 으로 박아 두면 기업 화면에 `기업 11 / 11명` 이 뜬다.
+    row_unit: str
     # 아무 명단도 안 골랐을 때의 표. 명단이 하나도 없는 화면에서만 쓰인다 —
     # 없으면 스타트업 화면이 투자사 명함 표를 그린다.
     default_layout: str
@@ -401,11 +404,11 @@ class ListPage:
 
 
 CONTACTS_PAGE = ListPage(key="vc", page=contact_columns.PAGE_CONTACTS,
-                         investors=True, row_label="담당자",
+                         investors=True, row_label="담당자", row_unit="명",
                          default_layout=contact_columns.DEFAULT,
                          room_check=True, settings_open=True)
 STARTUP_PAGE = ListPage(key="startup", page=contact_columns.PAGE_STARTUP,
-                        investors=False, row_label="기업",
+                        investors=False, row_label="기업", row_unit="곳",
                         default_layout=contact_columns.STARTUP,
                         # 스타트업 대표에게 줄 문서(`routers/startup.py`).
                         # 업무 보고가 아니다 — 그 화면은 팀원 단위로 잘리는데
@@ -541,7 +544,7 @@ def list_page(
     if not hidden:
         rows = [r for r in rows if not r["is_hidden"]]
     # 탭에 적는 `총원 / 확인`(11/13) — **그 탭의 표에 뜨는 줄**로 센다. 감춘 줄은
-    # 빠지되, [함께 보기](`?hidden=1`)로 연 탭은 표에 그 줄도 뜨니 같이 센다
+    # 빠지되, [감춘 줄도 보기](`?hidden=1`)로 연 탭은 표에 그 줄도 뜨니 같이 센다
     # (다른 탭 링크는 `hidden` 을 안 실어서 누르면 감춘 줄이 빠진 표가 뜬다).
     for t in tabs:
         with_hidden = bool(hidden) and t["key"] == selected
@@ -685,7 +688,7 @@ def list_page(
         # 명단을 안 고르고 **여러 명단을 한 표로** 보는 중인가(스타트업 `전체`).
         "list_view": list_view,
         # 링크가 실어 보낼 `sheet` — `전체` 를 보고 있으면 `all` 이다. 빈 값을
-        # 실으면 다음 화면이 `내 명단` 을 열어, 감춘 줄 [함께 보기] 를 누른 것뿐인데
+        # 실으면 다음 화면이 `내 명단` 을 열어, [감춘 줄도 보기] 를 누른 것뿐인데
         # 보던 `전체` 에서 튕겨 나간다.
         "sheet_q": selected or ("all" if all_view else ""),
         # 주소로 받은 검색어(`?q=`). 탭에서 친 검색어를 **`전체` 로 들고 가는**
@@ -735,7 +738,7 @@ def list_page(
         # 감춘 줄을 골라 **정말로 지우는** 자리를 세울까.
         #
         # 두 가지를 함께 본다.
-        #   ① `hidden`(= [함께 보기] 로 들어왔다) — **평소 화면에는 체크상자도
+        #   ① `hidden`(= [감춘 줄도 보기] 로 들어왔다) — **평소 화면에는 체크상자도
         #      [선택 삭제] 도 없다.** 감춘 것이 기본으로 섞여 나오면 감춘 뜻이
         #      없고, 지우는 단추가 늘 떠 있으면 감추기라는 한 걸음이 무의미해진다.
         #   ② `page.investors` — 이 길은 **투자사 관리 현황 하나만** 쓴다.

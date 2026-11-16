@@ -148,3 +148,27 @@ def test_the_preview_says_nothing_goes_when_no_file_at_all(stage):
     # 나가지 않으니 '추후 발송' 이라고 하지 않는다
     assert [a["later"] for a in preview["attachments"]] == [False]
     assert LATER not in preview["message"]
+
+
+def test_the_screen_warns_once_for_a_company_without_a_file(stage):
+    """파일명 없는 기업 경고는 **판에 한 번** — 같은 기업을 여러 담당자가 청하면
+    담당자 묶음마다 같은 경고가 되풀이됐다(UX 점검). 묶음 안에서는 딱지에 표시만."""
+    from app.models import IrRequest, VcContact
+
+    db = stage["db"]
+    other = VcContact(user_id=stage["user"].id, name="성춘향", title="심사역",
+                      firm="다라벤처스", source_sheet="내 명단",
+                      channel_kakao=1, connect_stage="connected",
+                      kakao_room_name="성춘향 심사역님")
+    db.add(other)
+    db.flush()
+    db.add(IrRequest(user_id=stage["user"].id, contact_id=other.id,
+                     company_id=stage["bare"].id, company_name="샘플페이",
+                     requested_at="2026-10-16"))
+    db.commit()
+
+    html = stage["client"].get("/ir").text
+    # 아래 안내 문단에도 `자료 파일명이 없는 기업은 …` 이 있어 경고 글자(`… 기업 N곳:`)로 센다.
+    assert html.count("⚠ 자료 파일명이 없는 기업") == 1, "같은 경고가 묶음마다 되풀이된다"
+    assert "자료 파일명이 없는 기업 1곳: 샘플페이" in html
+    assert html.count("샘플페이 · 파일명 없음") == 2, "묶음 안 딱지에 표시가 없다"

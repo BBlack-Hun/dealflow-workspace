@@ -222,11 +222,11 @@ def test_deals_page_shows_my_count_and_unsent_filter(logged, db, users):
     _mine_history(db, users)
 
     body = logged.get("/deals").text
-    assert "내 투자사 3/4 · 09/01" in body
-    assert "내 투자사 0/4" in body
+    assert "내 투자사 3/4명 · 09/01" in body
+    assert "내 투자사 0/4명" in body
     assert 'data-my-got="3"' in body and 'data-my-got="0"' in body
     assert 'id="only-unsent"' in body
-    assert "내가 아직 소개 안 한 기업만 (1개)" in body
+    assert "내가 아직 소개하지 않은 기업만 (1곳)" in body
 
 
 # --- IR 자료 파일명 일괄 입력 -----------------------------------------------

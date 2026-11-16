@@ -37,7 +37,7 @@ function build() {
   const table = D.el("table", { id: "cs-table" }, [D.el("tbody", {}, [a.tr, b.tr])]);
 
   const count = D.el("span", { class: "muted", id: "cs-pick-count" });
-  count.textContent = "0개 선택";
+  count.textContent = "0곳 선택";
   const pickAll = D.el("input", { type: "checkbox", id: "cs-pick-all" });
   const target = D.el("select", { id: "cs-startup-target" });
   target.value = "샘플 명단";
@@ -114,7 +114,7 @@ function pick(dom, which) {
     run(dom);
     pick(dom, dom.a);
     pick(dom, dom.b);
-    assert.strictEqual(dom.count.textContent, "2개 선택");
+    assert.strictEqual(dom.count.textContent, "2곳 선택");
     // 그 자리가 정말 여는 줄 안인가 — 몸통 안에 있으면 접었을 때 안 보인다.
     assert.strictEqual(dom.count.parent.tag, "summary",
                        "개수가 여는 줄 밖에 적혀 있습니다 — 접으면 안 보입니다");
@@ -131,7 +131,7 @@ function pick(dom, which) {
     assert.strictEqual(dom.fold.open, false,
                        "사람이 접어 둔 막대가 줄을 고르자 도로 펴졌습니다");
     // 그래도 개수는 따라간다 — 접힌 채로 보이는 값이라 이쪽은 계속 맞아야 한다.
-    assert.strictEqual(dom.count.textContent, "2개 선택");
+    assert.strictEqual(dom.count.textContent, "2곳 선택");
   }
 
   // 4) **여닫이가 없는 화면에서도 죽지 않는다.** 여닫이는 화면 쪽 일이라
@@ -141,7 +141,7 @@ function pick(dom, which) {
     dom.fold.removeAttribute("id");     // `#cs-startup-fold` 를 못 찾게 한다
     run(dom);
     pick(dom, dom.a);
-    assert.strictEqual(dom.count.textContent, "1개 선택");
+    assert.strictEqual(dom.count.textContent, "1곳 선택");
     assert.strictEqual(dom.button.disabled, false);
   }
 
