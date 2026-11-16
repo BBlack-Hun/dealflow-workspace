@@ -100,7 +100,7 @@ def _tab_counts(html: str) -> dict:
 def _table(html: str):
     """표에 뜬 줄 수와 그중 방 `확인됨` 인 줄 수."""
     rows = re.findall(r'<tr class="data-row[^"]*" data-id="\d+".*?>', html, re.S)
-    ok = re.findall(r'<tr class="data-row[^"]*" data-id="\d+"[^>]*?data-f-room="확인됨"',
+    ok = re.findall(r'<tr class="data-row[^"]*" data-id="\d+"[^>]*?data-f-room="확인 완료"',
                     html, re.S)
     return len(rows), len(ok)
 

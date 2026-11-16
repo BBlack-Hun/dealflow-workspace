@@ -58,8 +58,8 @@
        aria-label="오늘 미팅 {{ pi.today_meetings|length }}건">
       <b>{{ pi.today_meetings|length }}</b><span>오늘 미팅</span></a>
     <a class="react {% if pi.due_followups %}ok{% endif %}" href="/ir#meetings"
-       aria-label="결과 문의할 미팅 {{ pi.due_followups|length }}건">
-      <b>{{ pi.due_followups|length }}</b><span>결과 문의할 미팅</span></a>
+       aria-label="미팅 결과 확인 {{ pi.due_followups|length }}건">
+      <b>{{ pi.due_followups|length }}</b><span>미팅 결과 확인</span></a>
   </div>
   {% if pi.overdue_requests %}
   <p class="hint warn">
@@ -150,7 +150,7 @@
   <p class="hint">딜소개 명단 <b>{{ pipeline.listed }}</b>명 중 —
     보낼 준비 완료 <a href="{{ pipeline.ready_href }}"><b>{{ pipeline.ready }}</b>명</a>{% if pipeline.open %} ·
     <a href="{{ pipeline.open_href }}">연결 남음 {{ pipeline.open }}명</a>{% endif %}{% if pipeline.stuck %} ·
-    방이 없어 못 보냄 {{ pipeline.stuck }}명{% endif %}{% if closed_n %} ·
+    카톡방이 없어 못 보냄 {{ pipeline.stuck }}명{% endif %}{% if closed_n %} ·
     더 진행하지 않음 {{ closed_n }}명{% endif %}</p>
   {#
     연결은 끝났는데 **딜 소개를 멈춰 둔** 사람. 위 갈래와 **겹친다** — 연결이
@@ -170,7 +170,7 @@
     {% for p in pipeline.on_hold_people %}<a class="req-link" href="{{ p.href }}"
        title="이 투자사 상세 열기"><b>{{ p.name }}</b> <span class="muted">{{ p.firm }}</span></a>{% if not loop.last %}<span class="sep">·</span>{% endif %}{% endfor %}
     {% if pipeline.on_hold_more %}<span class="muted">외 {{ pipeline.on_hold_more }}명</span>{% endif %}
-    <span class="muted">— 위 <b>보낼 준비 완료</b>(방이 없으면 그 갈래)에 함께 세어져 있지만 <b>딜소개 발송 대상은 아닙니다</b></span>
+    <span class="muted">— 위 <b>보낼 준비 완료</b>(카톡방이 없으면 그 갈래)에 함께 세어져 있지만 <b>딜소개 발송 대상은 아닙니다</b></span>
   </p>
   {% endif %}
   {#
@@ -407,7 +407,7 @@
        "한 칸이 빠졌네" 하고 찾아 나서지 않는다. #}
     <p class="hint">
       <b>미팅완료 리마인드 TEL</b>은 월별로 나누지 않았습니다 —
-      그건 <b>아직 결과를 안 물어본 곳</b>(지금 상태)이라,
+      그건 <b>아직 결과 확인 전인 곳</b>(지금 상태)이라,
       전화를 걸고 나면 지난달 수가 뒤늦게 줄어듭니다.
       전체 수는 위 패널에 있습니다.
     </p>
@@ -433,10 +433,10 @@
       </li>
       {% endfor %}
     </ul>
-    <p class="hint">카톡방 제목이 실제와 한 글자라도 다르면 그 담당자에게는 발송되지 않습니다.
+    <p class="hint">카톡방 제목이 실제와 한 글자라도 다르면 그 심사역에게는 발송되지 않습니다.
       다른 방으로 잘못 나가지는 않습니다.</p>
     {% else %}
-    <p class="muted">담당자가 없습니다. 현황 시트를 업로드해 주세요.</p>
+    <p class="muted">심사역이 없습니다. 현황 시트를 업로드해 주세요.</p>
     {% endif %}
   </section>
 
@@ -501,7 +501,7 @@
     #}
     {% if no_reaction_count %}
     <p class="hint"><a class="linkbtn" href="/deals?noreact=1"
-       title="딜 제안 관리에서 [반응 없는 담당자만] 을 켠 채로 엽니다">딜소개를 받고 반응이 한 번도 없는 분
+       title="딜 제안 관리에서 [반응 없는 심사역만] 을 켠 채로 엽니다">딜소개를 받고 반응이 한 번도 없는 분
        <b>{{ no_reaction_count }}</b>명 — 딜 제안 관리에서 그분들만 보기</a></p>
     {% endif %}
     <p class="hint req-rank-all" id="req-rank-all"

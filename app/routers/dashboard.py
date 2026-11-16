@@ -365,7 +365,7 @@ def update_routine(routine_id: int, body: RoutineIn,
         # 주간 업무 쪽(`patch_task`)은 같은 경우에 400 을 낸다. 판정이 둘로
         # 갈려 있던 자리다.
         if not body.title.strip():
-            raise HTTPException(status_code=400, detail="세부업무를 비울 수 없습니다")
+            raise HTTPException(status_code=400, detail="내용을 비울 수 없습니다")
         row.title = body.title.strip()
     if body.time_of_day is not None:
         row.time_of_day = body.time_of_day if body.time_of_day in ("am", "pm") else None

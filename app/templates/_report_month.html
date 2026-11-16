@@ -38,31 +38,31 @@
       {% else %}회차 {{ rep.sends.rounds }}개 · 도착 성공{% endif %}
     </span></div>
   <a class="kpi-card" href="/reactions/list?key=total&month={{ rep.year }}-{{ '%02d'|format(rep.month) }}{% if scope %}&scope={{ scope }}{% endif %}{% if viewing and members %}&member={{ viewing.id }}{% endif %}">
-    <span class="kpi-label">잡은 미팅</span>
+    <span class="kpi-label">미팅 예약</span>
     <span class="kpi-value">{{ rep.total }}</span>
     <span class="kpi-sub">{{ rep.month }}월에 잡힌 전체</span></a>
   <a class="kpi-card" href="/reactions/list?key=done&month={{ rep.year }}-{{ '%02d'|format(rep.month) }}{% if scope %}&scope={{ scope }}{% endif %}{% if viewing and members %}&member={{ viewing.id }}{% endif %}">
-    <span class="kpi-label">진행한 미팅</span>
+    <span class="kpi-label">미팅 완료</span>
     <span class="kpi-value ok">{{ rep.done }}</span>
     <span class="kpi-sub">실제로 만난 건 · 취소 제외</span></a>
   <a class="kpi-card" href="/reactions/list?key=followup_done&month={{ rep.year }}-{{ '%02d'|format(rep.month) }}{% if scope %}&scope={{ scope }}{% endif %}{% if viewing and members %}&member={{ viewing.id }}{% endif %}">
-    <span class="kpi-label">결과 물어봄</span>
+    <span class="kpi-label">결과 확인</span>
     <span class="kpi-value">{{ rep.followup_done }}</span>
     <span class="kpi-sub">미팅 뒤 {{ rep.followup_days }}일쯤 확인 완료</span></a>
   <a class="kpi-card" href="/reactions/list?key=followup_open&month={{ rep.year }}-{{ '%02d'|format(rep.month) }}{% if scope %}&scope={{ scope }}{% endif %}{% if viewing and members %}&member={{ viewing.id }}{% endif %}">
-    <span class="kpi-label">아직 안 물어봄</span>
+    <span class="kpi-label">결과 확인 전</span>
     <span class="kpi-value {% if rep.followup_late %}bad{% elif rep.followup_open %}warn{% endif %}">{{ rep.followup_open }}</span>
     <span class="kpi-sub">
       {% if rep.followup_late %}그중 <b>{{ rep.followup_late }}건</b> 날짜 지남
-      {% elif rep.followup_open %}아직 물어볼 날 전
-      {% else %}모두 물어봄{% endif %}
+      {% elif rep.followup_open %}아직 확인할 날 전
+      {% else %}모두 확인{% endif %}
     </span></a>
 </div>
 {# 이 안내는 **한 번만** 말한다 — 연간 보기에서는 맨 위에 이미 한 번 섰다.
    열두 달마다 같은 문장이 서면 정작 달마다 다른 것이 안 읽힌다. #}
 {% if not yearly_view %}
 <p class="hint">
-  <b>결과를 묻는 것</b>이 이 보고의 목적입니다 — 원본 시트에도
+  <b>미팅 결과 확인</b>이 이 보고의 목적입니다 — 원본 시트에도
   "결과확인전화가 없으면 계약을 잊어버리는 경우가 발생할 수 있습니다" 라고
   적혀 있었습니다.
 </p>
@@ -122,7 +122,7 @@
         <th class="num" style="width:64px">완료</th>
         <th class="num" style="width:78px">안 나감</th>
         <th style="width:124px">상태</th>
-        {% if team_wide %}<th style="width:70px">담당자</th>{% endif %}
+        {% if team_wide %}<th style="width:70px">팀원</th>{% endif %}
         <th style="width:52px"></th>
       </tr></thead>
       <tbody>
@@ -187,8 +187,8 @@
       <thead><tr><th style="width:96px">미팅 일자</th><th style="width:170px">심사역 / 회사</th>
         <th style="width:132px">기업명</th>
         <th class="num" style="width:104px">투자유치희망금액</th>
-        <th style="width:62px">구분</th>{% if team_wide %}<th style="width:70px">담당자</th>{% endif %}
-        <th style="width:72px">결과</th><th style="width:130px">결과 문의</th>
+        <th style="width:62px">구분</th>{% if team_wide %}<th style="width:70px">팀원</th>{% endif %}
+        <th style="width:72px">결과</th><th style="width:130px">미팅 결과 확인</th>
         {# 딜 진행 관리에서 적은 것을 그대로 가져온다 — 보고를 쓰려고 같은 말을
            두 번 적게 하면 한쪽은 반드시 비어 있게 된다. #}
         <th>후기 · 투자사 답변 내용</th></tr></thead>
@@ -208,7 +208,7 @@
             {% if m.status != 'done' %}<span class="muted">미완료</span>
             {% elif m.followup_done %}완료
             {# 거절로 끝났거나 다음 미팅을 잡았으면 물어볼 것이 없다. #}
-            {% elif not m.needs_followup %}<span class="muted">문의 불필요</span>
+            {% elif not m.needs_followup %}<span class="muted">확인 불필요</span>
             {% elif m.followup_late %}{{ m.followup_due }} 지남
             {% else %}{{ m.followup_due }} 예정{% endif %}
           </td>
@@ -318,7 +318,7 @@
        말해 준다 — 여기서는 그리로 보낸다. #}
     <p class="hint {% if rep.ir_meeting_ask_overdue %}warn{% endif %}">
       {% if rep.ir_meeting_ask_overdue %}자료를 보낸 지 {{ rep.ir_meeting_ask_days }}일이
-      지났는데 회의실 미팅 톡 요청을 안 보낸 담당자가 {{ rep.ir_meeting_ask_overdue }}명
+      지났는데 회의실 미팅 톡 요청을 안 보낸 심사역이 {{ rep.ir_meeting_ask_overdue }}명
       있습니다 — {% endif %}누구인지는
       <a href="#reactions{{ sfx }}">아래 <b>이 달의 반응</b></a> 의
       <b>IR 요청 투자사</b> 표에 줄마다 적혀 있습니다.
@@ -367,7 +367,7 @@
            (`IR 자료 전달 완료 · 2026-11-11 14:05`, `report.request_status_note`).
            같은 자로 190px 이라 폭은 그대로 둔다. #}
         <th style="width:236px">상태</th>
-        {% if not viewing %}<th style="width:80px">담당자</th>{% endif %}
+        {% if not viewing %}<th style="width:80px">팀원</th>{% endif %}
       </tr></thead>
       <tbody>
         {% for r in b.rows %}

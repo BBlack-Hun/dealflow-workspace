@@ -53,7 +53,7 @@ from .investor_firms import firm_key
 COLUMNS = (
     # 이름 통일(10/22) — 투자사 쪽은 투자사 관리 현황 낱말, 기업 쪽은 IR 기업 현황 낱말.
     ("firm", "회사", "딜 진행 관리 미팅(없으면 IR 요청)의 투자사 — 하나일 때만"),
-    ("vc_name", "심사역 이름", "투자사 관리 현황 — 이 줄 담당자의 명단"),
+    ("vc_name", "심사역 이름", "투자사 관리 현황 — 이 줄을 맡은 팀원의 명단"),
     ("vc_phone", "심사역 휴대폰", "투자사 관리 현황 — 그 심사역의 휴대폰"),
     ("company_name", "기업명", None),
     ("ceo_name", "대표자명", "스타트업DB — 대표자명"),
@@ -69,9 +69,9 @@ COLUMNS = (
     ("meeting2_done", "2차 미팅 완료일", "딜 진행 관리 미팅 — 2차 · 완료"),
     # 2판(0111) — 우리 수수료. 미팅 다음 · 결과 앞: 진행을 보고 내리는 예상이라
     # 한 묶음으로 결과 곁에 둔다(값매김 칸 사이에 끼우면 프리 · 포스트가 갈린다).
-    ("fee_rate", "성공보수율",
+    ("fee_rate", "성공보수율(%)",
      "이어 둔 투자컨설턴트 계약 · 스타트업 명단의 성공보수율(하나로 모일 때만)"),
-    ("expected_fee", "예상 수수료(억)",
+    ("expected_fee", "성공보수(수수료, 억)",
      "투자유치희망금액(구간이면 아래) × 성공보수율(%) ÷ 100"),
     ("expected_month", "예상 시기", None),
     # #94 — 관리자 추가 칸이던 `후속라운드 시작 년월` 을 칸으로(0128). 이름은 그대로 둔다.
@@ -142,7 +142,7 @@ def clean(field: str, text: str) -> str:
             raise InputError("성공보수율은 % 숫자 하나로 적으세요 — 예: 3.5")
         return number(rate(text))
     if field == "expected_fee" and amount.state(text) == amount.UNREADABLE:
-        raise InputError("예상 수수료는 억 단위 숫자로 적으세요 — 예: 0.5 · 5천만원")
+        raise InputError("성공보수(수수료)는 억 단위 숫자로 적으세요 — 예: 0.5 · 5천만원")
     if field in MONTH_FIELDS:
         found = month(text)
         if not found:

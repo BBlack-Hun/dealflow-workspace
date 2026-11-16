@@ -898,8 +898,8 @@ class _ReportSheet:
 def _kpi(sheet, data):
     """화면 맨 위 KPI 줄을 그대로. 가로 한 줄이라 칸 폭에 매이지 않는다."""
     sends = data["sends"]
-    labels = ["보낸 건수", "발송 회차", "안 나감", "잡은 미팅", "진행한 미팅",
-              "결과 물어봄", "아직 안 물어봄", "IR 요청", "IR 전달"]
+    labels = ["보낸 건수", "발송 회차", "안 나감", "미팅 예약", "미팅 완료",
+              "결과 확인", "결과 확인 전", "IR 요청", "IR 전달"]
     values = [sends["sent"], sends["rounds"], sends["left"], data["total"],
               data["done"], data["followup_done"], data["followup_open"],
               data["ir_requested"], data["ir_delivered"]]
@@ -930,7 +930,7 @@ def _sends_sheet(sheet, data, team_wide):
     # 어긋나면 두 표가 서로 다른 자리에 서 버린다.
     # `투자사 · 심사역` 은 미팅 요청·후기 · 딜 소싱 줄만 찬다(`report.NAMED_GROUPS`).
     headers = ["날짜", "회차명", "딜 소개", "대상", "완료", "안 나감",
-               "안 나간 사유", "상태", "투자사 · 심사역"] + (["담당자"] if team_wide else [])
+               "안 나간 사유", "상태", "투자사 · 심사역"] + (["팀원"] if team_wide else [])
     nums = {2, 3, 4, 5}
     for group in sends["groups"]:
         sheet.blank()
@@ -971,14 +971,14 @@ def _meetings_sheet(sheet, data, team_wide):
     """
     sheet.title(f"{data['year']}년 {data['month']}월 미팅  총 {data['total']}개사"
                 f"  ·  {data['done']}개사 완료",
-                f"결과 문의는 미팅 뒤 {data['followup_days']}일쯤 겁니다 — "
+                f"미팅 결과 확인은 미팅 뒤 {data['followup_days']}일쯤 합니다 — "
                 f"그걸 놓치면 계약이 흐지부지됩니다.")
     # 화면의 미팅 표와 **같은 이름**이다(#87 — 투자사 쪽 사람은 `심사역`, 우리 팀원은
     # `담당자`, 기업은 `기업명`). 화면은 `심사역 / 회사` 를 한 칸에 얹고 파일은 나눈다.
     # 첫 칸은 미팅 날(`scheduled_at`)이라 `미팅 일자` — 화면 표 · 미팅 카드 목록과 같은 말.
     headers = (["미팅 일자", "심사역", "회사", "기업명", "투자유치희망금액", "구분"]
-               + (["담당자"] if team_wide else [])
-               + ["결과", "결과 문의", "후기 · 투자사 답변 내용"])
+               + (["팀원"] if team_wide else [])
+               + ["결과", "미팅 결과 확인", "후기 · 투자사 답변 내용"])
     last = len(headers) - 1
     sheet.blank()
     if not data["weeks"]:
@@ -993,12 +993,12 @@ def _meetings_sheet(sheet, data, team_wide):
         elif m["followup_done"]:
             ask = "완료"
         elif not m["needs_followup"]:
-            ask = "문의 불필요"
+            ask = "확인 불필요"
         elif m["followup_late"]:
             ask = f"{m['followup_due']} 지남"
         else:
             ask = f"{m['followup_due']} 예정"
-        told = [t for t in (m["note"], (f"문의: {m['followup_note']}"
+        told = [t for t in (m["note"], (f"결과 확인: {m['followup_note']}"
                                         if m["followup_note"] else "")) if t]
         sheet.row(
             [m["date"], m["name"], m["firm"], m["company"], m["raise_target"], m["kind"]]
@@ -1030,7 +1030,7 @@ def _meetings_sheet(sheet, data, team_wide):
              (f"{pipeline.LABEL_NOT_ASKED}(명)", data["ir_meeting_ask_missing"])]
     # 사람 수와 건수가 같으면 이 줄은 아무 말도 안 한다 — 그때는 안 싣는다.
     if data["ir_meeting_ask_rows_note"]:
-        stats.append(("그 담당자가 받은 자료 요청(건)",
+        stats.append(("그 심사역이 받은 자료 요청(건)",
                       data["ir_meeting_ask_rows"]))
     stats.append((f"그중 {data['ir_meeting_ask_days']}일 지남(명)",
                   data["ir_meeting_ask_overdue"]))
@@ -1055,7 +1055,7 @@ def _buckets_sheet(sheet, data, team_wide):
     sheet.title(f"{data['year']}년 {data['month']}월 · 이 달의 반응",
                 "숫자만 보면 '그게 누구였지' 가 이어집니다 — 이름과 날짜를 함께 둡니다.")
     headers = (["날짜", "심사역", "직함", "회사", "기업명", "투자유치희망금액", "상태"]
-               + (["담당자"] if team_wide else []))
+               + (["팀원"] if team_wide else []))
     status_col = 6
     for bucket in data["buckets"]:
         sheet.blank()
@@ -1194,8 +1194,8 @@ def _yearly_sheet(sheet, data):
     sheet.band("요약")
     # 화면 맨 위 KPI 줄과 **같은 칸·같은 차례**다(`_kpi`). 한 해와 한 달이 다른
     # 칸을 세우면 둘을 나란히 놓고 볼 수가 없다.
-    labels = ["보낸 건수", "발송 회차", "안 나감", "잡은 미팅", "진행한 미팅",
-              "결과 물어봄", "아직 안 물어봄", "IR 요청", "IR 전달"]
+    labels = ["보낸 건수", "발송 회차", "안 나감", "미팅 예약", "미팅 완료",
+              "결과 확인", "결과 확인 전", "IR 요청", "IR 전달"]
     values = [totals["send_sent"], totals["send_rounds"], totals["send_left"],
               totals["total"], totals["done"], totals["followup_done"],
               totals["followup_open"], totals["ir_requested"],
@@ -1272,7 +1272,7 @@ def yearly_report_workbook(data: dict, *, who: str, today: date,
     sheet = _ReportSheet(ws, [20] + [7] * 12 + [9], 14)
     sheet.title(f"{year}년 업무 보고 · 연간",
                 f"{who} · {today.isoformat()} 뽑음 · 월간 보고와 같은 판 차례 · "
-                f"판마다 항목이 줄, 달이 칸 "
+                f"판마다 항목이 줄, 달이 열 "
                 f"— 한 달치 회차·미팅·반응은 그 달 파일에 있습니다.")
     sheet.blank()
     _yearly_sheet(sheet, data)

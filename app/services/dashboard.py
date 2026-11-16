@@ -204,10 +204,10 @@ def clamp_top(top: int) -> int:
 
 
 ROOM_LABELS = {
-    ROOM_CONFIRMED: ("확인됨", "ok"),
-    "unverified": ("미확인", "warn"),
-    "failed": ("방 없음 · 실패", "bad"),
-    "missing": ("방 미등록", "bad"),
+    ROOM_CONFIRMED: ("확인 완료", "ok"),
+    "unverified": ("확인 전", "warn"),
+    "failed": ("연결 실패", "bad"),
+    "missing": ("카톡방 미등록", "bad"),
     "email": ("메일 채널", "muted"),
     # '미지정' 은 아직 안 정한 것처럼 읽혀서, 채우면 보낼 수 있는 줄로 오해된다.
     # 카톡도 메일도 아닌 사람이라 **보낼 길이 없는** 줄이다.
@@ -738,7 +738,7 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None,
             # 두 수를 더해야 하고, 보고에 적는 수는 어차피 합계다).
             {"key": "sent", "label": "이번 주 보낸 건수", "value": sent_this_week,
              "sub": (f"{report.day_label(week_start.isoformat())}부터 · 도착 성공"
-                     + (f" · 손으로 적음 {len(manual)}" if manual else "")),
+                     + (f" · 직접 기록 {len(manual)}" if manual else "")),
              "href": ("/deals?contacts=" + ",".join(str(i) for i in sent_ids)
                       if sent_ids else "/deals")},
         ],
