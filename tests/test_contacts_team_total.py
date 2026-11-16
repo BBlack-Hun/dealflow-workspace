@@ -89,7 +89,7 @@ def _all_tab(html: str) -> str:
 
 def test_a_member_sees_both_counts(world):
     tab = _all_tab(_login("01000000001").get("/contacts").text)
-    assert "내 명단 2명 / 카톡방 확인 0 · 팀 전체 5명" in tab, tab
+    assert "내 명단 2명 / 카톡방 확인 완료 0 · 팀 전체 5명" in tab, tab
     assert "표에는 내 명단이 보입니다" in tab, "무엇이 표에 뜨는지 풍선말이 없다"
 
 
@@ -98,7 +98,7 @@ def test_the_team_total_is_the_admins_number(db, world):
     from app.services import sheet_owner
 
     admin_tab = _all_tab(_login(ADMIN_PHONE).get("/contacts?sheet=all").text)
-    said = re.search(r"전체 <span[^>]*>(\d+)명 / 카톡방 확인 \d+</span>", admin_tab)
+    said = re.search(r"전체 <span[^>]*>(\d+)명 / 카톡방 확인 완료 \d+</span>", admin_tab)
     assert said, admin_tab
     assert int(said.group(1)) == 5
     assert sheet_owner.team_total(db) == 5
@@ -109,7 +109,7 @@ def test_the_team_total_is_the_admins_number(db, world):
 def test_the_admin_keeps_one_number(world):
     tab = _all_tab(_login(ADMIN_PHONE).get("/contacts").text)
     assert "팀 전체" not in tab and "내 명단" not in tab, tab
-    assert re.search(r"전체 <span[^>]*>5명 / 카톡방 확인 0</span>", tab), tab
+    assert re.search(r"전체 <span[^>]*>5명 / 카톡방 확인 완료 0</span>", tab), tab
 
 
 def test_the_members_table_does_not_change(world):
@@ -127,7 +127,7 @@ def test_the_count_ignores_what_the_admin_does_not_count(db, world):
 
     assert sheet_owner.team_total(db) == 5
     tab = _all_tab(_login("01000000002").get("/contacts").text)
-    assert "내 명단 3명 / 카톡방 확인 0 · 팀 전체 5명" in tab, tab
+    assert "내 명단 3명 / 카톡방 확인 완료 0 · 팀 전체 5명" in tab, tab
 
 
 def test_a_member_still_gets_only_their_rows(db, world, users):

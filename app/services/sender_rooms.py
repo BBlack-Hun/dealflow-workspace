@@ -73,7 +73,7 @@ PICKS = "picks"
 NOT_FOUND = "not_found"
 NEVER = "never"
 STATE_LABELS = {
-    CONFIRMED: "확인됨",
+    CONFIRMED: "확인 완료",
     PICKS: "후보 {n}개 — 골라 주세요",
     NOT_FOUND: "못 찾음",
     NEVER: "아직 안 찾아봄",
@@ -349,7 +349,7 @@ def apply_result(db: Session, item: SendItem, body, verdict: str) -> None:
     job = item.job
     if contact is None or job is None:
         item.status = "failed"
-        item.error = "담당자를 찾을 수 없습니다"
+        item.error = "심사역을 찾을 수 없습니다"
         return
     sourcing = person is not None and item.contact is None
     own = (contact.kakao_room_name or "").strip()

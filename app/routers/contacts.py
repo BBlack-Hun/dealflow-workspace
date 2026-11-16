@@ -44,9 +44,9 @@ router = APIRouter(prefix="/api/contacts", tags=["contacts"])
 REACTION_WINDOW_DAYS = 90
 
 ROOM_BADGES = {
-    "verified": ("ok", "● 확인됨"),
-    "unverified": ("wait", "○ 미확인"),
-    "not_found": ("warn", "⚠ 방 없음"),
+    "verified": ("ok", "● 확인 완료"),
+    "unverified": ("wait", "○ 확인 전"),
+    "not_found": ("warn", "⚠ 연결 실패"),
     "ambiguous": ("warn", "⚠ 복수 매칭"),
 }
 # 상태 값·이름은 **발송 대상 판정과 같은 곳**에 있다(`sheet_owner`). 판정이
@@ -433,7 +433,7 @@ def _owned(db: Session, contact_id: int, user: User) -> VcContact:
     if contact is None or not (contact.user_id == user.id
                                or may_manage_team_contacts(user)):
         # 남의 담당자는 '없는 것'으로 답한다(존재 여부도 흘리지 않는다).
-        raise HTTPException(status_code=404, detail="담당자를 찾을 수 없습니다")
+        raise HTTPException(status_code=404, detail="심사역을 찾을 수 없습니다")
     return contact
 
 
@@ -588,11 +588,11 @@ def verify_rooms(
     if not targets and not search:
         # 방 이름이 빈 줄도 이름으로 찾으므로(`vc_room_search.searchable`) 여기까지 오면
         # 메일 · 문자로만 받거나 · 이름이 비었거나 · 방을 나간 줄뿐이다.
-        detail = ("확인할 담당자가 없습니다 — 카톡방 이름이 적혀 있거나, 이름이 있고 "
-                  "메일 · 문자로만 받지 않는 투자사 담당자만 확인합니다")
+        detail = ("확인할 심사역이 없습니다 — 카톡방 이름이 적혀 있거나, 이름이 있고 "
+                  "메일 · 문자로만 받지 않는 투자사 심사역만 확인합니다")
         startup = sheet_owner.page_labels(db, contact_columns.PAGE_STARTUP)
         if conflicts:
-            detail = (f"동명이인인데 방 이름까지 같아 구별되지 않습니다: "
+            detail = (f"동명이인인데 카톡방 이름까지 같아 구별되지 않습니다: "
                       f"{', '.join(conflicts[:5])} — 방 이름을 서로 다르게(투자사명 "
                       "포함) 넣어주세요")
         elif req.contact_ids and not own:
@@ -601,8 +601,8 @@ def verify_rooms(
                       "'팀원 화면으로 보기'로 그 팀원 화면에서 확인하세요")
         elif any(sheet_owner.on_page(c, startup) for c in contacts):
             # 스타트업 줄은 대개 방 이름이 없다 — 대조할 이름부터 찾아야 한다.
-            detail = ("방 이름이 적힌 줄이 없습니다 — [카톡방 찾기·확인]으로 회사명으로 먼저 "
-                      "찾고 [방 매칭]에서 확정하세요")
+            detail = ("카톡방 이름이 적힌 줄이 없습니다 — [카톡방 찾기·확인]으로 회사명으로 먼저 "
+                      "찾고 [카톡방 매칭]에서 확정하세요")
         db.commit()
         raise HTTPException(status_code=400, detail=detail)
 
@@ -675,7 +675,7 @@ def assign_to_my_sheet(body: AssignIn, db: Session = Depends(get_db),
     if len(rows) != len(ids) or not all(
             c.user_id == user.id or may_manage_team_contacts(user)
             or set(sheet_owner.labels_of(c.source_sheet)) <= pool for c in rows):
-        raise HTTPException(status_code=404, detail="담당자를 찾을 수 없습니다")
+        raise HTTPException(status_code=404, detail="심사역을 찾을 수 없습니다")
     # 투자사로 세지 않기로 한 명단에서는 꺼내 오지 않는다. 여기서 내 명단에
     # 더하는 순간 그 사람들이 투자사 수에 다시 들어오고 발송 대상에도 뜬다 —
     # 방금 빼 둔 것을 되돌리는 길이 열려 있는 셈이다. 화면에서 이미 단추를
@@ -865,7 +865,7 @@ def assign_sheet(
         raise HTTPException(status_code=403, detail="명단 담당은 관리자만 바꿀 수 있습니다")
     target = int(user_id) if user_id.strip().isdigit() else None
     if target is not None and db.get(User, target) is None:
-        raise HTTPException(status_code=404, detail="계정을 찾을 수 없습니다")
+        raise HTTPException(status_code=404, detail="팀원을 찾을 수 없습니다")
     sheet_owner.assign(db, label.strip(), target)
     db.commit()
     from fastapi.responses import RedirectResponse
@@ -987,14 +987,14 @@ def add_column(label: str = Form(""), sheet: str = Form(""),
     name = _sheet_or_400(db, sheet)
     text = (label or "").strip()
     if not text:
-        return RedirectResponse(f"{_back(db, name)}?sheet={quote(name)}&msg=칸+이름을+입력하세요",
+        return RedirectResponse(f"{_back(db, name)}?sheet={quote(name)}&msg=열+이름을+입력하세요",
                                 status_code=303)
     for col in contact_columns.month_columns(db, name):
         col.position += 1
     db.add(ContactColumn(sheet=name, label=text[:80], position=0))
     db.commit()
     return RedirectResponse(
-        f"{_back(db, name)}?sheet={quote(name)}&msg={quote(text)}+칸을+추가했습니다",
+        f"{_back(db, name)}?sheet={quote(name)}&msg={quote(text)}+열을+추가했습니다",
         status_code=303)
 
 
@@ -1004,7 +1004,7 @@ def rename_column(column_id: int, label: str = Form(""),
                   user: User = Depends(require_admin)):
     col = db.get(ContactColumn, column_id)
     if col is None:
-        raise HTTPException(status_code=404, detail="칸을 찾을 수 없습니다")
+        raise HTTPException(status_code=404, detail="열을 찾을 수 없습니다")
     from fastapi.responses import RedirectResponse
 
     if (label or "").strip():
@@ -1035,7 +1035,7 @@ def toggle_column_hidden(column_id: int, db: Session = Depends(get_db),
 
     col = db.get(ContactColumn, column_id)
     if col is None:
-        raise HTTPException(status_code=404, detail="칸을 찾을 수 없습니다")
+        raise HTTPException(status_code=404, detail="열을 찾을 수 없습니다")
     col.is_hidden = 0 if col.is_hidden else 1
     db.commit()
     return RedirectResponse(f"{_back(db, col.sheet)}?sheet={quote(col.sheet)}",
@@ -1053,7 +1053,7 @@ def delete_column(column_id: int, db: Session = Depends(get_db),
 
     col = db.get(ContactColumn, column_id)
     if col is None:
-        raise HTTPException(status_code=404, detail="칸을 찾을 수 없습니다")
+        raise HTTPException(status_code=404, detail="열을 찾을 수 없습니다")
     sheet, key = col.sheet, contact_columns.note_key(col.id)
     for contact in db.execute(select(VcContact)).scalars().all():
         values = contact_columns.load_notes(contact.notes)
@@ -1085,7 +1085,7 @@ def memo_intro_apply(body: MemoIntroIn, db: Session = Depends(get_db),
     name = _sheet_or_400(db, body.sheet)
     if not sheet_owner.may_add_row(db, user, name):
         raise HTTPException(status_code=403,
-                            detail="이 탭의 담당자와 관리자만 반영할 수 있습니다")
+                            detail="이 탭의 담당 팀원과 관리자만 반영할 수 있습니다")
     plan = memo_intro.plan(db, name)
     for contact_id in plan["contact_ids"]:
         _owned(db, contact_id, user)
@@ -1694,7 +1694,7 @@ CASCADING_LINKS = (
     ("activities", ContactActivity, "활동 이력"),
     # 보내는 계정 카톡에서의 이 담당자 방 제목(`services/sender_rooms.py`).
     # 담당자 줄이 없어지면 가리킬 곳이 없는 확인 기록이다 — 함께 지운다.
-    ("sender_rooms", SenderRoom, "보내는 계정 방 제목"),
+    ("sender_rooms", SenderRoom, "보내는 계정 카톡방 제목"),
     # 리마인드 뒤 `답 없음 · 전화 요청` 표시와 메모(`models.DealFollowup`).
     # 그 사람에 대한 할 일 표시라 담당자 줄이 없어지면 가리킬 곳이 없다 — 함께
     # 지운다. (표시가 설 수 있는 사람은 리마인드가 나간 사람이라 대개 발송
@@ -2262,7 +2262,7 @@ def rename_list_sheet(old: str = Form(""), new: str = Form(""),
         return RedirectResponse(f"{_back(db, before)}?sheet={quote(before)}", status_code=303)
     if not sheet_owner.may_add_row(db, user, before):
         raise HTTPException(status_code=403,
-                            detail="이 탭의 담당자와 관리자만 이름을 바꿀 수 있습니다")
+                            detail="이 탭의 담당 팀원과 관리자만 이름을 바꿀 수 있습니다")
 
     try:
         sheet_owner.rename(db, before, after)
@@ -2368,7 +2368,7 @@ def _blank_content(kind: str, cols: int, rows: int) -> str:
     import json
 
     if kind == "table":
-        data = {"columns": [f"칸 {i + 1}" for i in range(cols)],
+        data = {"columns": [f"열 {i + 1}" for i in range(cols)],
                 "rows": [["" for _ in range(cols)] for _ in range(rows)]}
     else:
         data = {"body": ""}

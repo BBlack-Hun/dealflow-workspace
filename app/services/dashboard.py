@@ -204,10 +204,10 @@ def clamp_top(top: int) -> int:
 
 
 ROOM_LABELS = {
-    ROOM_CONFIRMED: ("확인됨", "ok"),
-    "unverified": ("미확인", "warn"),
-    "failed": ("방 없음 · 실패", "bad"),
-    "missing": ("방 미등록", "bad"),
+    ROOM_CONFIRMED: ("확인 완료", "ok"),
+    "unverified": ("확인 전", "warn"),
+    "failed": ("연결 실패", "bad"),
+    "missing": ("카톡방 미등록", "bad"),
     "email": ("메일 채널", "muted"),
     # '미지정' 은 아직 안 정한 것처럼 읽혀서, 채우면 보낼 수 있는 줄로 오해된다.
     # 카톡도 메일도 아닌 사람이라 **보낼 길이 없는** 줄이다.

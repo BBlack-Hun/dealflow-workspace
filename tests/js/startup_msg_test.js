@@ -97,9 +97,9 @@ function flush() { return new Promise(function (r) { setImmediate(r); }); }
   {
     const s = build();
     assert.strictEqual(s.sendBtn.disabled, true, "아무것도 안 골랐는데 눌린다");
-    assert.strictEqual(s.sendBtn.textContent, "0곳 대기 목록 만들기");
+    assert.strictEqual(s.sendBtn.textContent, "0곳 대기 회차 만들기");
     check(s, 11); check(s, 12);
-    assert.strictEqual(s.sendBtn.textContent, "2곳 대기 목록 만들기");
+    assert.strictEqual(s.sendBtn.textContent, "2곳 대기 회차 만들기");
     assert.strictEqual(s.sendBtn.disabled, false);
   }
 
@@ -113,7 +113,7 @@ function flush() { return new Promise(function (r) { setImmediate(r); }); }
     assert.strictEqual(s.rows[1].hidden, true, "계약여부로 안 걸러졌다");
     assert.strictEqual(s.pick(12).checked, false,
       "감춘 줄의 체크가 남았다 — 안 보이는 기업에 나간다");
-    assert.strictEqual(s.sendBtn.textContent, "1곳 대기 목록 만들기");
+    assert.strictEqual(s.sendBtn.textContent, "1곳 대기 회차 만들기");
 
     sel.value = "";
     sel.fire("change", { target: sel });
@@ -131,7 +131,7 @@ function flush() { return new Promise(function (r) { setImmediate(r); }); }
     const all = s.byId("msg-all");
     all.checked = true;
     all.fire("change", { target: all });
-    assert.strictEqual(s.sendBtn.textContent, "2곳 대기 목록 만들기",
+    assert.strictEqual(s.sendBtn.textContent, "2곳 대기 회차 만들기",
       "못 고르는 줄까지 세었다");
   }
 

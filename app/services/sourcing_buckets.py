@@ -183,7 +183,7 @@ def rename(db: Session, before: str, after: str) -> int:
         return 0
     stored = variants(db, before)
     if not stored:
-        raise RenameError(f"없는 갈래입니다: {before}")
+        raise RenameError(f"없는 탭입니다: {before}")
     # 투자사 관리 현황과 이어진 갈래(`sourcing_sync.BRANCHES`)는 **이름이 곧
     # 잇는 열쇠**다. 바꾸면 그쪽 `딜 소싱` 칸에서 그 갈래가 통째로 빠지고, 다음
     # 체크는 옛 이름의 새 갈래(유령 탭)를 만든다.
@@ -191,8 +191,8 @@ def rename(db: Session, before: str, after: str) -> int:
 
     if any(same(before, bucket) for bucket in sourcing_sync.SYNC_BUCKETS):
         raise RenameError(
-            f"'{before}' 은 투자사 관리 현황의 `{sourcing_sync.COLUMN_LABEL}` 칸과 "
-            "이어진 갈래라 이름을 바꿀 수 없습니다")
+            f"'{before}' 은 투자사 관리 현황의 `{sourcing_sync.COLUMN_LABEL}` 열과 "
+            "이어진 탭이라 이름을 바꿀 수 없습니다")
     if sourcing_sync.branch_of(after) is not None:
         # 거꾸로 — 다른 갈래를 잇는 갈래의 이름(짧은 이름 `M&A` 포함)으로 바꾸면 그 줄이
         # 잇는 갈래로 읽힌다(`branch_of`). [+ 탭 추가]도 같은 이유로 막는다(`create`).
@@ -265,7 +265,7 @@ def create(db: Session, name: Optional[str]) -> str:
     if len(label) > NEW_MAX:
         raise RenameError(f"탭 이름은 {NEW_MAX}자까지입니다")
     if key(label).lower() in ("all", "전체"):
-        raise RenameError("'전체' 는 모든 갈래를 함께 보는 탭이라 이름으로 쓸 수 없습니다")
+        raise RenameError("'전체' 는 모든 탭을 함께 보는 탭이라 이름으로 쓸 수 없습니다")
     if sourcing_sync.branch_of(label) is not None:
         raise RenameError(
             f"'{label}' 은 투자사 관리 현황과 잇는 갈래 이름이라 새 탭으로 만들 수 없습니다")
@@ -290,7 +290,7 @@ def delete(db: Session, label: Optional[str]) -> None:
 
     label = (label or "").strip()
     if any(same(label, bucket) for bucket in sourcing_sync.SYNC_BUCKETS):
-        raise RenameError(f"'{label}' 은 투자사 관리 현황과 이어진 갈래라 지울 수 없습니다")
+        raise RenameError(f"'{label}' 은 투자사 관리 현황과 이어진 탭이라 지울 수 없습니다")
     people = db.scalar(select(func.count()).select_from(SourcingContact).where(
         SourcingContact.bucket.in_(variants(db, label)))) or 0
     if people:

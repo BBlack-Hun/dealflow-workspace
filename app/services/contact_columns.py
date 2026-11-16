@@ -266,7 +266,7 @@ class Layout:
     #: (아래 `required_label`) — 두 곳에 적어 두면 표는 `기업명`, 안내는
     #: `회사명` 이 되어 같은 칸인지 알아볼 수가 없다. 이 값은 머리글이 화면에
     #: 그대로 적혀 있어 목록에 없는 배치(투자사 명함)만 쓴다.
-    required_fallback: str = "담당자명"
+    required_fallback: str = "심사역 이름"
 
     @property
     def required_label(self) -> str:
@@ -981,7 +981,7 @@ STARTUP_LAYOUT = Layout(
         #
         # 표에 안 세우는 이유는 옆 칸들과 같다 — 매달 보는 칸이 눌린다.
         Column("원본NO", "origin_no", 0, source="note", in_table=False,
-               hint="담당자 워크북의 원본 명단 번호"),
+               hint="팀원 워크북의 원본 명단 번호"),
         # **우리 팀 안에서 넘긴 이력**이다(`7/21 김담당 -> 8/19 이담당`).
         # 스타트업 쪽 담당자가 아니라서 `성함` 이 아니다 — 거기 넣으면 기업의
         # 연락 상대 자리에 우리 팀원 이름이 앉는다.

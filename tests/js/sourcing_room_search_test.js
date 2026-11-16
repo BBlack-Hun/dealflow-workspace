@@ -109,7 +109,7 @@ function clickAll(t, on) { t.all.checked = on; t.all.fire("change"); }
 {
   const rows = [row(11, "홍길동", true), row(12, "김철수", true)];
   const t = setup(rows);
-  assert.strictEqual(t.btn.textContent, "방 후보 찾기 (선택 0명)",
+  assert.strictEqual(t.btn.textContent, "카톡방 후보 찾기 (선택 0명)",
                      "방 없는 분 수가 아니라 고른 수를 적어야 한다");
   assert.strictEqual(t.btn.disabled, true, "아무도 안 골랐는데 단추가 눌린다");
   assert.strictEqual(t.hint.hidden, false);
@@ -125,22 +125,22 @@ function clickAll(t, on) { t.all.checked = on; t.all.fire("change"); }
   const t = setup(rows);
   pick(rows[2]);
   pick(rows[0]);
-  assert.strictEqual(t.btn.textContent, "방 후보 찾기 (선택 2명)");
+  assert.strictEqual(t.btn.textContent, "카톡방 후보 찾기 (선택 2명)");
   assert.strictEqual(t.btn.disabled, false, "골랐는데 잠겨 있다");
   assert.strictEqual(t.hint.hidden, true);
 
   pick(rows[1]);                                       // 방이 이미 있다
-  assert.strictEqual(t.btn.textContent, "방 후보 찾기 (선택 2명)",
+  assert.strictEqual(t.btn.textContent, "카톡방 후보 찾기 (선택 2명)",
                      "방이 있는 분까지 셌다");
   assert.strictEqual(t.hint.hidden, false, "방이 있는 분을 뺐다고 말하지 않는다");
-  assert.strictEqual(t.hint.textContent, "체크한 분 중 '방 없음' 이 아닌 1명은 빼고 찾습니다");
+  assert.strictEqual(t.hint.textContent, "체크한 분 중 '카톡방 없음' 이 아닌 1명은 빼고 찾습니다");
 
   // 방 없는 분은 다 풀고 방 있는 분만 남으면 — 잠기고 둘 다 말한다.
   pick(rows[0]);
   pick(rows[2]);
   assert.strictEqual(t.btn.disabled, true);
   assert.strictEqual(t.hint.textContent,
-                     "찾을 분을 먼저 고르세요 · 체크한 분 중 '방 없음' 이 아닌 1명은 빼고 찾습니다");
+                     "찾을 분을 먼저 고르세요 · 체크한 분 중 '카톡방 없음' 이 아닌 1명은 빼고 찾습니다");
 }
 
 // --- ③ 확인창에 몇 명 · 누구 — 취소하면 안 나간다 ---------------------------------
@@ -170,7 +170,7 @@ function clickAll(t, on) { t.all.checked = on; t.all.fire("change"); }
   for (let i = 1; i <= 12; i += 1) rows.push(row(100 + i, "가상" + i, true));
   const t = setup(rows);
   clickAll(t, true);
-  assert.strictEqual(t.btn.textContent, "방 후보 찾기 (선택 12명)");
+  assert.strictEqual(t.btn.textContent, "카톡방 후보 찾기 (선택 12명)");
   t.answer = false;
   t.submit();
   assert.ok(/가상1, 가상2, .*가상10 외 2명/.test(t.asked[0]), t.asked[0]);
@@ -184,15 +184,15 @@ function clickAll(t, on) { t.all.checked = on; t.all.fire("change"); }
   clickAll(t, true);
   assert.strictEqual(rows[1].querySelector(".js-sourcing-pick").checked, false,
                      "걸러진(안 보이는) 줄까지 켰다");
-  assert.strictEqual(t.btn.textContent, "방 후보 찾기 (선택 2명)");
+  assert.strictEqual(t.btn.textContent, "카톡방 후보 찾기 (선택 2명)");
 
   // 다음 검색 — 11 이 가려지고 12 가 보인다. 11 의 체크는 남는다.
   rows[0].hidden = true;
   rows[1].hidden = false;
   t.refilter();
-  assert.strictEqual(t.btn.textContent, "방 후보 찾기 (선택 2명 · 일부 숨김)");
+  assert.strictEqual(t.btn.textContent, "카톡방 후보 찾기 (선택 2명 · 일부 숨김)");
   pick(rows[1]);
-  assert.strictEqual(t.btn.textContent, "방 후보 찾기 (선택 3명 · 일부 숨김)");
+  assert.strictEqual(t.btn.textContent, "카톡방 후보 찾기 (선택 3명 · 일부 숨김)");
   assert.strictEqual(t.submit(), false);
   assert.strictEqual(t.ids.value, "11,12,13", "숨은 줄에서 고른 분이 빠졌다");
 }
@@ -204,7 +204,7 @@ function clickAll(t, on) { t.all.checked = on; t.all.fire("change"); }
   pick(rows[0]);
   pick(rows[1]);
   assert.strictEqual(t.share.textContent, "참여 심사역 딜 발송 요청 (선택 2명)");
-  assert.strictEqual(t.btn.textContent, "방 후보 찾기 (선택 1명)");
+  assert.strictEqual(t.btn.textContent, "카톡방 후보 찾기 (선택 1명)");
   assert.strictEqual(t.btn.disabled, false);
 }
 
