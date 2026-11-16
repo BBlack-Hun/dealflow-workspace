@@ -96,7 +96,7 @@
       딜 소개를 보내는 명단인지는 **탭에서 바로 보여야 한다.** 발송 대상의
       모집단이 이 표시로 정해지는데, 어느 탭이 그 명단인지 화면에 없으면
       "왜 이 사람이 발송 목록에 없지" 를 설정 화면까지 들어가 봐야 안다.
-    #}{% if t.kind == 'pool' %}<span class="pool-dot" title="담당이 정해지지 않은 명단(투자사 풀)">풀</span>{% endif %}{#
+    #}{% if t.kind == 'pool' %}<span class="pool-dot" title="담당이 정해지지 않은 명단(투자사 풀)">담당 없음</span>{% endif %}{#
     #}{% if t.is_hidden and page.investors %}<span class="pool-dot" title="투자사 수 · 딜소개 발송 대상에서 빠지는 명단">제외</span>{% endif %}{#
     #}{% if t.is_deal_list %}<span class="pool-dot" title="딜소개를 보내는 명단">딜소개</span>{% endif %}{{ t.label }} {#
       투자사 화면은 `총원 / 카톡방 확인` 을 같이 적는다(11/13) — 탭 이름의 `119명` 은

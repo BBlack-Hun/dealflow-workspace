@@ -6,7 +6,7 @@ UX 정리에서 나온 셋을 지킨다.
    계산이 틀린 것이 아니다: 이름은 저장된 글자이고, 옆의 수는 **지금 표에 뜨는
    줄(감춘 줄 빼고)** 이다. 그래서 단위(`곳`)를 붙이고, 감춘 줄이 있으면 그 수를
    옆에 적어 두 수가 어디서 갈리는지 보이게 한다.
-2. 탭의 꼬리표는 그림(◇ · 🚫 · ✉)이 아니라 글자(`풀` · `제외` · `딜소개`)다.
+2. 탭의 꼬리표는 그림(◇ · 🚫 · ✉)이 아니라 글자(`담당 없음` · `제외` · `딜소개`)다.
    `제외`(투자사로 세지 않는 명단)와 흐린 탭은 **투자사 화면에서만** — 스타트업
    명단은 전부 그 값이라 탭마다 붙으면 막힌 명단처럼 읽힌다.
 3. 머리말의 수 단위는 화면이 정한다 — 기업은 `곳`, 사람은 `명`.
@@ -111,12 +111,12 @@ def test_startup_tabs_do_not_wear_the_excluded_tag(world):
 
 
 def test_investor_tabs_wear_word_tags(world):
-    """꼬리표는 글자다 — `딜소개` · `제외` · `풀`. 그림 하나로 뜻을 대신하지 않는다."""
+    """꼬리표는 글자다 — `딜소개` · `제외` · `담당 없음`. 그림 하나로 뜻을 대신하지 않는다."""
     html = _login(ADMIN_PHONE).get(f"/contacts?sheet={quote(DEAL_LIST)}").text
     deal, off, pool = (_tab(html, x) for x in (DEAL_LIST, OFF_LIST, POOL_LIST))
     assert ">딜소개</span>" in deal, deal
     assert ">제외</span>" in off and "muted-tab" in off, off
-    assert ">풀</span>" in pool, pool
+    assert ">담당 없음</span>" in pool, pool
     for tab in (deal, off, pool):
         for picture in ("◇", "🚫", "✉"):
             assert picture not in tab, tab
