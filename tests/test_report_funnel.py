@@ -136,7 +136,10 @@ def test_the_report_opens_with_the_same_numbers_as_deal_stage(client, db, people
     # 0 인 칸도 줄째 남는다
     assert sum(1 for g in got if g[1] == 0) == 3
     # 무엇을 센 것인지 제목이 말한다
-    assert "내 담당" in _section(body) and "투자사 5명, 지금 기준" in _section(body)
+    # 제목 · 머릿수 알약 · 조건(누구 것 · 지금 기준)이 따로 선다.
+    head = _section(body).split("</h2>")[0]
+    assert re.search(r'진행 단계\s*<span class="count-pill on"><b>5</b>명</span>', head)
+    assert "내 담당" in head and "투자사 · 지금 기준" in head
 
 
 def test_the_biggest_drop_is_the_only_highlight(client, db, people):

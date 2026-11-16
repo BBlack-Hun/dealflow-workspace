@@ -33,7 +33,8 @@
     <span class="kpi-label">보낸 건수</span>
     <span class="kpi-value {% if rep.sends.left %}warn{% endif %}">{{ rep.sends.sent }}</span>
     <span class="kpi-sub">
-      {% if rep.sends.left %}회차 {{ rep.sends.rounds }}개 · <b>{{ rep.sends.left }}건</b> 안 나감
+      {# 안 나간 건은 위 수에 **들지 않는다** — `· 63건 안 나감` 으로는 빠진 것인지 따로인지 읽히지 않았다. #}
+      {% if rep.sends.left %}회차 {{ rep.sends.rounds }}개 · 안 나간 <b>{{ rep.sends.left }}건</b>은 빠짐
       {% else %}회차 {{ rep.sends.rounds }}개 · 도착 성공{% endif %}
     </span></div>
   <a class="kpi-card" href="/reactions/list?key=total&month={{ rep.year }}-{{ '%02d'|format(rep.month) }}{% if scope %}&scope={{ scope }}{% endif %}{% if viewing and members %}&member={{ viewing.id }}{% endif %}">
@@ -52,9 +53,9 @@
     <span class="kpi-label">아직 안 물어봄</span>
     <span class="kpi-value {% if rep.followup_late %}bad{% elif rep.followup_open %}warn{% endif %}">{{ rep.followup_open }}</span>
     <span class="kpi-sub">
-      {% if rep.followup_late %}그중 <b>{{ rep.followup_late }}건</b>은 날짜가 지났습니다
-      {% elif rep.followup_open %}아직 물어볼 날 전입니다
-      {% else %}다 물어봤습니다{% endif %}
+      {% if rep.followup_late %}그중 <b>{{ rep.followup_late }}건</b> 날짜 지남
+      {% elif rep.followup_open %}아직 물어볼 날 전
+      {% else %}모두 물어봄{% endif %}
     </span></a>
 </div>
 {# 이 안내는 **한 번만** 말한다 — 연간 보기에서는 맨 위에 이미 한 번 섰다.
@@ -236,7 +237,7 @@
     <h2 class="panel-title">미팅 결과</h2>
     {% if rep.outcomes %}
     <ul class="import-stats">
-      {% for label, n in rep.outcomes %}<li><span>{{ label }}</span><b>{{ n }}</b></li>{% endfor %}
+      {% for label, n in rep.outcomes %}<li><span>{{ label }}</span><b>{{ n }}건</b></li>{% endfor %}
     </ul>
     {% else %}<p class="muted">완료된 미팅이 없습니다.</p>{% endif %}
     {% if rep.canceled %}<p class="hint">취소 {{ rep.canceled }}건</p>{% endif %}

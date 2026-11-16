@@ -1,4 +1,4 @@
-// 분야 기준 목록(관리자) — 목록 고치기 · IR 기업현황 정리.
+// 분야 기준 목록(관리자) — 목록 고치기 · IR 기업 분류 정리.
 //
 // **값이 바뀌는 고침은 먼저 몇 줄이 바뀌는지 묻는다.** 이름 바꾸기 · 합치기 ·
 // 옮기기는 미리보기(`…/preview/<고침>`)로 IR 기업 수 · 투자사 수를 받아 확인을
@@ -39,21 +39,28 @@
   var treeEl = document.getElementById("tx-tree");
   var tree = [];
 
+  // 합친 옛 이름은 일부러 남겨 둔 짝이다(정리할 때 옛 이름 → 기준 이름). `→ 사이버보안` 만
+  // 붙어 있으면 잘못된 이름이 남은 것처럼 읽혀서, 무엇에 합쳤는지 말로 적고 뜻은 손을 올리면.
   function tags(term) {
     var out = "";
-    if (term.merged_into) out += ' <span class="tag soft">→ ' + esc(term.merged_into) + "</span>";
-    else if (term.hidden) out += ' <span class="tag soft">숨김</span>';
+    if (term.merged_into) {
+      out += ' <span class="tag soft" title="옛 이름 — IR 기업 분류 정리 때 이 이름을 ' +
+        esc(term.merged_into) + '(으)로 바꿉니다">' + esc(term.merged_into) + "에 합침</span>";
+    } else if (term.hidden) out += ' <span class="tag soft">숨김</span>';
     return out;
   }
 
   function actions(term, isMajor) {
     if (term.merged_into) return "";
-    var b = function (act, label, title) {
+    // ▲▼ 처럼 글자 없는 단추는 화면 읽기도 뜻을 읽게 `aria-label` 을 함께 단다.
+    var b = function (act, label, title, iconOnly) {
       return '<button type="button" class="linkbtn" data-act="' + act + '" data-id="' +
-        term.id + '"' + (title ? ' title="' + esc(title) + '"' : "") + ">" + label + "</button>";
+        term.id + '"' + (title ? ' title="' + esc(title) + '"' : "") +
+        (iconOnly ? ' aria-label="' + esc(title) + '"' : "") +
+        ">" + label + "</button>";
     };
     return '<span class="tx-acts">' +
-      b("up", "▲", "위로") + b("down", "▼", "아래로") +
+      b("up", "▲", "위로", true) + b("down", "▼", "아래로", true) +
       b("rename", "이름 바꾸기") +
       (isMajor ? "" : b("move", "옮기기", "다른 대분류 아래로")) +
       b("merge", "합치기", "같은 단계의 다른 이름으로 합칩니다") +
@@ -213,7 +220,7 @@
     return items.length ? items.map(esc).join("<br>") : '<span class="muted">—</span>';
   }
 
-  // ── IR 기업현황 정리 ───────────────────────────────────────────────────
+  // ── IR 기업 분류 정리 ──────────────────────────────────────────────────
   var irResult = document.getElementById("ir-result");
   var irApply = document.getElementById("ir-apply");
 

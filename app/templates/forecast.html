@@ -5,8 +5,8 @@
   업무 보고 › `매출예상리스트`(개선 과제 #46). 한 줄 = 기업 하나 × 투자사 하나.
 
   **출처가 달린 칸은 비면 자동이다.** 줄에는 사람이 적은 값만 있고, 빈 칸은 열 때마다
-  원본에서 읽는다(`services/forecast.py`). 읽어 온 값에는 회색 `자동` 딱지가 붙고
-  (`fc-auto` · app.css), 칸 위에 손을 올리면 출처가 보인다. 적으면 그 값이 우선이고,
+  원본에서 읽는다(`services/forecast.py`). 읽어 온 값 옆에는 회색 `자동` 배지가 따로 서고
+  (`fc-auto-tag` · 칸에는 `fc-auto`), 칸 위에 손을 올리면 출처가 보인다. 적으면 그 값이 우선이고,
   지우면 다시 자동이 된다.
 
   글자는 검정이고 **빨강은 리마인드할 두 칸의 값뿐이다**(11/01 요청) — `투자사 미팅
@@ -20,13 +20,19 @@
 {% set q %}{% if scope %}scope={{ scope }}{% endif %}{% if viewing and members %}&member={{ viewing.id }}{% endif %}{% endset %}
 <header class="page-head">
   <h1>{{ page_title }}</h1>
+  {# 다섯 문장이 한 덩어리라 `매출` 이 무엇인지가 맨 뒤에 나왔다 — 짧은 세 문장만 펼쳐 두고
+     나머지(출처 · 지우면 자동 · 빨간 글씨)는 접는다. 뜻은 하나도 빼지 않았다. #}
   <p class="muted">
-    기업 하나 × 투자사 하나가 한 줄입니다. <span class="tag soft">자동</span> 딱지가 붙은 값은
-    스타트업DB · 투자사 관리 현황 · 미팅 · 성공보수율(투자컨설턴트 계약 · 스타트업 명단)에서
-    저절로 읽어 온 것입니다(칸에 손을 올리면 출처) — 직접 적으면 그 값이 우선이고, 지우면 다시 자동이 됩니다.
-    매출은 우리 수수료(성공보수)이고, 예상 수수료 = 투자유치희망금액 × 성공보수율입니다.
-    <b class="fc-remind">빨간 글씨</b>는 리마인드할 날짜(투자사 미팅 예정일 · 후속라운드 시작 년월)입니다.
+    기업 하나 × 투자사 하나가 한 줄입니다. 매출은 우리 수수료(성공보수)이고,
+    예상 수수료 = 투자유치희망금액 × 성공보수율입니다.
+    <span class="tag soft">자동</span> 표시가 붙은 값은 다른 화면에서 읽어 온 것이며, 직접 적으면 그 값이 우선합니다.
   </p>
+  <details class="muted">
+    <summary>자세히</summary>
+    자동 값은 스타트업DB · 투자사 관리 현황 · 미팅 · 성공보수율(투자컨설턴트 계약 · 스타트업 명단)에서
+    읽어 옵니다. 칸에 손을 올리면 출처가 보이고, 직접 적은 값을 지우면 다시 자동이 됩니다.
+    <b class="fc-remind">빨간 글씨</b>는 리마인드할 날짜(투자사 미팅 예정일 · 후속라운드 시작 년월)입니다.
+  </details>
 </header>
 {% include "_report_tabs.html" %}
 
@@ -99,9 +105,11 @@
 {% endif %}
 
 {% if rows %}
+{# 합계 하나와 가능성별 수를 한 줄 글로 잇지 않고 알약으로 가른다 — 다섯 수가 `·` 로만 이어져
+   어디까지가 합계인지 안 읽혔다. #}
 <p class="fc-total" id="fc-total">
   {% for label, value in fee_totals %}
-  {% if loop.first %}<b>예상 수수료 {{ label }} {{ value }}억</b>{% else %}· {{ label }} {{ value }}억{% endif %}
+  {% if loop.first %}<b>예상 수수료 {{ label }} {{ value }}억</b>{% else %}<span class="count-pill">{{ label }} <b>{{ value }}</b>억</span>{% endif %}
   {% endfor %}
   {% if fee_missing %}<span class="muted">— 예상 수수료가 없는 {{ fee_missing }}줄은 빠졌습니다</span>{% endif %}
 </p>
@@ -116,7 +124,7 @@
         {% endfor %}
         {# 관리자가 붙인 추가 칸(`컬럼 관리` · `_custom_cols.html`). #}
         {{ cc.heads() }}
-        <th style="width:52px"></th>
+        <th style="width:52px" aria-label="줄 지우기"></th>
       </tr>
     </thead>
     <tbody>
@@ -124,11 +132,23 @@
       <tr data-id="{{ r.id }}"{{ cc.attrs(r.id) }}>
         {% for field, label, src in columns %}
         {% set c = r.cells[field] %}
-        <td {% if src %}title="{{ '직접 적음 · 지우면 자동(' ~ src ~ ')' if c.value and not c.auto else '자동 — ' ~ src }}"{% elif field in ('expected_month', 'follow_round_month') %}title="YYYY-MM — 예: 2027-03"{% endif %}>
+        {# 손을 올리면 출처 — 빈 자동 칸에서 이 글이 값처럼 읽히지 않게 `출처:` 를 앞에 붙인다.
+           년월 칸은 꼴(`YYYY-MM`)을 적지 않고 예시만 — 빈 칸은 올려 둘 때 옅게 뜬다(`data-hover-hint`). #}
+        <td {% if src %}title="{{ '직접 적음 · 지우면 자동(출처: ' ~ src ~ ')' if c.value and not c.auto else '자동 · 출처: ' ~ src }}"{% elif field in ('expected_month', 'follow_round_month') %}title="년-월로 적습니다 · 예: 2027-03"{% endif %}>
+          {#
+            `자동` 표시는 칸 **밖의 따로 선 배지**다. 예전에는 칸에 ::after 로 붙어 화면 읽기 ·
+            글자 복사에서 `50억자동` 처럼 값과 한 덩어리가 됐다. 칸 글자(`.cell` 의 textContent)는
+            값 그대로여야 해서(`inline_edit.js` 가 읽는다) 칸 안에는 넣지 않고 옆에 세운다.
+            자동이 아닌 줄에도 자리는 두고 숨긴다 — 저장 뒤 `forecast.js` 가 켜고 끈다.
+          #}
+          <div class="fc-val">
           <div class="cell{% if c.auto %} fc-auto{% endif %}{% if field in ('meeting_plan', 'follow_round_month') %} fc-remind{% endif %}" data-field="{{ field }}"
                data-value="{{ c.value }}"
+               {% if field in ('expected_month', 'follow_round_month') %}data-hover-hint="예: 2027-03"{% endif %}
                {% if field.startswith('meeting') %}data-type="date"{% elif field == 'result_note' %}data-type="long"{% elif field == 'likelihood' %}data-type="pick" data-choices="상,중,하"{% endif %}
                {% if field == 'company_name' %}data-list="fc-companies"{% elif field == 'firm' %}data-list="fc-firms-{{ r.owner }}"{% endif %}>{{ c.text }}</div>
+          {% if src %} <span class="tag soft fc-auto-tag"{% if not c.auto %} hidden{% endif %}>자동</span>{% endif %}
+          </div>
           {% if field == 'company_name' %}
           <div class="cell-sub">
             {% if r.company %}

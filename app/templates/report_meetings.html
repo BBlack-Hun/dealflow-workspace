@@ -14,9 +14,9 @@
 <header class="page-head">
   <h1>{{ page_title }}</h1>
   <p class="muted">
-    딜 진행 관리 [미팅 잡기]로 잡은 미팅을 한 줄씩 봅니다(취소한 미팅은 뺍니다).
-    끝난 내 미팅은 <b>미팅결과</b> 칸을 눌러 고릅니다 — 딜 진행 관리 › 미팅 후기의 결과와 같은 값입니다.
-    아래 <b>지난 기록</b>은 명단 월별 '미팅' 칸에 적힌 글을 그대로 옮겨 보여 줍니다 — 여기서는 고치지 않습니다.
+    딜 진행 관리 [미팅 잡기]로 잡은 미팅 목록입니다(취소한 미팅 제외).
+    끝난 내 미팅은 <b>미팅결과</b> 칸을 눌러 고르며, 딜 진행 관리 › 미팅 후기의 결과와 같은 값입니다.
+    아래 <b>지난 기록</b>은 명단 월별 '미팅' 칸의 글을 그대로 보여 주며, 여기서는 고칠 수 없습니다.
   </p>
 </header>
 {% include "_report_tabs.html" %}
@@ -72,7 +72,7 @@
       <th style="width:104px">투자유치희망금액</th>
       <th style="width:76px" title="IR 기업 현황의 '투자라운드' 값입니다 — 고치는 곳도 IR 기업 현황입니다">후속라운드</th>
       <th style="width:62px">차수</th>
-      <th style="width:66px">대면/화상</th><th style="width:66px">예정/완료</th>
+      <th style="width:66px">대면/화상</th><th style="width:66px">상태</th>
       <th title="딜 진행 관리 › 미팅 후기의 결과와 같은 값 — 끝난 내 미팅은 눌러서 고릅니다">미팅결과</th></tr></thead>
     <tbody>
       {% for m in meetings %}
@@ -94,7 +94,7 @@
         {% if m.done and m.user_id == user.id %}
         <td class="cell" data-field="outcome" data-type="pick" data-fixed-choices data-choices-only
             data-choices="{{ outcomes.values()|join(',') }}"
-            data-placeholder="눌러서 고르기"
+            data-placeholder="결과 고르기"
             title="눌러서 미팅결과 고르기 — 비우면 결과 미정">{{ m.outcome }}</td>
         {% else %}<td>{{ m.outcome }}</td>{% endif %}
       </tr>
@@ -108,7 +108,10 @@
 </section>
 
 <section class="panel">
-  <h2 class="panel-title">지난 기록 <span class="hint">명단 {% if yearly_view %}{{ year }}년 월별{% else %}{{ month }}월{% endif %} '미팅' 칸에 적힌 글 그대로 · {{ memos|length }}칸</span></h2>
+  {# 머릿수는 알약으로 뗀다 — 설명 끝에 `· 0칸` 으로 붙어 단위가 낯설었다(글 하나 = 1건). #}
+  <h2 class="panel-title"><span>지난 기록
+    <span class="count-pill {% if memos %}on{% endif %}"><b>{{ memos|length }}</b>건</span></span>
+    <span class="hint">명단 {% if yearly_view %}{{ year }}년 월별{% else %}{{ month }}월{% endif %} '미팅' 칸에 적힌 글 그대로</span></h2>
   {% if memos %}
   <div class="table-wrap">
   <table class="grid-table compact">

@@ -7,7 +7,7 @@
 2. `지난 기록` — 명단 월별 `미팅` 칸 글을 원문 그대로. `IR 요청` 칸 · 숨긴 칸 · 다른 달은 안 싣는다.
 3. 범위 — 팀원은 제 것만(`member` 를 붙여 와도), 관리자는 팀 전체가 기본, 팀원 화면으로
    보는 중이면 그 팀원. 오른쪽 팀원 고르개는 없다. 투자컨설턴트는 못 연다.
-4. 탭 차례 `업무 보고 | IR 미팅진행 리스트 | 매출예상리스트` · 빈 상태 안내.
+4. 탭 차례 `업무 보고 | IR 미팅 진행 리스트 | 매출 예상 리스트` · 빈 상태 안내.
 5. #184 — `연간`(그 해 전부, 지난 기록은 달 차례) · `후속라운드` = 이어 둔 IR 기업의
    `투자라운드` · `미팅결과` 는 끝난 제 미팅만 눌러 고른다(미팅 후기와 같은 값 · 같은 길).
 
@@ -169,8 +169,9 @@ def test_consultant_cannot_open(client, db, users):
 def test_tab_order_and_empty_state(client, data):
     c = _login(client)
     html = c.get("/report").text
-    assert re.search(r'href="/report">업무 보고</a>\s*<a[^>]*href="/report/meetings">IR 미팅진행 리스트'
-                     r'</a>\s*<a[^>]*href="/report/forecast">매출예상리스트', html)
+    # 탭 글자는 띄어 쓴다(UX 문구 정리) — 주소는 그대로.
+    assert re.search(r'href="/report">업무 보고</a>\s*<a[^>]*href="/report/meetings">IR 미팅 진행 리스트'
+                     r'</a>\s*<a[^>]*href="/report/forecast">매출 예상 리스트', html)
     html = c.get("/report/meetings?month=2026-08").text
     assert re.search(r'class="sheet-tab active" href="/report/meetings"', html)
     assert "앱에 잡힌 미팅이 없습니다." in html

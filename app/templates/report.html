@@ -4,9 +4,9 @@
 <header class="page-head">
   <h1>{{ page_title }}</h1>
   <p class="muted">
-    발송하고 미팅을 기록하면 이 표가 저절로 나옵니다. 시트나 카톡에 다시 옮겨
-    적지 않아도 됩니다. <b>미팅 후 결과 문의</b>를 했는지 함께 셉니다 —
-    그걸 놓치면 계약이 흐지부지됩니다.
+    발송과 미팅을 기록하면 이 표가 자동으로 만들어집니다. 시트나 카톡에 다시 옮겨
+    적지 않아도 됩니다. <b>미팅 후 결과 문의</b>를 했는지도 함께 셉니다 —
+    결과 문의를 놓치면 계약으로 이어지지 않기 쉽습니다.
   </p>
 </header>
 {% include "_report_tabs.html" %}
@@ -24,14 +24,14 @@
          href="/report?span=year&year={{ selected_year }}{% if scope %}&scope={{ scope }}{% endif %}{% if viewing and members %}&member={{ viewing.id }}{% endif %}">연간</a>
     </span>
     {% if yearly_view %}
-    <select class="chip-select" onchange="location = this.value">
+    <select class="chip-select" aria-label="해 고르기" onchange="location = this.value">
       {% for y in year_options %}
       <option value="/report?span=year&year={{ y }}{% if scope %}&scope={{ scope }}{% endif %}{% if viewing and members %}&member={{ viewing.id }}{% endif %}"
               {% if selected_year == y %}selected{% endif %}>{{ y }}년</option>
       {% endfor %}
     </select>
     {% else %}
-    <select class="chip-select" onchange="location = this.value">
+    <select class="chip-select" aria-label="달 고르기" onchange="location = this.value">
       {% for y, m, key in month_options %}
       <option value="/report?month={{ key }}{% if scope %}&scope={{ scope }}{% endif %}{% if viewing and members %}&member={{ viewing.id }}{% endif %}"
               {% if selected == key %}selected{% endif %}>{{ y }}년 {{ m }}월</option>
@@ -104,14 +104,17 @@
   {% endif %}
 {% endfor %}
 <section class="panel stage-funnel">
-  <h2 class="panel-title"><span>진행 단계 —
-    {% if team_wide %}팀 전체{% elif viewing and viewing.id != user.id %}{{ viewing.name }} 님 담당{% else %}내 담당{% endif %}
-    투자사 {{ funnel_top }}명, 지금 기준</span></h2>
+  {# 제목 · 머릿수 알약 · 조건(누구 것 · 지금 기준)을 한 줄 글로 잇지 않고 갈라 둔다 —
+     `진행 단계 — 내 담당 투자사 121명, 지금 기준` 은 제목에 조건이 둘 붙어 읽혔다. #}
+  <h2 class="panel-title"><span>진행 단계
+    <span class="count-pill on"><b>{{ funnel_top }}</b>명</span></span>
+    <span class="hint">{% if team_wide %}팀 전체{% elif viewing and viewing.id != user.id %}{{ viewing.name }} 님 담당{% else %}내 담당{% endif %}
+    투자사 · 지금 기준</span></h2>
   <p class="hint">
-    줄마다 <b>그 단계까지 온 사람</b>(더 멀리 간 사람 포함)을 셉니다. %는 바로 앞 단계
-    대비입니다. 고른 {% if yearly_view %}해와{% else %}달과{% endif %} 상관없이 지금까지의
-    기록으로 세고, 거절돼도 단계는 내려가지 않습니다 —
-    <a href="/contacts">투자사 관리 현황</a>의 깔때기와 같은 기준입니다.
+    줄마다 <b>그 단계까지 온 사람</b>을 누적으로 셉니다(더 멀리 간 사람 포함). %는 바로 앞
+    단계 대비입니다. 고른 {% if yearly_view %}해와{% else %}달과{% endif %} 상관없이 지금까지의
+    기록으로 세며, 거절돼도 단계는 내려가지 않습니다.
+    <a href="/contacts">투자사 관리 현황</a> 위쪽 단계 막대와 같은 기준입니다.
   </p>
   <div class="stage-bars" role="img"
        aria-label="진행 단계 깔때기, 지금 기준: {{ funnel_ns.desc|join('; ') }}">
@@ -179,7 +182,8 @@
     <span class="kpi-label">보낸 건수</span>
     <span class="kpi-value {% if totals.send_left %}warn{% endif %}">{{ totals.send_sent }}</span>
     <span class="kpi-sub">
-      회차 {{ totals.send_rounds }}개{% if totals.send_left %} · <b>{{ totals.send_left }}건</b> 안 나감{% endif %}
+      {# 안 나간 건은 위 수에 **들지 않는다** — `· 63건 안 나감` 으로는 빠진 것인지 따로인지 읽히지 않았다. #}
+      회차 {{ totals.send_rounds }}개{% if totals.send_left %} · 안 나간 <b>{{ totals.send_left }}건</b>은 빠짐{% endif %}
     </span></div>
   <a class="kpi-card" href="/reactions/list?key=total&year={{ year }}{% if scope %}&scope={{ scope }}{% endif %}{% if viewing and members %}&member={{ viewing.id }}{% endif %}">
     <span class="kpi-label">잡은 미팅</span>
@@ -197,9 +201,9 @@
     <span class="kpi-label">아직 안 물어봄</span>
     <span class="kpi-value {% if totals.followup_late %}bad{% elif totals.followup_open %}warn{% endif %}">{{ totals.followup_open }}</span>
     <span class="kpi-sub">
-      {% if totals.followup_late %}그중 <b>{{ totals.followup_late }}건</b>은 날짜가 지났습니다
-      {% elif totals.followup_open %}아직 물어볼 날 전입니다
-      {% else %}다 물어봤습니다{% endif %}
+      {% if totals.followup_late %}그중 <b>{{ totals.followup_late }}건</b> 날짜 지남
+      {% elif totals.followup_open %}아직 물어볼 날 전
+      {% else %}모두 물어봄{% endif %}
     </span></a>
 </div>
 <p class="hint">
@@ -261,7 +265,7 @@
   {# 결과별 집계는 달 칸이 없다 — 월간의 `미팅 결과` 판과 **같은 목록 모양**. #}
   {% if g.outcomes %}
   <ul class="import-stats">
-    {% for label, n in g.outcomes %}<li><span>{{ label }}</span><b>{{ n }}</b></li>{% endfor %}
+    {% for label, n in g.outcomes %}<li><span>{{ label }}</span><b>{{ n }}건</b></li>{% endfor %}
   </ul>
   {% else %}
   <p class="muted bucket-empty">완료된 미팅이 없습니다.</p>
