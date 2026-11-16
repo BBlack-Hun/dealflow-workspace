@@ -1581,17 +1581,17 @@ def test_what_the_test_panel_still_says(logged_in, rehearsal, may_attach,
     # ② 시험방으로만 간다.
     assert "방으로만 나갑니다" in html
     assert "고른 기업에게는 아무것도 가지 않습니다" in html
-    assert "고른 담당자에게는 아무것도 가지 않습니다" in html
+    assert "고른 심사역에게는 아무것도 가지 않습니다" in html
     # ③ 무엇을 적는 칸인가.
     assert "<b>파일 이름</b>을 그대로 적으세요" in html
-    assert "<b>방 이름</b>이 카카오톡에서 열리는지만 봅니다" in html
+    assert "<b>카톡방 이름</b>이 카카오톡에서 열리는지만 봅니다" in html
     # ④ 막혔을 때 고칠 자리로 가는 고리 — **설명 문장이 아니라 링크 한 줄**이다.
     assert '<a href="/templates#startup_sms">' in html
     assert '<a href="/templates#meeting_review">' in html
     # 알림은 설명이 아니다 — 지우지 않았다.
     # **무엇이 시험방으로 가는지**가 여기서 갈린다: 이 단추들만이다.
     assert "여기 단추가 만든 발송만" in html
-    assert "각 담당자 방으로 그대로 나갑니다" in html
+    assert "각 심사역 카톡방으로 그대로 나갑니다" in html
     assert "아무것도 보내지 않습니다" in html
 
 

@@ -133,7 +133,7 @@ FIELDS = (
                       "0 이면 두 번째는 안 묻는다(거절로 끝난 미팅에는 안 묻는다)"),
     runner.Field("decision_time", "두 번째 보낼 시각", "time", "14:00",
                  hint="첫 번째와 다른 시각이면 두 번째는 그 시각에 따로 선다"),
-    runner.Field("manual_days", "손 발송 뒤 쉬는 날(일)", "int", 7, low=0, high=60,
+    runner.Field("manual_days", "직접 발송 뒤 쉬는 날(일)", "int", 7, low=0, high=60,
                  hint="이 날수 안에 사람이 미팅 요청·후기를 보낸 분께는 첫 번째를 안 묻는다"
                       "(0 이면 안 본다) — 두 번째는 미팅을 마친 뒤 보낸 것을 전부 본다"),
 )
@@ -215,7 +215,7 @@ def _same_company(a: Meeting, b: Meeting) -> bool:
 def _contact_problem(db: Session, contact: Optional[VcContact]) -> str:
     """이 담당자에게 지금 보내면 안 되는 까닭 — 두 회차가 같은 규칙이다."""
     if contact is None:
-        return "담당자가 없습니다"
+        return "심사역이 없습니다"
     if contact.is_hidden or not sheet_owner.investors(db, [contact]):
         return "투자사 명단에 없는 줄입니다"
     if sheet_owner.is_paused(contact):
@@ -225,7 +225,7 @@ def _contact_problem(db: Session, contact: Optional[VcContact]) -> str:
     if not sheet_owner.is_connected(contact):
         return "카톡방 연결 전"
     if not (contact.kakao_room_name or "").strip():
-        return "방 이름 없음"
+        return "카톡방 이름 없음"
     return ""
 
 
@@ -328,7 +328,7 @@ def collect(db: Session, row: Automation, sender: User,
             if not why and contact.id in seen:
                 # 같은 분과 같은 날 미팅이 둘 — 한 통이면 된다. 첫 번째와 두 번째가
                 # 겹치는 것은 장부(같은 분 하루 N통)가 막는다.
-                why = "같은 담당자에게 이미 한 통이 실렸습니다"
+                why = "같은 심사역에게 이미 한 통이 실렸습니다"
             if why:
                 batch.skipped.append(f"{who} — {why}")
                 continue
@@ -407,7 +407,7 @@ def summary(values: dict) -> str:
     """판 첫 칸의 한 줄 — **저장된 날수 · 시각으로** 적는다. 두 번째 날수가 0 이면
     `두 번째 문의 꺼짐`(기본값 글 '30일 뒤 … 투자 결정 문의' 는 꺼 둔 줄에서 거짓말이다
     — 화면 점검 10/17)."""
-    first = (f"미팅 완료 {values['days']}일 뒤 {values['time']} 그 투자사 방에 "
+    first = (f"미팅 완료 {values['days']}일 뒤 {values['time']} 그 투자사 카톡방에 "
              "미팅 후기 문구")
     if not values["decision_days"]:
         return f"{first} · 두 번째 문의 꺼짐"

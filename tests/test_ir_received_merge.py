@@ -230,4 +230,4 @@ def test_컬럼_관리에_합친_칸이라고_알린다(client, users, db, stage
     client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
     html = client.get("/columns?target=companies").text
     # 표시 위치와 '위치 설정을 쓰지 않음' 을 두 줄로 가른다(UX 문구 정리).
-    assert "칸 안(파일 이름 아래)" in html and "이 칸은 위치 설정을 쓰지 않습니다" in html
+    assert "열 안(파일 이름 아래)" in html and "이 열은 위치 설정을 쓰지 않습니다" in html

@@ -251,4 +251,4 @@ def test_a_consultant_is_not_in_the_agent_warning(db, users, viewer):
     assert "발송 프로그램 미연결" in warnings          # 팀원은 그대로 잡힌다
     assert users["u1"].name in warnings["발송 프로그램 미연결"]
     assert made.name not in warnings["발송 프로그램 미연결"]
-    assert made.name not in warnings.get("담당 투자사가 없는 계정", "")
+    assert made.name not in warnings.get("담당 투자사가 없는 팀원", "")

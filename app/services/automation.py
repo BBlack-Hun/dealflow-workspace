@@ -87,7 +87,7 @@ class Kind:
 #: 팀 현황 판에 서는 차례. **여기 없는 열쇠는 저장하지 않는다.**
 KINDS: List[Kind] = [
     Kind(MEETING_REVIEW, "미팅 후 검토결과 문의",
-         "미팅 완료 2일 뒤 14:00 그 투자사 방에 미팅 후기 문구, "
+         "미팅 완료 2일 뒤 14:00 그 투자사 카톡방에 미팅 후기 문구, "
          "30일 뒤 14:00 투자 결정 문의(거절이면 안 물음)"),
     Kind(MEETING_REQUEST, "미팅 요청 2회",
          "IR 자료 전달 7일 뒤 14:00 미팅 요청, 답이 없으면 10일 뒤 한 번 더"),
@@ -583,7 +583,7 @@ def follow_startup_menu(db: Session) -> Tuple[bool, int, str]:
            else again.get("error") or {"empty": "보낼 곳 0곳"}.get(again["status"],
                                                                   again["status"]))
     return False, stopped, (f"이 달 자동 월간 발송 회차는 새 계정으로 다시 세우지 않았습니다({why}) — "
-                            f"{startup_send.LABEL} 화면에서 손으로 보내세요")
+                            f"{startup_send.LABEL} 화면에서 직접 보내세요")
 
 
 # ── 시험방으로 돌리기 ─────────────────────────────────────────────────────────

@@ -171,9 +171,9 @@ def test_관리자가_칸을_지우면_그_칸의_값도_함께_지워진다(por
     # 확인창이 함께 지워질 줄 수를 말한다 — 두 표(IR · Series A)의 값을 다 센다.
     page = admin.get("/columns?target=companies").text
     asks = [json.loads(m) for m in re.findall(r"return confirm\((\".*?\")\)'", page)]
-    assert asks == ["'검토 메모' 칸을 지울까요?\n값이 든 줄 2개가 함께 지워집니다. "
+    assert asks == ["'검토 메모' 열을 지울까요?\n값이 든 줄 2개가 함께 지워집니다. "
                     "되돌릴 수 없습니다 — 값을 남기려면 [숨기기]를 쓰세요.",
-                    "'남길 칸' 칸을 지울까요?\n값이 든 줄 1개가 함께 지워집니다. "
+                    "'남길 칸' 열을 지울까요?\n값이 든 줄 1개가 함께 지워집니다. "
                     "되돌릴 수 없습니다 — 값을 남기려면 [숨기기]를 쓰세요."]
 
     gone_id, keep_id, company_id = gone.id, keep.id, company.id

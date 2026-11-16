@@ -275,7 +275,7 @@ def test_a_hand_sent_meeting_message_after_the_meeting_skips_it(db, users, world
     _turn_on(db)
     result = _run(db)
     assert {i.contact_id for i in _items(db)} == {before.id}
-    assert any("홍길동" in line and "손으로" in line for line in result["skipped"])
+    assert any("홍길동" in line and "직접" in line for line in result["skipped"])
 
 
 def test_the_hand_send_rule_ignores_manual_days(db, users, world):
@@ -338,7 +338,7 @@ def test_manual_reads_both_ref_shapes(db, users, world):
 
     # 첫 번째는 쉬는 날(7일) 안만 본다 — 24일 전 것은 안 센다.
     assert a7.manual(db, values, target(f"meeting:{meeting.id}"), day) == ""
-    assert "손으로" in a7.manual(db, values, target(f"meeting30:{meeting.id}"), day)
+    assert "직접" in a7.manual(db, values, target(f"meeting30:{meeting.id}"), day)
     assert a7.manual(db, values, target("meeting30:없음"), day) == ""
 
 
@@ -561,7 +561,7 @@ def test_two_second_rounds_for_one_contact_on_one_day_is_one_message(db, users, 
     _turn_on(db)
     result = _run(db)
     assert len(_items(db)) == 1
-    assert any("같은 담당자에게 이미 한 통이 실렸습니다" in line for line in result["skipped"])
+    assert any("같은 심사역에게 이미 한 통이 실렸습니다" in line for line in result["skipped"])
 
 
 # ── 시험 모드 ────────────────────────────────────────────────────────────────

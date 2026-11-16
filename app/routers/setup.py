@@ -509,7 +509,7 @@ def _queue_test_job(db: Session, user: User, kind: str, room: str,
         # 500 으로 터뜨린다. 조용히 고쳐서 보내면 **부르는 쪽의 실수가 묻힌다** —
         # 실수는 다음 갈래에서 다시 나오고, 그때는 막을 자리가 없을 수도 있다.
         raise RuntimeError(
-            "시험 발송은 시험방으로만 갑니다 — 다른 방 이름이 넘어왔습니다")
+            "시험 발송은 시험방으로만 갑니다 — 다른 카톡방 이름이 넘어왔습니다")
     job = SendJob(user_id=user.id, kind=kind, status="queued", total=1,
                   sent=0, failed=0)
     db.add(job)

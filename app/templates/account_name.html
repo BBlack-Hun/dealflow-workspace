@@ -34,7 +34,7 @@
   {% endif %}
   <p class="hint">
     <b>[미리 보기]</b>로 같이 바뀌는 것을 먼저 확인한 뒤 <b>[바꾸기]</b>를 누르면 바뀝니다.
-    이 계정의 탭 이름과 담당자 칸의 이름이 같이 바뀝니다 — 관리자 시트 올리기의 담당 이름도
+    이 계정의 탭 이름과 담당자 열의 이름이 같이 바뀝니다 — 관리자 시트 올리기의 담당 팀원 이름도
     새 이름으로 맞춰 올리면 됩니다.<br>
     규칙: {{ max_name }}자까지 · 다른 계정과 같은 이름은 쓸 수 없습니다(대소문자·띄어쓰기 무시).
   </p>
@@ -57,7 +57,7 @@
       {% endfor %}
       {% for c in plan.columns if c.equal or c.history %}
       <tr>
-        <td>담당자 칸 · {{ c.title }}</td>
+        <td>담당자 열 · {{ c.title }}</td>
         <td colspan="2">{{ c.equal + c.history }}줄
           {% if c.history %}<span class="muted">(이름만 적힌 줄 {{ c.equal }} · 넘긴 이력 속 이름 {{ c.history }})</span>{% endif %}
         </td>
@@ -67,7 +67,7 @@
   </table>
   </div>
   <p class="hint" data-testid="rename-summary">
-    탭 {{ plan.tabs|length }}개 · 담당자 칸 {{ plan.total }}줄이 같이 바뀝니다.
+    탭 {{ plan.tabs|length }}개 · 담당자 열 {{ plan.total }}줄이 같이 바뀝니다.
   </p>
 
   <h3>안 바뀌는 것</h3>
@@ -79,12 +79,12 @@
       (탭 주인이나 관리자가 그 탭의 [이름 저장]으로 바꿉니다)</li>
     {% endif %}
     {% if not plan.cascade %}
-    <li>지금 이름이 로그인 ID 라, 같이 바꿀 탭 · 담당자 칸을 찾지 않았습니다</li>
+    <li>지금 이름이 로그인 ID 라, 같이 바꿀 탭 · 담당자 열을 찾지 않았습니다</li>
     {% endif %}
   </ul>
   {% if plan.already %}
   <p class="hint">
-    담당자 칸에 <b>{{ plan.after }}</b> 로 이미 적힌 줄이 {{ plan.already }}줄 있습니다 — 바꾸고 나면
+    담당자 열에 <b>{{ plan.after }}</b> 로 이미 적힌 줄이 {{ plan.already }}줄 있습니다 — 바꾸고 나면
     그 줄도 이 계정 담당으로 읽힙니다.
   </p>
   {% endif %}
@@ -93,7 +93,7 @@
   <div class="warn-box"><b>{{ plan.problem }}</b></div>
   {% elif not viewing %}
   <form method="post" action="/account/name"
-        onsubmit='return confirm({{ (plan.before ~ " → " ~ plan.after ~ " 로 바꿀까요?\n탭 " ~ plan.tabs|length ~ "개 · 담당자 칸 " ~ plan.total ~ "줄이 같이 바뀝니다.")|tojson }})'>
+        onsubmit='return confirm({{ (plan.before ~ " → " ~ plan.after ~ " 로 바꿀까요?\n탭 " ~ plan.tabs|length ~ "개 · 담당자 열 " ~ plan.total ~ "줄이 같이 바뀝니다.")|tojson }})'>
     <input type="hidden" name="member" value="{{ member.id }}">
     <input type="hidden" name="name" value="{{ plan.after }}">
     <input type="hidden" name="expect" value="{{ plan.fingerprint }}">

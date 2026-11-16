@@ -127,7 +127,7 @@ def test_미리보기는_세기만_하고_바꾸지_않는다(db, portal, people
     assert plan.total == 8 and not plan.problem
 
     body = portal["member"].get(f"/account/name?to={NEW}").text
-    assert "탭 2개 · 담당자 칸 8줄" in body
+    assert "탭 2개 · 담당자 열 8줄" in body
     assert f"{OLD} 넘겨받은 명단" in body          # 남의 탭은 '안 바뀌는 것' 에 선다
     db.expire_all()
     assert people["member"].name == OLD
@@ -356,7 +356,7 @@ def test_수정_기록이_한_줄로_남는다(db, portal, people, stage):
     assert changes["name"]["before"] == OLD and changes["name"]["after"] == NEW
     assert changes["rename_ir_companies"]["after"] == f"{NEW} · 2줄"
     body = portal["admin"].get("/team/edit-log").text
-    assert "같이 바꾼 탭" in body and "담당자 칸 · IR 기업 현황" in body
+    assert "같이 바꾼 탭" in body and "담당자 열 · IR 기업 현황" in body
 
 
 def test_자기_이름을_바꿔도_남는다(db, portal, people, stage):

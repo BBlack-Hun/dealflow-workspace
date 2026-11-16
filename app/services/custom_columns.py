@@ -42,16 +42,16 @@ from . import edit_log, revenue_years
 TARGETS = {
     "companies": {"label": "IR 기업 현황", "href": "/companies",
                   "tables": ("ir_companies", "series_a_companies"),
-                  "where": "IR 기업 현황 · Series A 이상 딜 소싱 — 두 탭이 같은 칸"},
+                  "where": "IR 기업 현황 · Series A 이상 딜 소싱 — 두 탭이 같은 열"},
     "startup": {"label": "스타트업", "href": "/startup",
                 "tables": ("vc_contacts",),
-                "where": "스타트업 명단 — 명단(탭)을 가리지 않고 같은 칸"},
+                "where": "스타트업 명단 — 탭을 가리지 않고 같은 열"},
     "consulting": {"label": "투자컨설턴트", "href": "/consulting",
                    "tables": ("consulting_companies",),
-                   "where": "투자컨설턴트 현황 — 탭을 가리지 않고 같은 칸 · [월 열 추가]와 따로"},
+                   "where": "투자컨설턴트 현황 — 탭을 가리지 않고 같은 열 · [월 열 추가]와 따로"},
     "sourcing": {"label": "딜 소싱", "href": "/sourcing",
                  "tables": ("sourcing_contacts",),
-                 "where": "딜 소싱 명단 — 갈래(탭)를 가리지 않고 같은 칸"},
+                 "where": "딜 소싱 명단 — 탭을 가리지 않고 같은 열"},
     # 탭 글자는 업무 보고 탭과 같게 띄어 쓴다(보이는 글자뿐 — 열쇠는 `forecast`,
     # 칸 붙는 자리 묶음 이름은 `anchor_groups` 의 `매출예상리스트` 그대로).
     "forecast": {"label": "매출 예상 리스트", "href": "/report/forecast",
@@ -350,9 +350,9 @@ def arranger(headers: List[str], v: dict):
 def _clean_name(name: str) -> str:
     text = " ".join((name or "").split())
     if not text:
-        raise ColumnError("칸 이름을 입력하세요")
+        raise ColumnError("열 이름을 입력하세요")
     if len(text) > NAME_MAX:
-        raise ColumnError(f"칸 이름은 {NAME_MAX}자까지입니다")
+        raise ColumnError(f"열 이름은 {NAME_MAX}자까지입니다")
     return text
 
 
@@ -364,8 +364,8 @@ def _check_free(db: Session, target: str, name: str,
     """
     for col in columns(db, target, include_hidden=True):
         if col.id != except_id and col.name.casefold() == name.casefold():
-            raise ColumnError(f"'{name}' 칸이 이미 있습니다"
-                              + (" (숨긴 칸 — 다시 보이게 하세요)" if col.is_hidden else ""))
+            raise ColumnError(f"'{name}' 열이 이미 있습니다"
+                              + (" (숨긴 열 — 다시 보이게 하세요)" if col.is_hidden else ""))
 
 
 def add(db: Session, target: str, name: str, kind: str,
@@ -406,7 +406,7 @@ def place(col: CustomColumn, after: str) -> None:
     그 탭에서는 맨 끝에 선다(`custom_cols.js`)."""
     after = label_key(after)
     if after and after not in dict(anchors(col.target)):
-        raise ColumnError("그 화면에 없는 칸입니다")
+        raise ColumnError("그 화면에 없는 열입니다")
     col.after_key = after or None
 
 
@@ -451,9 +451,9 @@ def write(db: Session, row, col: CustomColumn, raw, user_id: Optional[int]) -> s
     """
     table = row.__tablename__
     if ROW_TARGET.get(table) != col.target:
-        raise ColumnError("이 표의 칸이 아닙니다")
+        raise ColumnError("이 표의 열이 아닙니다")
     if col.is_hidden:
-        raise ColumnError("숨긴 칸입니다 — 관리자 메뉴 `컬럼 관리` 에서 다시 보이게 한 뒤 적으세요")
+        raise ColumnError("숨긴 열입니다 — 관리자 메뉴 `컬럼 관리` 에서 다시 보이게 한 뒤 적으세요")
     value = clean_value(col, raw)
     cell = db.execute(select(CustomColumnValue).where(
         CustomColumnValue.column_id == col.id,
