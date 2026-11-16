@@ -212,6 +212,12 @@ def describe(db: Session, row: Optional[Automation]) -> str:
     return text
 
 
+def summary(values: dict) -> str:
+    """판 첫 칸 — 저장된 시각으로."""
+    return ("Series A 이상 딜 소싱의 후속라운드 시작(년월) 한 달 전 1일 · 전달 15일 · "
+            f"당월 1일 {values['time']}(주말이면 다음 평일) — 받는 팀원 카톡방에")
+
+
 runner.register(runner.Spec(
     key=KEY, kind="deal_intro", topic=TOPIC, plan=plan, collect=collect,
-    still_ok=still_ok, describe=describe, fields=FIELDS))
+    still_ok=still_ok, describe=describe, fields=FIELDS, summary=summary))

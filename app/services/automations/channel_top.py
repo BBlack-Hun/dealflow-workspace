@@ -210,6 +210,13 @@ def describe(db: Session, row: Optional[Automation]) -> str:
         f"{names.get(cid, cid)}({when[5:].replace('-', '/')})" for cid, when in recent)
 
 
+def summary(values: dict) -> str:
+    """판 첫 칸 — 저장된 요일 · 시각 · 기업 수로(기본값 글에 박아 두면 바꾼 뒤 거짓말이 된다)."""
+    return (f"매주 {values['weekday']}요일 {values['time']} — 오픈채팅방마다 "
+            f"TOP·핵심 딜 {values['count']}곳")
+
+
 runner.register(runner.Spec(
     key=automation.CHANNEL_TOP, kind="deal_intro", plan=plan, collect=collect,
-    still_ok=still_ok, fields=FIELDS, check=_check, describe=describe))
+    still_ok=still_ok, fields=FIELDS, check=_check, describe=describe,
+    summary=summary))

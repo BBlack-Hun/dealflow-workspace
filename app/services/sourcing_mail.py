@@ -955,6 +955,8 @@ def page_status(db: Session, now: Optional[datetime] = None) -> dict:
         "running": running(db, now) is not None,
         "next_label": (f"{stamp(nxt.at.isoformat())} ({SLOT_LABELS[nxt.key]})"
                        if nxt else ""),
+        # 시각만 — 팀 현황 판은 바로 앞에 `매일 18:00` 이 이미 적혀 있어 `(매일 회차)` 가 겹친다.
+        "next_at_label": stamp(nxt.at.isoformat()) if nxt else "",
     }
 
 
@@ -980,6 +982,8 @@ def panel(db: Session) -> dict:
         "test_ok": bool(tested and tested.status == STATUS_OK),
         "test_label": stamp(tested.started_at) if tested else "",
         "status": page_status(db) if settings.active else None,
+        # 매일 확인 시각 — 판의 글자가 이 값을 읽는다(글자에 박아 두면 값이 바뀔 때 거짓말이 된다).
+        "check_time": CHECK_TIME,
     }
 
 

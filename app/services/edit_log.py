@@ -663,7 +663,38 @@ FIELD_LABELS = {
     "region": "지역", "quote_attached": "견적서 첨부 여부", "success_fee": "성공보수율",
     "contact_name": "대표자명", "contact_phone": "연락처", "contact_email": "이메일",
     "after_key": "위치",
+    # 로그 화면에 칸 이름(`contract_management` · `kakao_joined` …)이 그대로 서던 것들
+    # (UX 점검 11/16). 이름은 그 칸 머리글 그대로다(`custom_columns._HAND_ANCHORS`).
+    # `contract_management` 는 이름과 열쇠가 어긋난 칸이다 — 화면 이름이 `견적서 첨부 여부`
+    # (`ConsultingCompany.contract_management` 주석).
+    "contract_management": "견적서 첨부 여부", "kakao_joined": "카톡 연결 여부",
+    "contract_received": "계약서 수신 여부", "contract_done": "계약여부",
+    "is_top_deal": "추천 딜", "top_deal_kind": "핵심/TOP Deal", "summary_status": "소개 상태",
+    "revenue_recent": "최근 매출액", "funding_total": "누적투자금액",
+    "raise_target": "투자유치희망금액", "pre_value": "Pre Value", "ceo_name": "대표자명",
+    "founded_year": "설립년도", "meeting_offered_at": "미팅제공일자",
+    "contract_month": "홍보메일삭제", "test_mode": "시험 모드", "test_room": "시험방",
+    # 연도별 매출 칸(`revenue_2022` ~ `revenue_2030`) — 화면 이름 `24년 매출` 꼴.
+    **{f"revenue_{year}": f"{year % 100}년 매출" for year in range(2022, 2031)},
 }
+
+#: **표마다 화면 이름이 다른 칸** — `(표, 칸)` 이 위 한 벌보다 먼저다. 같은 `kakao_joined`
+#: 가 투자사 쪽에서는 `카톡방 참여여부`, 기업 쪽에서는 `카톡 연결 여부` 다.
+TABLE_FIELD_LABELS = {
+    ("vc_contacts", "kakao_joined"): "카톡방 참여여부",
+}
+
+#: 켜짐/꺼짐(0 · 1) 칸 — 로그에 `0` · `1` 대신 `X` · `O` 로 보인다(표시만, 저장은 그대로).
+FLAG_FIELDS = frozenset({
+    "is_active", "is_hidden", "is_deal_list", "is_top_deal", "enabled",
+    "channel_kakao", "channel_email", "channel_sms",
+    "can_view_consulting", "can_auto_attach_ir", "can_export_companies",
+    "test_mode", "ir_link_auto", "verified", "followup_done", "skip_weekend",
+})
+
+#: 코드값으로 저장되는 칸 → 화면에 쓰는 말. 계약 상태 · 소개 상태는 그 화면의 사전을
+#: 그대로 읽는다(`_value_label`) — 여기 글자를 다시 적으면 한쪽이 낡는다.
+ROLE_LABELS = {"user": "팀원", "consultant": "투자컨설턴트", "admin": "관리자"}
 
 #: **자기 줄이라도 남기는 칸.** 보통은 자기 것을 고친 것은 안 남긴다(머리글 —
 #: 하루 수백 줄이 쌓여 아무도 안 본다). 이 칸은 다르다.
@@ -698,8 +729,29 @@ def always(obj) -> None:
     setattr(obj, _ALWAYS_ROW, True)
 
 
-def field_label(name: str) -> str:
-    return FIELD_LABELS.get(name, name)
+def field_label(name: str, table: str = "") -> str:
+    return TABLE_FIELD_LABELS.get((table, name)) or FIELD_LABELS.get(name, name)
+
+
+def _value_label(field: str, value: Any) -> str:
+    """로그에 남은 값 하나를 **화면에 쓰는 말**로(`none → free` 대신 `미계약 → 무료계약완료`).
+
+    저장된 로그는 그대로 두고 보여 줄 때만 바꾼다. 모르는 값은 그대로 보인다.
+    """
+    if field in FLAG_FIELDS and value in (True, False, "0", "1"):
+        return "O" if value in (True, "1") else "X"
+    if field == "role":
+        return ROLE_LABELS.get(str(value), str(value))
+    if field in ("contract_status", "summary_status"):
+        # 순환 import 를 피해 늦게 부른다(`company_sync` 와 같은 방식).
+        from ..routers.companies import CONTRACT_ALIAS, CONTRACT_LABELS, SUMMARY_LABELS
+
+        text = str(value)
+        if field == "summary_status":
+            return SUMMARY_LABELS.get(text, text)
+        # 옛 값(`yes` · `no` · `pending`)도 지금 말로. Series A 탭은 말 그대로 담는다.
+        return CONTRACT_LABELS.get(CONTRACT_ALIAS.get(text, text), text)
+    return str(value)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1262,10 +1314,10 @@ PAGE_SIZE = 200
 
 
 def _one_change(item: dict, names: dict,
-                companies: Optional[dict] = None) -> dict:
+                companies: Optional[dict] = None, table: str = "") -> dict:
     """화면이 그대로 그릴 수 있게 한 줄로 편다."""
     field = item.get("field", "")
-    out = {"label": field_label(field), "value_kept": "changed" not in item}
+    out = {"label": field_label(field, table), "value_kept": "changed" not in item}
     if not out["value_kept"]:
         return out
 
@@ -1278,7 +1330,7 @@ def _one_change(item: dict, names: dict,
         # 이어 둔 IR 기업도 번호로 남아 있다. 지운 기업이면 번호만 남는다.
         if field == "ir_company_id" and companies is not None:
             return companies.get(int(value), f"#{value}")
-        return str(value)
+        return _value_label(field, value)
 
     out["before"] = shown(item.get("before"))
     out["after"] = shown(item.get("after"))
@@ -1329,7 +1381,8 @@ def recent(db, *, scope: str = "", screen: str = "", limit: int = PAGE_SIZE):
             "screen": row.screen or row.table_name,
             "row_label": row.row_label or f"{row.table_name} {row.row_id}",
             "path": row.path or "",
-            "changes": [_one_change(c, names, companies) for c in changes],
+            "changes": [_one_change(c, names, companies, row.table_name or "")
+                        for c in changes],
         })
     return out
 

@@ -12,15 +12,18 @@
 <header class="page-head">
   <h1>수정 로그</h1>
   <p class="muted">
-    <b>내가 안 한 변경</b>만 모읍니다 — 남의 것을 고친 일과 공용 자료를 고친 일.
-    자기 것만 <b>고친</b> 것은 남기지 않습니다.
-    <b>지운 것과 시트로 넣은 것은 자기 것이라도 남습니다</b> — 지운 줄도
-    한 판에 넣은 시트도 화면 어디에도 없어, 무엇이 있었는지 물을 자리가
-    여기밖에 없기 때문입니다.
-    <b>시트 한 판은 한 줄</b>로 남습니다(줄마다 남기면 하루에 수백 줄이
-    쌓여 아무도 안 봅니다).
+    <b>내가 하지 않은 변경</b>만 남깁니다 — ① 남의 자료 수정 ② 공용 자료 수정
+    ③ 삭제 · 시트 올리기(내 것이라도 남김). 시트는 한 번 올릴 때마다 한 줄로 남습니다.
     <a class="linkbtn" href="/team">팀 현황으로</a>
   </p>
+  {# 왜 그렇게 정했는지는 접어 둔다 — 뜻은 그대로 두고 앞 문장만 짧게(UX 점검 11/16). #}
+  <details class="hint">
+    <summary>자세히</summary>
+    내 것만 <b>고친</b> 것은 남기지 않습니다(그것까지 남기면 하루에 수백 줄이 쌓여 아무도 안 봅니다).
+    지운 줄과 시트로 넣은 내용은 화면 어디에도 다시 나오지 않아, 무엇이 있었는지 물을 자리가
+    여기밖에 없기 때문에 내 것이라도 남깁니다. 시트를 줄마다 남기지 않고 한 번에 한 줄로 남기는 것도
+    같은 까닭입니다.
+  </details>
 </header>
 
 <section class="panel">
@@ -38,7 +41,7 @@
        '누가 무엇을 지웠나 · 누가 무엇을 넣었나' 다. 80줄을 한 번에 지우는
        길과 1,360줄을 한 번에 넣는 길이 생긴 뒤로는 이것부터 본다. #}
     <a class="chip {% if scope == 'mine' %}active{% endif %}"
-       href="/team/edit-log?scope=mine{% if screen %}&screen={{ screen }}{% endif %}">자기 것 지움·넣음</a>
+       href="/team/edit-log?scope=mine{% if screen %}&screen={{ screen }}{% endif %}">내 것 삭제·시트 올리기</a>
   </div>
 
   <div class="filter-line">
@@ -56,7 +59,7 @@
   <h2 class="panel-title">최근 {{ page_size }}건</h2>
 
   {% if not rows %}
-  <p class="hint">아직 남은 것이 없습니다. 자기 것만 고쳤다면 여기에는 아무 것도 뜨지 않습니다.</p>
+  <p class="hint">아직 남은 것이 없습니다. 내 것만 고쳤다면 여기에는 아무것도 뜨지 않습니다.</p>
   {% else %}
   <div class="table-wrap">
     {# `log-table` — `무엇이` 칸의 줄을 접기 위한 이름이다(`app.css`).
@@ -89,7 +92,7 @@
             {{ row.row_label }}
             {% if row.action == 'create' %}<span class="tag soft">추가</span>
             {% elif row.action == 'delete' %}<span class="tag soft">삭제</span>
-            {% elif row.action == 'import' %}<span class="tag soft">시트 한 판</span>{% endif %}
+            {% elif row.action == 'import' %}<span class="tag soft">시트 올리기</span>{% endif %}
           </td>
           <td>
             {# 값을 남기는 칸만 전→후가 보인다. 메모·연락처·비밀값은 `바뀜`
@@ -128,8 +131,8 @@
     비밀번호 · 토큰은 어떤 경우에도 값이 남지 않습니다.
   </p>
   <p class="hint">
-    보관 정책은 <b>{{ retention_months }}개월</b> 입니다(오래된 것을 지우는 일은
-    아직 만들지 않았습니다 — 지금은 쌓이기만 합니다).
+    기록은 <b>{{ retention_months }}개월</b> 보관할 예정입니다. 오래된 기록을 지우는 기능은
+    아직 만들지 않았습니다(지금은 모두 남아 있습니다).
   </p>
 </section>
 {% endblock %}

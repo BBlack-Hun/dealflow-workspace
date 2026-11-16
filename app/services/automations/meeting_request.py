@@ -389,7 +389,13 @@ def notes(db: Session, user: User, row: Automation, now: datetime) -> List[dict]
              "href": "/automations/meeting-request", "count": len(asks)}]
 
 
+def summary(values: dict) -> str:
+    """판 첫 칸 — 저장된 날수 · 시각으로."""
+    return (f"IR 자료 전달 {values['first_days']}일 뒤 {values['time']} 미팅 요청, "
+            f"답이 없으면 {values['second_days']}일 뒤 {values['second_time']} 한 번 더")
+
+
 runner.register(runner.Spec(
     key=automation.MEETING_REQUEST, kind="deal_intro", plan=plan,
     collect=collect, still_ok=still_ok, notes=notes, fields=FIELDS,
-    check=_check, manual=manual))
+    check=_check, manual=manual, summary=summary))

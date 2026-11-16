@@ -199,6 +199,13 @@ def describe(db: Session, row: Optional[Automation]) -> str:
     return text
 
 
+def summary(values: dict) -> str:
+    """판 첫 칸 — 저장된 시각과 `DAYS` 로."""
+    days = "·".join(str(n) for n in DAYS)
+    return (f"예정 미팅 날짜 · 매출예상리스트 후속라운드 시작(그달 1일) {days}일 전 "
+            f"{values['time']}(토·일이면 앞 금요일) — 담당 팀원 카톡방에 그날 걸린 건을 묶어 한 통")
+
+
 runner.register(runner.Spec(
     key=KEY, kind="deal_intro", topic=KEY, plan=plan, collect=collect,
-    still_ok=still_ok, describe=describe, fields=FIELDS))
+    still_ok=still_ok, describe=describe, fields=FIELDS, summary=summary))

@@ -93,6 +93,8 @@ log = logging.getLogger(__name__)
 
 ENV_SA_FILE = "DEALFLOW_GDRIVE_SA_FILE"
 ENV_FOLDERS = "DEALFLOW_GDRIVE_FOLDER_ID"
+#: 서버 준비 문서(저장소 안 경로) — 팀 현황 판의 관리자용 접기에만 적는다.
+SETUP_DOC = "docs/GDRIVE_IR.md"
 
 #: `automations` 표의 예약 줄 — `automation.KINDS` 에 없는 열쇠라 자동화 저장 길
 #: (`automation.save`)은 못 건드린다(`automation.TEAM_KEY` 와 같은 방식).
@@ -968,12 +970,14 @@ def panel(db: Session, now: Optional[datetime] = None) -> dict:
     st = settings(db)
     state = load_state(db)
     now = now or clock.now()
-    key_text = {"unset": f"없음 — 서버에 {ENV_SA_FILE} 가 없습니다",
-                "missing": "없음 — 그 경로에 키 파일이 없습니다",
+    # 환경변수 이름 · 문서 위치는 여기 글자에 싣지 않는다 — 판이 관리자용 접기 안에
+    # 따로 적는다(`env_sa` · `env_folders` · `setup_doc`, UX 점검 11/16).
+    key_text = {"unset": "없음 (서버 설정 필요)",
+                "missing": "없음 (서버에 정한 키 파일을 찾을 수 없음)",
                 "ok": "있음"}[cfg.key_state]
     roots = [r for r in state.get("root_status") or [] if r.get("id") in cfg.folders]
     if not cfg.ready:
-        status = "설정 없음 — 돌지 않습니다(서버 준비는 docs/GDRIVE_IR.md)"
+        status = "설정 없음 — 서버 설정이 끝나야 돌아갑니다(아래 서버 설정 정보)"
     elif not st.enabled:
         status = "꺼짐"
     else:
@@ -998,7 +1002,7 @@ def panel(db: Session, now: Optional[datetime] = None) -> dict:
         "min_interval": MIN_INTERVAL_MIN, "max_interval": MAX_INTERVAL_MIN,
         "subfolders": st.subfolders, "backfill": st.backfill,
         "ready": cfg.ready, "key_ok": cfg.key_state == "ok", "key_text": key_text,
-        "env_sa": ENV_SA_FILE, "env_folders": ENV_FOLDERS,
+        "env_sa": ENV_SA_FILE, "env_folders": ENV_FOLDERS, "setup_doc": SETUP_DOC,
         "folders_set": len(cfg.folders), "bad_folders": cfg.bad_folders,
         "roots": [{"name": r.get("name") or "(이름 모름)", "ok": bool(r.get("ok")),
                    "error": r.get("error", "")} for r in roots],

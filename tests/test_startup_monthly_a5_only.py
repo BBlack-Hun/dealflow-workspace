@@ -183,7 +183,8 @@ def test_turning_the_menu_off_turns_a5_off_too(db, users, client):
                         follow_redirects=False)
     db.expire_all()
     assert automation.load(db, automation.STARTUP_MONTHLY).enabled == 0
-    assert "A5" in unquote(answer.headers["location"])
+    # 알림 글에 자동 발송도 꺼졌다고 적힌다(내부 번호 `A5` 대신 화면 이름으로).
+    assert "매월 자동 발송도 껐습니다" in unquote(answer.headers["location"])
     assert a5.header(db)["on"] is False
 
 
