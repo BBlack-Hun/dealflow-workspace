@@ -307,14 +307,14 @@ def test_투자사_관리_현황은_설정을_펴_둔_채로_연다(sheets):  # 
 def test_접힌_채로도_무엇이_들어_있는지_보인다(sheets):  # noqa: F811
     """숨긴 칸이 있는 것을 모르면 "왜 그 칸이 없지" 를 DB 에서 찾게 된다.
 
-    10/28 부터 개수는 한 겹 더 접은 `그 밖의 설정` 여는 줄에 붙는다.
+    10/28 부터 개수는 한 겹 더 접은 안쪽 상자(`담당·발송 대상·달 칸`) 여는 줄에 붙는다.
     """
     body = sheets.get(_url(LIST)).text
     summary = re.search(r"<summary>(.*?)</summary>", body, re.S).group(1)
     assert "명단" in summary and "칸" in summary, summary
     more = re.search(r'<details class="sheet-fold sheet-fold-more">\s*<summary>(.*?)</summary>',
                      body, re.S)
-    assert more, "그 밖의 설정 상자가 없습니다"
+    assert more, "안쪽 설정 상자가 없습니다"
     assert "달 칸" in more.group(1), \
         f"달 칸이 몇 개인지 접힌 줄에 안 적혀 있습니다: {more.group(1)}"
 
@@ -332,9 +332,9 @@ def test_설정_상자를_열면_이름_고치기만_보인다(sheets, db, users
                           body, re.S)
         assert outer, f"{sheet}: 설정 상자를 못 찾았습니다"
         inner = re.search(r'<details class="sheet-fold sheet-fold-more">(.*)', outer.group(1), re.S)
-        assert inner, f"{sheet}: 그 밖의 설정 상자가 없습니다"
+        assert inner, f"{sheet}: 안쪽 설정 상자가 없습니다"
         assert "<details class=\"sheet-fold sheet-fold-more\" open" not in body, \
-            "그 밖의 설정이 펴진 채로 섭니다"
+            "안쪽 설정 상자가 펴진 채로 섭니다"
         before = outer.group(1)[:inner.start()]
         assert 'action="/api/contacts/sheets/rename"' in before, \
             f"{sheet}: 이름 고치기가 접힌 상자 밖에 없습니다"
