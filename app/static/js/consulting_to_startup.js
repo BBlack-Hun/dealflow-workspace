@@ -44,7 +44,7 @@
   // 다시 그려지지 않아서다(검색·칩·머리글 필터는 줄을 감추거나 주소만 고치고,
   // 칸 고치기는 그 칸만 고쳐 적는다). 다시 받는 자리는 보내고 난 뒤와 탭을
   // 바꾸는 링크뿐인데, 둘 다 고른 체크가 풀리는 자리라 펴진 채로 열리면
-  // `0개 선택` 이라고 적힌 빈 막대가 자리만 먹는다.
+  // `0곳 선택` 이라고 적힌 빈 막대가 자리만 먹는다.
   function openForPick() {
     if (fold && !fold.open && !closedByHand) fold.open = true;
   }
@@ -72,7 +72,7 @@
     var n = picked().length;
     // **여는 줄에 적힌다**(consulting.html 의 `<summary>`). 접힌 채로도 몇 개
     // 골랐는지 보여야, 줄을 골라 놓고 아무것도 안 보이는 상태가 안 된다.
-    countBox.textContent = n + "개 선택";
+    countBox.textContent = n + "곳 선택";
     button.disabled = n === 0;
     if (n) openForPick();
   }
@@ -106,7 +106,7 @@
     var label = target.value;
     var shown = names(chosen).slice(0, 5).join(", ");
     if (names(chosen).length > 5) shown += " 외 " + (names(chosen).length - 5) + "곳";
-    if (!confirm(ids.length + "개 기업을 '" + label + "' 명단에 세웁니다.\n" +
+    if (!confirm("기업 " + ids.length + "곳을 '" + label + "' 명단에 세웁니다.\n" +
                  shown + "\n\n" +
                  "투자컨설턴트 표에서는 빠지지 않습니다.")) return;
 
@@ -128,7 +128,7 @@
         // **무엇이 어떻게 됐는지 적는다.** 건너뛴 기업을 말하지 않으면 사람은
         // 다 들어간 줄 알고, 정작 그 기업은 어느 화면에도 새로 안 선다.
         var d = res.d;
-        var lines = [d.added.length + "개 기업을 '" + d.label + "' 명단에 세웠습니다."];
+        var lines = ["기업 " + d.added.length + "곳을 '" + d.label + "' 명단에 세웠습니다."];
         if (d.skipped.length) {
           lines.push("이미 있어 건너뜀 " + d.skipped.length + "곳: " +
                      d.skipped.join(", "));

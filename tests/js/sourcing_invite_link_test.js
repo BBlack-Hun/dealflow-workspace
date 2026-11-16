@@ -210,4 +210,19 @@ function locked(btn) { return btn.getAttribute("aria-disabled") === "true"; }
                      "체크한 참여 중 2명은 참여 안내 대상이 아니라 빼고 엽니다");
 }
 
-console.log("ok - 딜 소싱 [검토 가능 심사역 참여 안내] · 체크한 대상만 · 뺀 수 · 일부 숨김 · 칸 고침 · 두 단추");
+// --- ⑥ 시리즈 A 탭 — `왼쪽 체크박스로 받을 분을 고르세요` 는 한 번만 --------------
+// 두 단추 옆에 같은 말이 나란히 두 번 서던 것(UX 점검). 앞 단추 옆에만 남긴다.
+{
+  const rows = [row(11, "참여"), row(12, OFFER)];
+  const t = setup(rows, true);
+  assert.ok(locked(t.btn), "아무도 안 골랐는데 단추가 눌린다");
+  assert.strictEqual(t.hint.hidden, true, "같은 안내가 두 번 선다: " + t.hint.textContent);
+  assert.strictEqual(t.hint.textContent, "");
+  // 뺀 분이 있으면 그 말은 여전히 이 단추 옆에 선다.
+  pick(rows[0]);
+  assert.strictEqual(t.hint.hidden, false);
+  assert.strictEqual(t.hint.textContent,
+                     "체크한 참여 중 1명은 참여 안내 대상이 아니라 빼고 엽니다");
+}
+
+console.log("ok - 딜 소싱 [검토 가능 심사역 참여 안내] · 체크한 대상만 · 뺀 수 · 일부 숨김 · 칸 고침 · 두 단추 · 안내 한 번");

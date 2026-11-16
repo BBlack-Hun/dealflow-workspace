@@ -728,9 +728,14 @@ def test_check_now_is_admin_only(client, db, people, box, configured, monkeypatc
     assert (row.slot, row.status, row.user_id, row.marked) == ("manual", "ok", 2, 2)
     page = client.get(f"/sourcing?tab={GROUP}").text
     assert "지금 메일 확인" in page
-    assert f"메일 확인: 마지막 {sourcing_mail.stamp(row.started_at)}" in page
-    assert "이번 달 메일로 받은 분 <b>2명</b>" in page
-    assert "메일 주소 없는 분 1명" in page
+    # 머리 줄은 언제(마지막 · 다음) / 몇 명 두 줄이다. 다음 회차 꼬리는 화면에서
+    # `(매일)` 로 줄인다 — `(매일 회차)` 는 무슨 뜻인지 안 읽혔다(UX 점검).
+    block = page.split('data-testid="sourcing-mail-check"', 1)[1].split("</div>", 1)[0]
+    assert "<b>메일 자동 확인</b>" in block
+    assert f"· 마지막 {sourcing_mail.stamp(row.started_at)}" in block
+    assert "(매일)" in block and "회차)" not in block
+    assert "이번 달 메일로 받은 분 <b>2명</b>" in block
+    assert "메일 주소 없는 분 1명" in block
     label = f"{now.month}월 딜 받음 ✓"
     assert label in page
     assert f"(메일 {now.month}/1)" in page
