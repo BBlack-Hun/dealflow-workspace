@@ -281,7 +281,7 @@ def test_intro_is_unchanged(people, client, db):
     default = _preview(client, [people["a"].id], topic="")
     named = _preview(client, [people["a"].id], topic="sourcing_intro")
     assert default["가심사"]["message"] == named["가심사"]["message"]
-    assert "Deal Sourcing 네트워크 참여 방법 안내 드립니다." in default["가심사"]["message"]
+    assert "Deal Sourcing 네트워크 참여 방법 안내드립니다." in default["가심사"]["message"]
 
     # 처음 안내는 이 달 딜 받음을 보지 않는다(지금까지 그대로). 받는 분은 제안 대기중이다
     _mark(db, people["a"])

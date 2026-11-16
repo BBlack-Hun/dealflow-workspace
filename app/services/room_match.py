@@ -110,8 +110,8 @@ UNVERIFIED = "unverified"
 #: 화면에 적는 말. 숫자만 보여 주면 무엇을 해야 하는지 알 수 없다
 #: (`startup_send.NO_ROOM` 과 같은 결).
 STATE_LABELS = {
-    UNVERIFIED: "확인 안 됨",
-    "verified": "확인됨",
+    UNVERIFIED: "확인 전",
+    "verified": "확인 완료",
     "ambiguous": "같은 이름이 여럿",
     "not_found": "카톡에서 못 찾음",
 }
@@ -497,7 +497,7 @@ def verify_sent(item) -> bool:
 #: 갈래 → 화면 말. 차례가 곧 머리 셈의 차례다.
 FIND_LABELS = {
     "busy": "찾는 중",
-    "verified": "확인됨",
+    "verified": "확인 완료",
     "found": "찾음",
     "many": "여럿",
     "none": "못 찾음",

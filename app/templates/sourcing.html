@@ -9,8 +9,8 @@
 <header class="page-head">
   <h1>{{ page_title }}</h1>
   <p class="muted">
-    우리 딜을 <b>같이 볼 사람</b> 명단입니다. 무엇을 찾는지에 따라 갈래가 나뉘고,
-    같은 사람이 여러 갈래에 들어갈 수 있습니다.
+    우리 딜을 <b>같이 볼 사람</b> 명단입니다. 무엇을 찾는지에 따라 탭이 나뉘고,
+    같은 사람이 여러 탭에 들어갈 수 있습니다.
     {# 숫자 둘만 있으면 무엇과 무엇인지 안 읽힌다 — 앞에 이름을 붙인다.
        숫자 꼴(`N / M명`)은 머리글 필터가 다시 적는 공용 꼴이라 그대로 둔다(`filters.js`). #}
     <span title="검색 · 머리글 필터로 걸러 지금 보이는 사람 / 이 탭 전체">보이는 사람 / 전체</span>
@@ -24,9 +24,9 @@
   발송은 <a href="/deals">딜 제안 관리</a> › <b>[딜 소싱 제안]</b> 탭에서 합니다.
   <b>카톡방 이름</b>이 비어 있으면 그 분께는 나가지 않습니다 — 보낼 방이 없기 때문입니다.
   <details>
-    <summary>자세히 — 방 찾는 법</summary>
-    방은 <b>딜을 보낼 PC 의 카톡에 있는 딜 소싱 방</b>입니다.
-    ① 보낼 PC 에서 표 왼쪽 체크박스로 찾을 분을 고르고 ② <b>[방 후보 찾기]</b>를 누르면 그 PC 의 카톡에서 찾습니다.
+    <summary>자세히 — 카톡방 찾는 법</summary>
+    카톡방은 <b>딜을 보낼 PC 의 카톡에 있는 딜 소싱 방</b>입니다.
+    ① 보낼 PC 에서 표 왼쪽 체크박스로 찾을 분을 고르고 ② <b>[카톡방 후보 찾기]</b>를 누르면 그 PC 의 카톡에서 찾습니다.
     ③ 찾은 방이 하나면 그 방으로 바로 확정되고, 둘 이상이면 카톡방 칸의 후보 중 하나를 눌러 확정합니다.
   </details>
 </div>
@@ -67,12 +67,12 @@
   {# **[+ 탭 추가]** — 사람이 없는 새 갈래(`sourcing_buckets.create`). 여닫이와 모양은
      참고자료 `+`(`_ref_new.html`)를 그대로 쓴다. 새 탭은 투자사 관리 현황과 잇지 않는다. #}
   <details class="ref-new" data-testid="sourcing-tab-add">
-    <summary class="sheet-tab ref-new-btn" title="탭 추가 — 새 갈래를 만듭니다"
+    <summary class="sheet-tab ref-new-btn" title="탭 추가 — 새 탭을 만듭니다"
              aria-label="탭 추가">+ 탭 추가</summary>
     <form method="post" action="/sourcing/buckets/add" class="ref-new-form">
       <input type="hidden" name="tab" value="{{ selected or 'all' }}">
       <label class="field"><span>탭 이름</span>
-        <input type="text" name="name" maxlength="40" required placeholder="예) 새 갈래 이름"></label>
+        <input type="text" name="name" maxlength="40" required placeholder="예) 새 탭 이름"></label>
       <button class="primary-btn inline" type="submit">만들기</button>
       <p class="hint">새 탭은 투자사 관리 현황과 <b>잇지 않습니다</b> — 잇는 갈래는
         {{ branch_labels }} 뿐입니다. 보낼 문구는 이 탭 이름으로 따로 적습니다.</p>
@@ -87,10 +87,10 @@
 {% if selected and not sync_tab %}
 <form method="post" action="/sourcing/buckets/rename" class="ref-rename sheet-rename">
   <input type="text" name="new" value="{{ selected }}" maxlength="80"
-         aria-label="갈래 이름">
+         aria-label="탭 이름">
   <input type="hidden" name="old" value="{{ selected }}">
   <button class="linkbtn" type="submit">이름 저장</button>
-  <span class="hint">이 갈래의 사람 · 문구가 함께 따라갑니다</span>
+  <span class="hint">이 탭의 사람 · 문구가 함께 따라갑니다</span>
 </form>
 {# [탭 삭제](#78) — **사람이 0명인 탭만 · 관리자만.** 그 이름의 문구 · 골라 둔 것도
    함께 지운다(`sourcing_buckets.delete`). 사람이 있으면 단추가 안 선다. #}
@@ -145,8 +145,8 @@
       <input type="hidden" name="tab" value="{{ selected or 'all' }}">
       <input type="hidden" name="ids" value="">
       <button type="submit" class="secondary-btn" id="sourcing-room-btn" disabled
-              title="{% if room_sender %}표에서 체크한 분 중 이 계정({{ user.name }}) 카톡 기준 제목이 없는 분을 내 PC 의 카톡에서 찾습니다 — 찾은 제목은 이 계정 전용으로 담깁니다 · 메시지는 보내지 않습니다{% else %}표에서 체크한 분 중 방이 없는 분을 내 PC 의 카톡에서 찾습니다 — 메시지는 보내지 않습니다{% endif %}">
-        방 후보 찾기 (선택 0명)</button>
+              title="{% if room_sender %}표에서 체크한 분 중 이 계정({{ user.name }}) 카톡 기준 제목이 없는 분을 내 PC 의 카톡에서 찾습니다 — 찾은 제목은 이 계정 전용으로 담깁니다 · 메시지는 보내지 않습니다{% else %}표에서 체크한 분 중 카톡방이 없는 분을 내 PC 의 카톡에서 찾습니다 — 메시지는 보내지 않습니다{% endif %}">
+        카톡방 후보 찾기 (선택 0명)</button>
     </form>
     <span class="hint" id="sourcing-room-hint" data-testid="sourcing-room-hint">찾을 분을 먼저 고르세요</span>
     {# **[저절로 잇기]** — 투자사 관리 현황과 잇는 갈래(`sourcing_sync.BRANCHES`)
@@ -158,7 +158,7 @@
           data-testid="sourcing-vc-auto-link">
       <input type="hidden" name="tab" value="{{ selected }}">
       <button type="submit" class="secondary-btn"
-              title="이름과 휴대폰이 둘 다 같은 투자사 관리 현황 줄이 딱 하나인 분만 잇습니다 — 나머지는 후보로 남아 [이 분으로 확정]을 기다립니다. 참여 칸은 바꾸지 않습니다">
+              title="이름과 휴대폰이 둘 다 같은 투자사 관리 현황 줄이 딱 하나인 분만 잇습니다 — 나머지는 후보로 남아 [이 분으로 확정]을 기다립니다. 참여 열은 바꾸지 않습니다">
         투자사 관리 현황과 저절로 잇기</button>
     </form>
     {% endif %}
@@ -199,10 +199,10 @@
     {% if selected %}
     <button type="button" class="primary-btn inline" id="sourcing-add"
             data-bucket="{{ selected }}" data-label="{{ bucket_label(selected) }}" data-testid="sourcing-add"
-            title="{% if sync_tab %}투자사 관리 현황에도 같이 들어갑니다 — 이름 · 휴대폰이 같은 분이 있으면 그 줄과 잇고, 없으면 내 '직접 추가' 명단에 새로 만듭니다{% else %}이 갈래는 투자사 관리 현황과 잇지 않습니다 — 딜 소싱에만 들어갑니다{% endif %}">{{ bucket_label(selected) }}에 추가</button>
-    {% if not sync_tab %}<span class="hint" data-testid="sourcing-add-unsynced">이 갈래는 투자사 관리 현황과 잇지 않습니다</span>{% endif %}
+            title="{% if sync_tab %}투자사 관리 현황에도 같이 들어갑니다 — 이름 · 휴대폰이 같은 분이 있으면 그 줄과 잇고, 없으면 내 '직접 추가' 명단에 새로 만듭니다{% else %}이 탭은 투자사 관리 현황과 잇지 않습니다 — 딜 소싱에만 들어갑니다{% endif %}">{{ bucket_label(selected) }}에 추가</button>
+    {% if not sync_tab %}<span class="hint" data-testid="sourcing-add-unsynced">이 탭은 투자사 관리 현황과 잇지 않습니다</span>{% endif %}
     {% else %}
-    <span class="hint">갈래 탭을 고르면 사람을 추가할 수 있습니다</span>
+    <span class="hint">탭을 고르면 사람을 추가할 수 있습니다</span>
     {% endif %}
   </div>
 </div>
@@ -308,7 +308,7 @@
           <b class="cell" data-field="name">{{ r.name }}</b>
           <div class="cell-sub row-actions">
             <button type="button" class="linkbtn danger js-sourcing-del"
-                    title="이 사람을 이 갈래의 명단에서 뺍니다">삭제</button>
+                    title="이 사람을 이 탭의 명단에서 뺍니다">삭제</button>
           </div>
           {# **이 달 딜 받음** — 사람이 누르거나 메일 확인이 저절로 세운다
              (`services/sourcing_receipts.py`). 칸을 하나 더 세우지 않는다 —
@@ -439,15 +439,15 @@
                   title="{{ user.name }} 님 카톡 기준 방 제목 — 이 계정이 보낼 때 씁니다">{{ user.name }} 전용</span>
             {% if mine_state == 'confirmed' %}
             <b title="{{ mine.room }}">💬 {{ mine.room }}</b>
-            <span class="room-badge ok">확인됨</span>
+            <span class="room-badge ok">확인 완료</span>
             <form method="post" action="/sourcing/{{ r.id }}/room-clear" class="inline-form">
               <input type="hidden" name="tab" value="{{ selected or 'all' }}">
               <button type="submit" class="linkbtn"
-                      title="이 계정 전용 톡방 연결을 끊습니다 — 명단의 방 이름은 그대로입니다">톡방 연결 끊기</button>
+                      title="이 계정 전용 카톡방 연결을 끊습니다 — 명단의 방 이름은 그대로입니다">카톡방 연결 끊기</button>
             </form>
             {% else %}
             {# 이 계정 제목도 명단 이름도 없다 — 보낼 방이 없다(발송이 뺀다). #}
-            {% if not r.kakao_room_name %}<span class="room-badge warn">방 없음</span>{% endif %}
+            {% if not r.kakao_room_name %}<span class="room-badge warn">카톡방 없음</span>{% endif %}
             {% if mine_state == 'not_found' %}
             <span class="room-badge warn">이 계정 카톡에서 못 찾음</span>
             {% else %}
@@ -458,7 +458,7 @@
               <input type="hidden" name="tab" value="{{ selected or 'all' }}">
               <input type="hidden" name="ids" value="{{ r.id }}">
               <button type="submit" class="linkbtn"
-                      title="이 분의 방을 내 PC 의 카톡에서 찾습니다 — 찾은 제목은 이 계정 전용으로 담깁니다 · 메시지는 보내지 않습니다">방 후보 찾기</button>
+                      title="이 분의 카톡방을 내 PC 의 카톡에서 찾습니다 — 찾은 제목은 이 계정 전용으로 담깁니다 · 메시지는 보내지 않습니다">카톡방 후보 찾기</button>
             </form>
             {% endif %}
             {% if r.kakao_room_name %}<div class="muted">이 계정 제목이 없으면 명단 이름으로 보냅니다</div>{% endif %}
@@ -496,16 +496,16 @@
              지난 찾기 오류` 가 한 문장으로 읽힌다. 상태 글자는 IR · 스타트업 방 찾기도 쓰는
              공용 값이라(`startup_room_pick.STATE_LABELS`) 그대로 두고 모양만 나눈다. #}
           <div class="cell-sub sourcing-room" data-testid="sourcing-no-room">
-            <span class="room-badge warn">방 없음</span>
+            <span class="room-badge warn">카톡방 없음</span>
             <span class="room-badge muted">{{ pick.state_label }}</span>
             {# 마지막 찾기가 발송기 오류로 끝났다 — 후보는 그 전 것 그대로다. 무슨 오류인지는 풍선말. #}
             {% if pick.error %}<span class="room-badge bad" data-testid="sourcing-room-error"
-                  title="지난 [방 후보 찾기]가 오류로 끝났습니다(후보는 그 전 것 그대로): {{ pick.error }}">지난 찾기 오류</span>{% endif %}
+                  title="지난 [카톡방 후보 찾기]가 오류로 끝났습니다(후보는 그 전 것 그대로): {{ pick.error }}">지난 찾기 오류</span>{% endif %}
             <form method="post" action="/sourcing/rooms/search" class="inline-form js-room-search" data-send="proxy">
               <input type="hidden" name="tab" value="{{ selected or 'all' }}">
               <input type="hidden" name="ids" value="{{ r.id }}">
               <button type="submit" class="linkbtn"
-                      title="이 분의 방을 내 PC 의 카톡에서 찾습니다 — 메시지는 보내지 않습니다">방 후보 찾기</button>
+                      title="이 분의 카톡방을 내 PC 의 카톡에서 찾습니다 — 메시지는 보내지 않습니다">카톡방 후보 찾기</button>
             </form>
           </div>
           {% endif %}
@@ -605,7 +605,7 @@
       var cell = tr.querySelector('[data-field="name"]');
       var name = ((cell && cell.textContent) || "").trim();
       if (!confirm("'" + name + "' 님을 딜 소싱 명단에서 삭제할까요? 되돌릴 수 없습니다.\n" +
-        "(같은 사람이 다른 갈래에도 있으면 그 줄은 그대로 남습니다)")) return;
+        "(같은 사람이 다른 탭에도 있으면 그 줄은 그대로 남습니다)")) return;
       btn.disabled = true;
       fetch("/api/sourcing/" + tr.getAttribute("data-id"), { method: "DELETE" })
         .then(function (r) {
@@ -854,7 +854,7 @@
     var roomBtn = document.getElementById("sourcing-room-btn");
     var roomHint = document.getElementById("sourcing-room-hint");
     // 보내는 계정이면 `방 없음` 이 아니라 그 계정 제목이 확인된 분을 뺀다(`data-skip`).
-    var roomSkip = (roomForm && roomForm.getAttribute("data-skip")) || "'방 없음' 이 아닌";
+    var roomSkip = (roomForm && roomForm.getAttribute("data-skip")) || "'카톡방 없음' 이 아닌";
     function roomPicked() {
       var rows = [], skip = 0, hidden = 0;
       pickBoxes().forEach(function (cb) {
@@ -870,7 +870,7 @@
     function syncRoomBtn() {
       if (!roomBtn) return;
       var got = roomPicked();
-      roomBtn.textContent = "방 후보 찾기 (선택 " + got.rows.length + "명" +
+      roomBtn.textContent = "카톡방 후보 찾기 (선택 " + got.rows.length + "명" +
         (got.hidden ? " · 일부 숨김" : "") + ")";
       roomBtn.disabled = !got.rows.length;
       if (!roomHint) return;

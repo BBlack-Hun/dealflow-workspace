@@ -90,7 +90,7 @@ def _tab_counts(html: str) -> dict:
     for href, body in re.findall(
             r'<a class="sheet-tab[^"]*"\s+href="/contacts\?sheet=([^"]+)"[^>]*>(.*?)</a>',
             nav, re.S):
-        m = re.search(r'data-testid="(?:tab|all-tab)-counts">(?:내 명단 )?(\d+)명 / 카톡방 확인 (\d+)',
+        m = re.search(r'data-testid="(?:tab|all-tab)-counts">(?:내 명단 )?(\d+)명 / 카톡방 확인 완료 (\d+)',
                       body)
         assert m, f"탭에 `총원 / 확인` 이 없다: {body}"
         out[href] = (int(m.group(1)), int(m.group(2)))
@@ -145,7 +145,7 @@ def test_a_member_sees_confirmed_for_their_own_list(world):
     """팀원의 `전체` 는 내 명단이 표다 — `/ 확인` 도 내 명단 몫이다."""
     html = _login("01000000001").get("/contacts?sheet=all").text
     tab = re.search(r'data-testid="all-tab-counts">([^<]*)<', html).group(1)
-    assert tab == "내 명단 6명 / 카톡방 확인 2 · 팀 전체 8명", tab
+    assert tab == "내 명단 6명 / 카톡방 확인 완료 2 · 팀 전체 8명", tab
     assert _table(html) == (6, 2)
 
 

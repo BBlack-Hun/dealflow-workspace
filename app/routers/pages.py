@@ -404,7 +404,7 @@ class ListPage:
 
 
 CONTACTS_PAGE = ListPage(key="vc", page=contact_columns.PAGE_CONTACTS,
-                         investors=True, row_label="담당자", row_unit="명",
+                         investors=True, row_label="심사역", row_unit="명",
                          default_layout=contact_columns.DEFAULT,
                          room_check=True, settings_open=True)
 STARTUP_PAGE = ListPage(key="startup", page=contact_columns.PAGE_STARTUP,

@@ -100,10 +100,10 @@ def scope(bucket: str) -> Optional[str]:
     """이 갈래가 찾는 딜의 범위. 없으면 범위 줄을 넣지 않는다."""
     low = (bucket or "").lower()
     if is_series_a(low):
-        return ("[ 프리 IPO 전단계 , 시리즈 A 이상 , 100억 이상 투자유치기업 딜 , "
-                "바이아웃 딜 , M&A 딜 , 프리밸류 200억 이상 딜 ]")
+        return ("[ 프리 IPO 전단계, 시리즈 A 이상, 100억 이상 투자유치기업 딜, "
+                "바이아웃 딜, M&A 딜, 프리밸류 200억 이상 딜 ]")
     if any(h in low for h in _MNA_HINTS):
-        return "[ M&A , 후속투자 , 공동투자 , 앵커투자 딜 ]"
+        return "[ M&A, 후속투자, 공동투자, 앵커투자 딜 ]"
     return None
 
 
@@ -114,7 +114,7 @@ def default_body(bucket: str) -> str:
     한다. 원본 스크립트를 넣으면 그것이 이 자리를 대신한다.
     """
     lines = [
-        "Deal Sourcing 네트워크 참여 방법 안내 드립니다.",
+        "Deal Sourcing 네트워크 참여 방법 안내드립니다.",
         "",
         "투자 방향이나 Fit 차이로 검토 제외된 딜을",
         "투자사 간 재공유하는 네트워크입니다.",
@@ -124,9 +124,9 @@ def default_body(bucket: str) -> str:
         lines += ["", where]
     lines += [
         "",
-        f" . 매월 1~3주 검토 제외 딜 , {deal_count(bucket)}개사 전달 주시면",
-        " . 컨텍브이씨 ASSET 취합 > 월초 통합하여 공유 드립니다",
-        " . 클로즈드 방식 운영되고 있습니다.",
+        f"· 매월 1~3주 검토 제외 딜 {deal_count(bucket)}개사 전달 주시면",
+        "· 컨텍브이씨 ASSET 취합 > 월초 통합하여 공유드립니다",
+        "· 클로즈드 방식으로 운영되고 있습니다.",
         "",
         "참여 가능하시면 편히 말씀 부탁드립니다.",
     ]

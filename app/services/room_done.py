@@ -101,13 +101,13 @@ def summary(db: Session, job: SendJob) -> Optional[dict]:
                 got[room_match.find_state(row, known)] += 1
         parts = [f"찾음 {got['found']}", f"여럿 {got['many']}", f"못 찾음 {got['none']}"]
         if got["verified"]:
-            parts.append(f"확인됨 {got['verified']}")
+            parts.append(f"확인 완료 {got['verified']}")
         head = "방 찾기를 중단했습니다" if stopped else "방 찾기가 끝났습니다"
         pick = True
     else:
         sent = sum(1 for i in job.items if i.status == "sent")
         failed = sum(1 for i in job.items if i.status == "failed")
-        parts = [f"확인됨 {sent}", f"불일치 {failed}"]
+        parts = [f"확인 완료 {sent}", f"불일치 {failed}"]
         head = "방 연결 확인을 중단했습니다" if stopped else "방 연결 확인이 끝났습니다"
         pick = False
     if canceled:

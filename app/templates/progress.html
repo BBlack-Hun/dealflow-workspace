@@ -20,7 +20,7 @@
 <div class="counters" id="counters">
   <div class="counter"><span class="c-num" id="c-pending">0</span><span class="c-label">대기</span></div>
   <div class="counter sending"><span class="c-num" id="c-sending">0</span><span class="c-label">{% if verify %}확인중{% else %}발송중{% endif %}</span></div>
-  <div class="counter ok"><span class="c-num" id="c-sent">0</span><span class="c-label">{% if verify %}확인됨{% else %}성공{% endif %}</span></div>
+  <div class="counter ok"><span class="c-num" id="c-sent">0</span><span class="c-label">{% if verify %}확인 완료{% else %}성공{% endif %}</span></div>
   <div class="counter fail"><span class="c-num" id="c-failed">0</span><span class="c-label">{% if verify %}불일치{% else %}실패{% endif %}</span></div>
 </div>
 
@@ -129,12 +129,12 @@
    맞춰진 줄 안다. #}
 <div class="warn-box" data-testid="room-search-note">
   방 이름이 적힌 곳은 <b>그 이름 그대로</b> 확인합니다 — 글자까지 같은 방이 있으면
-  <b>확인됨</b> 입니다. 방 이름이 없는 곳에서 찾은 방 제목은 <b>후보</b>로만 담깁니다 —
+  <b>확인 완료</b>입니다. 방 이름이 없는 곳에서 찾은 방 제목은 <b>후보</b>로만 담깁니다 —
   방 이름은 저절로 바뀌지 않습니다. <a href="{{ rooms_href }}">{{ rooms_label }}</a> 화면에서 맞는
   방을 골라 <b>확정</b>하면 안내 카톡을 보낼 수 있습니다. 후보가 없는 곳은 카톡에서 방
   제목을 복사해 거기서 직접 적어 주세요.
   <br>아래 상태 칸은 줄마다 <b>찾음</b>(후보 하나) · <b>여럿</b>(후보 둘 이상) · <b>못 찾음</b> ·
-  <b>확인됨</b>(적어 둔 이름 그대로 있음)입니다. 찾기가 끝나면 이 화면이 알려 줍니다.
+  <b>확인 완료</b>(적어 둔 이름 그대로 있음)입니다. 찾기가 끝나면 이 화면이 알려 줍니다.
 </div>
 {% elif verify %}
 <div class="warn-box">

@@ -347,7 +347,7 @@
     fetch("/api/contacts/" + id)
       .then(function (r) { return r.json(); })
       .then(function (d) {
-        if (!d.contact) { setMsg("담당자를 불러오지 못했습니다", true); return; }
+        if (!d.contact) { setMsg("심사역을 불러오지 못했습니다", true); return; }
         current = d.contact.id;
         fillForm(d.contact);
         // IR 기업 연결 표시 — 그 칸이 있는 화면만(`ir_link_badge.js`).
@@ -403,10 +403,10 @@
       }
       var plan = res.d.plan || {};
       if (!confirm((plan.kind_label || "") + " · " + (plan.day || "") +
-          " 로 손으로 적은 이 담당자 줄을 되돌립니다.\n\n" +
+          " 로 직접 기록한 이 심사역 줄을 되돌립니다.\n\n" +
           "지우지 않고 숨깁니다 — 보고·진행 단계·이력 어디에서도 안 읽힙니다." +
           (plan.sequences ? "\n이 기록이 잡은 리마인드도 함께 거둡니다." : "") +
-          "\n같은 날 함께 적은 다른 담당자 줄은 그대로 둡니다.\n\n되돌릴까요?")) {
+          "\n같은 날 함께 적은 다른 심사역 줄은 그대로 둡니다.\n\n되돌릴까요?")) {
         btn.disabled = false;
         return;
       }
@@ -446,7 +446,7 @@
     // 고치기) 여기서 막으면 메모 한 줄 고치는 데 이름이 필요해진다.
     if (!current) {
       var need = ADD ? ADD.required : "name";
-      var needLabel = ADD ? ADD.required_label : "담당자명";
+      var needLabel = ADD ? ADD.required_label : "심사역 이름";
       if (!body[need]) { setMsg(needLabel + "을 입력하세요", true); return; }
       // **지금 보고 있는 탭에 넣는다.** 안 실으면 그 줄은 `직접 추가` 로
       // 밀려나 방금 보던 화면 어느 탭에도 안 뜬다 — 넣어 놓고도 안 들어간
@@ -493,7 +493,7 @@
     // 새로 넣던 줄이면 지울 것이 없다 — 창만 닫는다. 사람이 [삭제] 를
     // 눌러 버리기로 정한 길이라 다시 묻지 않는다.
     if (!current) { modal.close(true); return; }
-    if (!confirm("이 담당자를 삭제할까요? 활동 이력도 함께 지워집니다.\n" +
+    if (!confirm("이 심사역을 삭제할까요? 활동 이력도 함께 지워집니다.\n" +
       "(이직·투자사 변경이면 삭제 대신 '검토중단' 을 권합니다 — 이력이 남습니다)")) return;
     // **서버가 준 사유를 그대로 띄운다.**
     //
@@ -551,7 +551,7 @@
       "'" + who + "' 님을 '" + owner + "' 님의 명단 '" + label + "' 로 넘길까요?\n\n" +
       "· 지금 명단에서 빠지고 " + owner + " 님의 담당이 됩니다 — " +
       "이 줄은 " + owner + " 님의 대시보드와 딜 소개 발송 대상으로 옮겨 갑니다.\n" +
-      "· 월별 기록은 명단마다 칸이 따로라, 지금까지 적어 둔 월별 기록은 " +
+      "· 월별 기록은 명단마다 열이 따로라, 지금까지 적어 둔 월별 기록은 " +
       "새 명단의 수정창에 보이지 않습니다. 지워지지는 않고, 도로 넘기면 다시 보입니다.")) return;
     var btn = el("transfer-btn");
     btn.disabled = true;
@@ -582,7 +582,7 @@
   }
 
   function verify(ids, label) {
-    if (!ids.length) { alert("확인할 담당자가 없습니다."); return; }
+    if (!ids.length) { alert("확인할 심사역이 없습니다."); return; }
     // 찾는 순서는 서버가 정한다(`services/vc_room_search` — 적어 둔 방 이름 → 이름+직급
     // → 이름). 여기서는 무엇이 일어나는지만 적는다.
     if (!confirm(label + " " + ids.length + "명의 카톡방을 확인합니다.\n" +
@@ -611,7 +611,7 @@
     if (!ids.length) { alert("찾을 줄이 없습니다."); return; }
     if (!confirm(label + " " + ids.length + "줄 중 카톡방이 확인 안 된 내 줄을 찾고 확인합니다.\n" +
       "· 방 이름이 적힌 곳 — 그 이름 그대로 카톡에서 확인\n" +
-      "· 방 이름이 없는 곳 — 회사명으로 찾아 후보만 모음([방 매칭] 에서 골라 확정)\n" +
+      "· 방 이름이 없는 곳 — 회사명으로 찾아 후보만 모음([카톡방 매칭] 에서 골라 확정)\n" +
       "카카오톡이 켜져 있어야 하며, 찾는 중에는 PC 조작을 멈춰주세요.\n" +
       "(문구는 전송하지 않습니다)")) return;
     fetch("/api/startup-rooms/search", {
@@ -671,7 +671,7 @@
   }
   on("transfer-btn", "click", transfer);
   on("verify-one-btn", "click", function () {
-    if (current) verify([current], "선택한 담당자");
+    if (current) verify([current], "선택한 심사역");
   });
   on("verify-btn", "click", function () {
     verify(visibleIds(), "현재 목록의");
@@ -696,7 +696,7 @@
     if (el("f-channel_kakao")) el("f-channel_kakao").checked = true;
     // 창 제목도 안내도 **서버가 준 말**이다. 여기 적어 두면 스타트업 화면에서
     // 기업을 넣는데 창에는 `담당자 추가` 라고 뜬다.
-    openPanel((ADD ? ADD.label : "담당자") + " 추가");
+    openPanel((ADD ? ADD.label : "심사역") + " 추가");
     setMsg(ADD ? ADD.hint : "");
   });
   Array.prototype.forEach.call(document.querySelectorAll(".detail-tab"), function (b) {

@@ -565,7 +565,7 @@ def test_sender_sees_its_own_titles_on_the_sourcing_page(client, db, users, send
     assert 'data-testid="sourcing-sender-room"' in done and 'data-state="confirmed"' in done
     assert f"{me} 전용" in done and "💬 보내는 계정 홍소싱 방" in done
     assert f'action="/sourcing/{sender_view["room"].id}/room-clear"' in done
-    assert ">톡방 연결 끊기</button>" in done and "확정 거두기" not in done
+    assert ">카톡방 연결 끊기</button>" in done and "확정 거두기" not in done
     assert "명단 이름:" in done and SRC_OWN in done       # 명단의 방 이름은 아래 참고로
     assert "data-no-room" not in done.split(">", 1)[0]     # 이 계정 제목이 있다 — 안 찾는다
     assert "room-confirm" not in done
