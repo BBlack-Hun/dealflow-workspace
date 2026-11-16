@@ -149,8 +149,11 @@ def test_badge_shows_the_delegate_agent(db, users):
     _via(db)
     state = agent_status(db, 2)
     assert state["online"] is True
-    assert state["label"] == "강민준 발송기로 보냄 · 연결됨 · mac-test"
-    assert agent_status(db, 1)["label"] == "발송 프로그램 연결됨 · mac-test"
+    assert state["label"] == "강민준 발송기로 보냄 · 연결됨"
+    # PC 이름은 배지 글자가 아니라 툴팁이다 — 늘 서 있는 배지가 캡처마다 PC 이름을 내보냈다.
+    assert state["tip"] == "연결된 PC: mac-test"
+    assert agent_status(db, 1)["label"] == "발송 프로그램 연결됨"
+    assert agent_status(db, 1)["tip"] == "연결된 PC: mac-test"
 
 
 # ── 팀 현황에서 정하기 ───────────────────────────────────────────────────────

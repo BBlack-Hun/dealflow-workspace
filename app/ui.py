@@ -127,10 +127,16 @@ def screen_label(path: str) -> str:
     return item["label"] if item else ""
 
 
+# 좌측 메뉴에 없지만 제 이름이 있는 화면 — 사이드바 아래 고리로 가는 화면이다.
+# 여기 없으면 제품 이름이 화면 제목이 되어, 탭에 `CONTACTVC ASSET · CONTACTVC
+# ASSET` 이 서고 어느 화면인지 알 수 없었다. 이름은 그 고리 글자와 같다(`base.html`).
+OTHER_TITLES = {"setup": "발송 프로그램 설치"}
+
+
 def menu_label(active: str) -> str:
     """지금 보고 있는 화면의 이름. 좌측 메뉴와 화면 제목이 어긋나지 않게 한 곳에서 가져온다."""
     item = next((m for m in MENU if m["key"] == active), None)
-    return item["label"] if item else "CONTACTVC ASSET"
+    return item["label"] if item else OTHER_TITLES.get(active, "CONTACTVC ASSET")
 
 
 # 비밀번호를 바꾼 직후라는 표시. 바꾸고 나면 비밀번호 화면에 머무르지 않고
