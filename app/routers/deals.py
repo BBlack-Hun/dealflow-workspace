@@ -310,7 +310,7 @@ def _not_taking_part(contact, topic: str = "") -> str:
 #: 딜 소싱 줄에 **보낼 방이 없다** — 미리보기 경고와 발송 목록에서 뺀 이유.
 #: 어느 갈래도 투자사 방을 이어받지 않으므로(`sourcing_link.linked_rooms`)
 #: 자기 방 이름이 없으면 여기 걸린다 — 딜 소싱 화면의 [방 후보 찾기]로 채운다.
-NO_ROOM_NOTE = "딜 소싱 카톡방 없음 — 딜 소싱 화면의 [방 후보 찾기]로 보내는 분 카톡에서 찾아 확정하세요"
+NO_ROOM_NOTE = "딜 소싱 카톡방 없음 — 딜 소싱 화면의 [카톡방 후보 찾기]로 보내는 분 카톡에서 찾아 확정하세요"
 #: 딜 소개에 **따로 딜을 받는 갈래**(`group_name.SEPARATE`)가 섞였다 — 막지 않고
 #: 말만 한다. 그 칩만 골라 따로 보내는 길이 이 화면이기 때문이다. `{n}` 은 인원.
 SEPARATE_NOTE = f"{group_name.SEPARATE} {{n}}명이 들어 있습니다 — 이분들은 별도 딜 소개 대상입니다"
@@ -1275,7 +1275,7 @@ def build_send_list(req: SendRequest, background: BackgroundTasks,
             detail=f"기업은 1~{MAX_COMPANIES_PER_SEND}개 선택하세요",
         )
     if not req.contact_ids:
-        raise HTTPException(status_code=400, detail="대상 담당자를 1명 이상 선택하세요")
+        raise HTTPException(status_code=400, detail="대상 심사역을 1명 이상 선택하세요")
 
     # ── 스타트업 월간 발송은 **정해진 한 계정만** ──────────────────────────
     #
@@ -2023,7 +2023,7 @@ def _manual_targets(db: Session, user: User, ids: List[int]) -> List[VcContact]:
 
     clean = list(dict.fromkeys(int(i) for i in (ids or [])))
     if not clean:
-        raise HTTPException(status_code=400, detail="적을 담당자를 고르지 않았습니다")
+        raise HTTPException(status_code=400, detail="적을 심사역을 고르지 않았습니다")
     if len(clean) > manual_send.MAX_ROWS:
         raise HTTPException(
             status_code=400,
@@ -2134,7 +2134,7 @@ def undo_manual_send(batch_key: str, body: ManualUndoIn,
     if not rows:
         raise HTTPException(
             status_code=404,
-            detail=("그 판에 그 담당자 줄이 없습니다" if body.contact_id is not None
+            detail=("그 판에 그 심사역 줄이 없습니다" if body.contact_id is not None
                     else "그 판을 찾을 수 없습니다"))
     # 한 줄이라도 남의 것이면 여기서 끝난다 — 아직 아무 것도 안 숨겼다.
     _manual_targets(db, user, [row.contact_id for row in rows])

@@ -558,7 +558,7 @@ def set_sharer(row_id: int, body: SharerIn, db: Session = Depends(get_db),
         if person is None or not series_a_share.is_share_bucket(person.bucket):
             raise HTTPException(
                 status_code=400,
-                detail=f"'{sourcing_sync.SYNC_LABEL}' 갈래의 딜 소싱 심사역만 확정할 수 있습니다")
+                detail=f"'{sourcing_sync.SYNC_LABEL}' 탭의 딜 소싱 심사역만 확정할 수 있습니다")
     row.shared_by_contact_id = body.contact_id
     db.commit()
     # 검색 글자도 — 확정한 분의 `휴대폰` 이 칸에 서고 그 번호로 찾아져야 한다(#152).
@@ -666,9 +666,9 @@ def upload_pitch(
     missing = [sai.HEADERS[a][0] for a in (*pitch.IDENT, pitch.FIELD)
                if sai.HEADERS[a][0] in parsed.missing]
     if missing:
-        return _bad(" · ".join(f"`{m}`" for m in missing) + " 칸이 없습니다 — 머리글 줄에 "
+        return _bad(" · ".join(f"`{m}`" for m in missing) + " 열이 없습니다 — 머리글 줄에 "
                     "줄을 맞추는 `기업명` · `수신 일자` · `공유 심사역` · `회사`(시트 "
-                    "가져오기와 같은 열쇠)와 `딜 소개 문구` 칸이 있어야 합니다", tabs)
+                    "가져오기와 같은 열쇠)와 `딜 소개 문구` 열이 있어야 합니다", tabs)
 
     p = pitch.plan(db, parsed.records, overwrite=overwrite)
     if dry_run:
