@@ -2487,6 +2487,9 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
                       box-shadow: 0 2px 6px rgba(16,21,29,.08); }
 /* 이동 바에서 눌러 내려온 구역이 붙어 있는 바 밑에 가리지 않게 */
 #requests, #remind, #meetings, #reviews, #calls, #delivered { scroll-margin-top: 64px; }
+/* [보낼 자료] · [미팅 스케줄] 머리 — 머리는 div, 제목(+ 건수)만 h2 라 단추 글자가
+   제목에 섞여 읽히지 않는다. 생김새는 예전 h2 머리 그대로. */
+#requests > .panel-title > h2, #meetings > .panel-title > h2 { margin: 0; font-size: inherit; }
 
 /* '맨 위로' 단추(`to_top.js`). 오른쪽 아래에 뜨되 **넓은 표의 스크롤바 모서리를
    비켜 선다.** 넓은 표 상자는 화면 바닥 16px 위(table_fit.js 의 GAP)에서 끝나고
@@ -3006,6 +3009,9 @@ a.guard-go:hover { background: #1e4fd0; text-decoration: none; }
  * 한 줄은 [체크박스 | 기업명 | 지금 값 | 조합값] 넷이다. 긴 문장 둘을 그대로
  * 두면 줄 높이가 제각각이라 눈이 짝을 못 맞춘다 — 두 줄로 자르고 전체 글자는
  * `title` 로 남긴다(잘라 놓고 볼 길을 없애지 않는다). */
+/* 이 판과 [IR 파일명 일괄 입력] 판의 머리 — 머리는 div, 제목만 h2 라
+   [닫기 ✕] 글자가 제목에 섞여 읽히지 않는다. 생김새는 예전 h2 머리 그대로. */
+#ol-bulk > .panel-title > h2, #ir-bulk > .panel-title > h2 { margin: 0; font-size: inherit; }
 .ol-list {
   max-height: 55vh;
   overflow-y: auto;

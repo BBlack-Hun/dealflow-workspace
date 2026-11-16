@@ -91,7 +91,7 @@ def test_고르면_이름으로_적히고_IR_기업현황에_안_섞인다(stage
     html = stage["client"].get("/ir").text
     assert f'href="/companies?tab=series-a&q={quote("샘플에이랩")}"' in html, (
         "Series A 줄로 돌아가는 링크가 없습니다")
-    assert not re.search(r"우리 DB 에 없는 기업: [^<]*샘플에이랩", html), (
+    assert not re.search(r"IR 기업 현황에 없는 기업: [^<]*샘플에이랩", html), (
         "Series A 기업을 IR 기업 현황에 등록하라고 안내합니다")
     # [자료 보내기] 에는 안 실린다 — 붙일 IR 파일이 없는 기업이다.
     assert 'name="company_ids" value=""' not in html

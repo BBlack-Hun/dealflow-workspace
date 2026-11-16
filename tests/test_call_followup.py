@@ -111,6 +111,33 @@ def test_the_rule_is_on_the_cycle_panel(logged, db):
     assert "3~3" not in body
 
 
+def test_the_cycle_head_says_the_rule_as_set(logged, db, u1_admin):
+    """`발송 주기` 판 머리 · `전화 요청` 판 머리는 **지금 설정**을 말한다.
+
+    머리에 `기본은 매월 첫째·셋째 수요일` 이 글자로 박혀 있어, 관리자가 주기를
+    `1,2,3,4` 로 바꾼 뒤에도 머리는 첫째·셋째라 하고 바로 아래 목록은 네 주를
+    말했다(UX 점검 — 사용자가 주기를 잘못 알게 된다). 전화의 `사흘` 도 같았다.
+    """
+    res = logged.post("/followups/rules/deal_cycle",
+                      data={"weekday": "2", "nth_weeks": "1,2,3,4"},
+                      follow_redirects=False)
+    assert res.status_code == 303, res.text
+    res = logged.post("/followups/rules/call",
+                      data={"offset_min_days": "4", "offset_max_days": "4"},
+                      follow_redirects=False)
+    assert res.status_code == 303, res.text
+
+    body = logged.get("/ir").text
+    cycle = body[body.index('id="rules"'):]
+    cycle = cycle[:cycle.index("</h2>")]
+    assert "매월 1·2·3·4번째 수요일" in cycle, cycle
+    assert "첫째·셋째" not in body
+    calls = body[body.index('id="calls"'):]
+    calls = calls[:calls.index("</h2>")]
+    assert "미팅 요청 4일 뒤" in calls, calls
+    assert "사흘" not in calls
+
+
 # --- 2. ★ 답이 온 상대에게는 안 뜬다 ------------------------------------------------
 
 def test_an_ir_request_takes_the_call_off_the_list(waiting_call, logged, db):
