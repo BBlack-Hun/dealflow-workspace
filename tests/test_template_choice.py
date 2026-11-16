@@ -377,7 +377,7 @@ def test_미리보기의_받는_사람은_가상의_사람이다(logged_in, db, 
 
 def test_고를_것이_하나뿐이면_선택기를_띄우지_않는다(logged_in, db):
     """고를 것이 없는데 라디오만 늘어서면 무엇을 하는 화면인지 흐려진다.
-    대신 '기본 문구를 복사해 내 문구 만들기' 가 보여야 한다."""
+    대신 '팀 기본을 복사해 내 문구 만들기' 가 보여야 한다."""
     from app.models import MessageTemplate
 
     db.add(MessageTemplate(user_id=None, kind=KIND, body=TEAM_A, is_active=1))
@@ -385,8 +385,8 @@ def test_고를_것이_하나뿐이면_선택기를_띄우지_않는다(logged_i
     body = logged_in.get("/templates").text
     section = body[body.index('id="closing_day1"'):]
     section = section[:section.index('<details')]
-    assert "이 문구로 정하기" not in section
-    assert "기본 문구를 복사해 내 문구 만들기" in section
+    assert "고른 문구를 내 발송에 쓰기" not in section
+    assert "팀 기본을 복사해 내 문구 만들기" in section
 
 
 def test_지금_고른_문구가_화면에_드러난다(client, db, users, two_team_defaults):
@@ -395,7 +395,7 @@ def test_지금_고른_문구가_화면에_드러난다(client, db, users, two_t
     client.post("/templates/choose",
                 data={"kind": KIND, "template_id": two_team_defaults["b"]})
     body = client.get("/templates").text
-    assert "내가 고른 문구" in body
+    assert '<span class="tag">사용 중</span>' in body
     # 라디오에도 지금 고른 것이 찍혀 있어야 한다 — 목록만 보여 주면
     # 고르러 들어왔다가 무엇이 켜져 있는지 몰라 또 고르게 된다.
     flat = re.sub(r"\s+", " ", body)

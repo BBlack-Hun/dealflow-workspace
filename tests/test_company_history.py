@@ -362,7 +362,7 @@ def test_고르는_카드에도_몇_번_나갔는지_선다(logged, db, users):
     _intro(db, many[:1], "2026-08-13", ["샘플애그"])
 
     page = logged.get("/deals").text
-    assert ">2회</span>" in page, "카드에 몇 번 나갔는지가 없다"
+    assert ">누적 2회</span>" in page, "카드에 몇 번 나갔는지가 없다"
     assert "보낸 날 2번 · 서로 다른 투자사 3곳 · 발송 4명" in page
 
 

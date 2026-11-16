@@ -302,6 +302,10 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   var lastPreviews = [];
   // 마지막 미리보기가 센 `방 나감` 인원 — 확인창이 "K명은 빼고 보냅니다" 로 쓴다.
   var leftRoomCount = 0;
+  // 딜 소개에 기업을 아직 안 골랐을 때의 빈 상태 한 줄 — 글자는 서버가 짓는다
+  // (`routers/deals.py` 의 `NO_COMPANIES_NOTE`). 경고 칸에 사람마다 서면 오류문이
+  // 본문처럼 읽혀서, 미리보기 위에 옅게 한 번만 적는다.
+  var previewEmptyNote = "";
   // **지금 열어 둔 미리보기 탭**(담당자 하나). [보낼 자료] 목록의 번호가 이
   // 탭을 따른다 — 번호는 담당자마다 다르기 때문에 "누구 것인지" 없이는 적을
   // 수 없다(`renderIrLinks` 설명 참고).
@@ -597,7 +601,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
         noreactInView += 1;
       }
       var matched = hit && inBucket && inAssignee && inGroup && inNoReact && !excluded && !covered;
-      // [반응 없는 담당자만] 을 켠 채 방금 [반응 없음에서 빼기] 한 분 — 조건에는 안 맞지만
+      // [반응 없는 담당자만] 을 켠 채 방금 [반응 있음으로 표시] 한 분 — 조건에는 안 맞지만
       // (고르기에 안 딸려 온다) 그 자리에 남겨 [되돌리기] 가 닿게 한다(아래 `noreact-toggle`).
       var held = noreactOnly && card.hasAttribute("data-noreact-undo") && hit && inGroup && !excluded;
       var visible = (picked && !excluded) || (matched && !pickedOnly) || (held && !pickedOnly);
@@ -1382,7 +1386,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     if (previewTimer) clearTimeout(previewTimer);
     previewTimer = setTimeout(function () {
       previewTimer = null;
-      if (state) state.textContent = "고르는 대로 바로 나옵니다";
+      if (state) state.textContent = "고르는 대로 바로 반영됩니다";
       refreshPreview();
     }, 400);
   }
@@ -1392,12 +1396,12 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     var nt = selectedContactIds().length;
     var askMode = !needsCompanies();
 
-    companyPill.innerHTML = "<b>" + nc + "</b> / " + MAX_COMPANIES;
+    companyPill.innerHTML = "<b>" + nc + "</b>/" + MAX_COMPANIES + "곳 선택";
     companyPill.classList.toggle("on", nc > 0);
     contactPill.innerHTML = "<b>" + nt + "</b>명";
     contactPill.classList.toggle("on", nt > 0);
 
-    ssCompanies.innerHTML = "<b>" + nc + "</b>개 기업";
+    ssCompanies.innerHTML = "기업 <b>" + nc + "</b>곳";
     ssCompanies.hidden = askMode;                 // 문구만 보낼 때는 기업 수가 의미 없다
     document.querySelector(".ss-arrow").hidden = askMode;
     ssContacts.textContent = nt;
@@ -1664,13 +1668,14 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     // 기본 문구는 아직 아무에게도 가지 않는다 — 진짜 사람에게 갈 문구로
     // 읽히면 확인만 하려다 그대로 보내게 된다.
     var meta = p.sample
-      ? '<div class="bubble-meta sample">기본 문구 — 아직 대상을 고르지 않았습니다. ' +
-        '담당자를 고르면 그 사람 이름으로 바뀝니다.' +
+      ? '<div class="bubble-meta sample">기본 문구 — 아직 받는 분을 고르지 않았습니다. ' +
+        '② 에서 고르면 그분 이름으로 바뀝니다.' +
         ' <span class="edited-flag" id="edited-flag" hidden>· 수정함</span></div>'
       : '<div class="bubble-meta">' + escapeHtml(p.name) + " " + escapeHtml(p.title || "") +
         " · " + escapeHtml(roomLine) + (p.has_history ? " · 재연락" : " · 첫연락") +
         ' <span class="edited-flag" id="edited-flag" hidden>· 수정함</span></div>';
     previewArea.innerHTML =
+      (previewEmptyNote ? '<p class="hint preview-empty">' + escapeHtml(previewEmptyNote) + "</p>" : "") +
       meta +
       sharePlanHtml(p) +
       splitNotice(p) +
@@ -1773,6 +1778,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
         if (!res.ok) { previewArea.innerHTML = '<p class="muted">' + escapeHtml(res.d.detail || "미리보기 실패") + "</p>"; return; }
         lastPreviews = res.d.previews || [];
         leftRoomCount = res.d.left_room || 0;
+        previewEmptyNote = res.d.empty_note || "";
         // 고친 문구를 되살린다. 담당자를 하나 더 체크하면 미리보기가 새로
         // 그려지는데, 그때마다 앞서 고쳐 둔 것이 **말없이 사라졌다** —
         // 열 명을 고치고 한 명 더 넣으면 열 명분이 날아간다.
@@ -2098,7 +2104,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     }
   });
 
-  // ── [반응 없음에서 빼기] · [되돌리기](11/11) ──────────────────────────────
+  // ── [반응 있음으로 표시] · [되돌리기](11/11) ──────────────────────────────
   // 전화 · 다른 길로 반응이 있었던 분을 사람이 `반응 없음` 에서 뺀다. 저장과 판정은 서버다
   // (`/api/contacts/{id}/no-reaction` · `services/no_reaction`) — 화면은 답을 받은 뒤 카드의
   // `data-noreact` 만 고쳐, 단추 수 · 거르기 · 안내 줄이 `applyContactFilter` 한 길로 따라온다.

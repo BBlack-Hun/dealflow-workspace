@@ -85,9 +85,9 @@
   <span class="hint">
     메일 발송은 아직 켜지지 않았습니다 — 메일 서버 정보({{ mail.missing|join(', ') }})가 필요합니다.
   </span>
-  {% else %}
-  <span class="hint">보내는 주소: <code>{{ mail.from_address }}</code></span>
   {% endif %}
+  {# 보내는 주소는 이메일을 골랐을 때만 뜨는 메일 칸(`#mail-fields`)에 적는다 —
+     카톡으로 보낼 때도 주소가 늘 서 있으면 메일로 나가는 줄 읽힌다. #}
 </div>
 
 {#
@@ -98,25 +98,25 @@
 #}
 <div class="mode-tabs" id="mode-tabs">
   <button type="button" class="mode-tab active" data-mode="deal">
-    딜 소개<span>인사말 + 안내문 + 기업 목록</span>
+    딜 소개 <span>인사말 + 안내문 + 기업 목록</span>
   </button>
   <button type="button" class="mode-tab" data-mode="ir">
-    IR 자료 전달<span>요청받은 기업 자료 보내기</span>
+    IR 자료 전달 <span>요청받은 기업 자료 보내기</span>
   </button>
   <button type="button" class="mode-tab" data-mode="ir_review" data-followup="1">
-    IR 자료 검토 요청<span>보낸 자료 검토 여부 묻기</span>
+    IR 자료 검토 요청 <span>보낸 자료 검토 여부 묻기</span>
   </button>
   <button type="button" class="mode-tab" data-mode="remind" data-followup="1">
-    리마인드<span>검토 중인지 확인</span>
+    리마인드 <span>검토 중인지 확인</span>
   </button>
   <button type="button" class="mode-tab" data-mode="meeting" data-followup="1">
-    미팅 요청<span>20~30분 미팅 제안</span>
+    미팅 요청 <span>20~30분 미팅 제안</span>
   </button>
   <button type="button" class="mode-tab" data-mode="review" data-followup="1">
-    미팅 후기<span>미팅 뒤 결과 묻기</span>
+    미팅 후기 <span>미팅 뒤 결과 묻기</span>
   </button>
   <button type="button" class="mode-tab" data-mode="ask" data-followup="1">
-    선호 분야 묻기<span>무엇을 보고 싶은지 되묻기</span>
+    선호 분야 묻기 <span>무엇을 보고 싶은지 되묻기</span>
   </button>
   {#
     딜 소싱 제안 — 우리 딜을 **같이 볼 사람**에게 보내는 자리.
@@ -125,7 +125,7 @@
   #}
   <button type="button" class="mode-tab" data-mode="sourcing" data-followup="1"
           data-recipients="sourcing">
-    딜 소싱 제안<span>검토 제외 딜을 나눠 달라는 초대</span>
+    딜 소싱 제안 <span>검토 제외 딜을 나눠 달라는 초대</span>
   </button>
 </div>
 
@@ -142,8 +142,8 @@
 #}
 <section class="panel llm-panel">
   <h2 class="panel-title">
-    LLM 에 물어보기
-    <span class="hint">앱은 자료만 꺼냅니다 — 맞추는 일은 LLM 이 합니다</span>
+    LLM에 물어보기
+    <span class="hint">앱은 자료만 꺼냅니다 — 맞추는 일은 LLM이 합니다</span>
     <button type="button" class="linkbtn" id="llm-toggle" aria-expanded="false"
             aria-controls="llm-body">펼치기</button>
   </h2>
@@ -250,7 +250,7 @@
       [번호 → 이름 찾기] 가 못 읽는 모양으로 답이 온다.
     #}
     <label class="field">
-      <span>LLM 이 답한 내용을 <b>갈래 줄까지 통째로</b> 붙여 넣으세요</span>
+      <span>LLM이 답한 내용을 <b>갈래 줄까지 통째로</b> 붙여 넣으세요</span>
       <textarea id="llm-answer" rows="4"
                 placeholder="예) {{ llm_answer_example }}"></textarea>
     </label>
@@ -413,7 +413,7 @@
   <section class="panel">
     <h2 class="panel-title">
       ① 회차 · 기업 선택
-      <span class="count-pill" id="company-pill"><b>0</b> / 10</span>
+      <span class="count-pill" id="company-pill" title="고른 기업 수 / 한 번에 고를 수 있는 최대"><b>0</b>/10곳 선택</span>
       {# IR 기업현황 전체 내려받기와 같은 주소 — 관리자만 열린다(11/01 · `data_io.export_companies`). #}
       {% if user.role == 'admin' %}<a class="linkbtn" href="/api/export/companies.xlsx" download>엑셀 내려받기</a>{% endif %}
     </h2>
@@ -426,7 +426,7 @@
       <span>회차명</span>
       <input type="text" id="batch-title" value="{{ default_batch_title }}"
              data-titles='{{ batch_titles|tojson }}' />
-      <span class="hint">보내는 날·방식에서 자동으로 들어갑니다 · 고쳐도 됩니다</span>
+      <span class="hint">보내는 날과 방식에 맞춰 자동으로 채워집니다. 고쳐 써도 됩니다.</span>
     </label>
     {# 고른 차례가 곧 문구의 번호다(`[기업1] [기업2] [기업3]`). 카드에 뜨는
        번호가 그것인데, 왜 번호가 붙는지 말해 주지 않으면 목록 차례로 나가는
@@ -434,30 +434,29 @@
        글자 그대로 보여 준다 — 그래야 배지의 `1` 과 문구의 `[기업1]` 이 같은
        것임을 안다. #}
     <p class="hint">
-      <b>고른 차례가 곧 문구의 번호</b>입니다 — 카드에 붙는 번호대로
-      <code>[기업1]</code> <code>[기업2]</code> <code>[기업3]</code> 으로
-      나갑니다.
+      <b>고른 차례가 곧 문구의 번호</b>입니다 — 고를 때 기업 카드에 붙는 번호대로
+      <code>[기업1]</code> <code>[기업2]</code> <code>[기업3]</code>으로 나갑니다.
       차례를 바꾸려면 체크를 풀고 원하는 차례로 다시 고르세요.
     </p>
     <p class="hint" id="company-hint">
-      <b>내용 부족</b>으로 표시된 기업은 소개 문구에 넣을 내용이 모자랍니다.
-      골라도 보낼 수는 있지만, 문구가 빈약해집니다.
+      <b>내용 부족</b> 기업은 소개 문구에 넣을 내용이 적습니다.
+      골라도 보낼 수는 있지만, 소개 문구가 짧아집니다.
     </p>
     <div class="picker-search" id="company-picker-search">
-      <input type="search" id="company-search" placeholder="기업명 · 분야 · 소개 검색 ({{ companies|length }}개)"
+      <input type="search" id="company-search" placeholder="기업명 · 분야 · 소개 검색 ({{ companies|length }}곳)"
              autocomplete="off" aria-label="기업 검색">
       <label class="only-picked">
         <input type="checkbox" id="only-picked"> 선택한 것만
       </label>
       {% if recent_count %}
-      <label class="only-picked" title="같은 기업을 또 보내면 지난번을 기억 못 한다고 읽힙니다">
-        <input type="checkbox" id="hide-recent"> 최근 {{ recent_days }}일 내 소개한 {{ recent_count }}개 숨기기
+      <label class="only-picked" title="같은 기업을 또 보내면 지난번에 보낸 것을 잊은 것처럼 읽힐 수 있습니다">
+        <input type="checkbox" id="hide-recent"> 최근 {{ recent_days }}일 안에 소개한 기업 숨기기 ({{ recent_count }}곳)
       </label>
       {% endif %}
       {# 위 숨기기와 `N회` 는 팀 전체 이력이다. 이것은 **내 딜소개 명단** 기준이다(#92). #}
       {% if my_total %}
       <label class="only-picked" title="내 딜소개 명단 {{ my_total }}명 중 아무도 받지 않은 기업만 봅니다">
-        <input type="checkbox" id="only-unsent"> 내가 아직 소개 안 한 기업만 ({{ my_unsent_count }}개)
+        <input type="checkbox" id="only-unsent"> 내가 아직 소개하지 않은 기업만 ({{ my_unsent_count }}곳)
       </label>
       {% endif %}
     </div>
@@ -491,12 +490,12 @@
                자세한 줄은 [IR 기업 현황] 의 [수정] 창에 있다. #}
             {% if h.rounds %}
             <span class="tag soft"
-                  title="보낸 날 {{ h.rounds }}번 · 서로 다른 투자사 {{ h.investors }}곳 · 발송 {{ h.sends }}명 — 자세한 것은 IR 기업 현황의 [수정] 창">{{ h.rounds }}회</span>
+                  title="보낸 날 {{ h.rounds }}번 · 서로 다른 투자사 {{ h.investors }}곳 · 발송 {{ h.sends }}명 — 자세한 것은 IR 기업 현황의 [수정] 창">누적 {{ h.rounds }}회</span>
             {% endif %}
             {# **내** 명단 중 받은 사람 / 내 명단 전체 · 내가 마지막으로 보낸 날. #}
             {% if my_total %}
             <span class="tag {{ 'soft' if h.my_got else '' }}"
-                  title="내 딜소개 명단 {{ my_total }}명 중 {{ h.my_got }}명이 받음{% if h.my_last %} · 마지막 {{ h.my_last }}{% endif %}">내 투자사 {{ h.my_got }}/{{ my_total }}{% if h.my_last %} · {{ h.my_last[5:]|replace('-', '/') }}{% endif %}</span>
+                  title="내 딜소개 명단 {{ my_total }}명 중 {{ h.my_got }}명이 받음{% if h.my_last %} · 마지막 {{ h.my_last }}{% endif %}">내 투자사 {{ h.my_got }}/{{ my_total }}명{% if h.my_last %} · {{ h.my_last[5:]|replace('-', '/') }}{% endif %}</span>
             {% endif %}
           </div>
           <div class="pick-sub muted">[{{ c.sector_major or '-' }}] {{ c.one_liner or '' }}</div>
@@ -567,7 +566,7 @@
       </div>
       <div class="picker-search">
         <input type="search" id="sa-pick-search"
-               placeholder="기업명 · 분야 · 투자라운드 · Type · 수신일 검색 ({{ series_a_rows|length }}개)"
+               placeholder="기업명 · 분야 · 투자라운드 · Type · 수신일 검색 ({{ series_a_rows|length }}곳)"
                autocomplete="off" aria-label="Series A 이상 딜 소싱 기업 검색">
         <label class="only-picked">
           <input type="checkbox" id="sa-only-picked"> 선택한 것만
@@ -609,37 +608,39 @@
     <h2 class="panel-title">
       {# 소싱 제안일 때는 대상이 투자사 담당자가 아니다 — 제목도 바뀐다. #}
       <span id="contact-head">② 대상 담당자</span>
-      <span class="count-pill" id="contact-pill"><b>0</b>명</span>
-      {#
-        고르는 단추 셋을 한 묶음으로 싼다. 이 칸은 3열 그리드의 가운데라
-        280px 안팎이고, 묶지 않으면 `전체선 택` 처럼 **낱말 가운데서 줄이
-        끊긴다**(실제로 그렇게 보였다).
-
-        **[전체선택]과 [전체해제]는 훑는 범위가 다르다 — 그래서 단추가 둘이다.**
-        [전체선택]은 **지금 걸러진 사람**만 켜고 끈다(다시 누르면 그 범위만
-        꺼진다). 그 좁힘이 이 화면의 안전장치라 건드릴 수 없다 — 그룹으로
-        추려 놓고 누른 [전체선택]에 다른 그룹이 딸려 오면 그대로 남의 카톡방
-        으로 문구가 나간다(`tests/js/deals_select_all_test.js`).
-
-        그런데 바로 그 좁힘 때문에 **조건 밖에서 고른 사람에게는 손이 안 닿는다.**
-        1군에서 고르고 2군으로 옮겨 간 뒤에는 [전체선택]을 두 번 눌러도 1군이
-        그대로 남는다 — 필터를 되돌리거나 새로고침하는 수밖에 없었다. 그것이
-        여기 없던 `전체 해제` 다. 범위가 다른 일이라 이름도 단추도 따로 둔다.
-      #}
-      <span class="title-actions">
-        <button type="button" class="linkbtn" id="select-all-contacts">전체선택</button>
-        <button type="button" class="linkbtn" id="clear-all-contacts" disabled
-                title="걸러진 범위와 상관없이, 지금 고른 사람을 모두 해제합니다">전체해제</button>
-        {# 누르면 반응 없는 분만 남기고 고른다 · 다시 누르면 함께 풀린다(#211 · `deals.js`).
-           수는 지금 조건 안의 반응 없는 분이다 — 판정은 `services/no_reaction` 한 곳. #}
-        <button type="button" class="linkbtn" id="select-noreact" aria-pressed="false"
-                title="반응 없는 분만 남기고 그분들을 고릅니다">반응 없는 담당자만 · {{ no_reaction_count }}명</button>
-        {# 그분들 전부를 전화 리마인드용 엑셀로(i246 — 성함 · 전화번호 · 회사명 …,
-           `data_io.export_no_reaction`). 거르기와 상관없이 위 처음 수 그대로다. #}
-        {% if no_reaction_count %}<a class="linkbtn" id="noreact-export" href="/api/export/no-reaction.xlsx" download
-           title="반응 없는 담당자 {{ no_reaction_count }}명의 성함 · 전화번호 · 회사명을 엑셀로 받습니다(전화 리마인드용)">엑셀</a>{% endif %}
-      </span>
+      <span class="count-pill" id="contact-pill" title="고른 사람 수"><b>0</b>명</span>
     </h2>
+    {#
+      **단추 묶음은 제목 줄 밖에 둔다.** 제목 · 수 · 단추 넷이 한 줄(`<h2>`)에
+      서 있으면 `② 대상 담당자 0명 전체선택 전체해제 …` 가 한 문장처럼 읽혔다.
+      고르는 단추 셋을 한 묶음으로 싼다. 이 칸은 3열 그리드의 가운데라
+      280px 안팎이고, 묶지 않으면 `전체선 택` 처럼 **낱말 가운데서 줄이
+      끊긴다**(실제로 그렇게 보였다).
+
+      **[전체선택]과 [전체해제]는 훑는 범위가 다르다 — 그래서 단추가 둘이다.**
+      [전체선택]은 **지금 걸러진 사람**만 켜고 끈다(다시 누르면 그 범위만
+      꺼진다). 그 좁힘이 이 화면의 안전장치라 건드릴 수 없다 — 그룹으로
+      추려 놓고 누른 [전체선택]에 다른 그룹이 딸려 오면 그대로 남의 카톡방
+      으로 문구가 나간다(`tests/js/deals_select_all_test.js`).
+
+      그런데 바로 그 좁힘 때문에 **조건 밖에서 고른 사람에게는 손이 안 닿는다.**
+      1군에서 고르고 2군으로 옮겨 간 뒤에는 [전체선택]을 두 번 눌러도 1군이
+      그대로 남는다 — 필터를 되돌리거나 새로고침하는 수밖에 없었다. 그것이
+      여기 없던 `전체 해제` 다. 범위가 다른 일이라 이름도 단추도 따로 둔다.
+    #}
+    <div class="title-actions" role="group" aria-label="대상 고르기">
+      <button type="button" class="linkbtn" id="select-all-contacts">전체선택</button>
+      <button type="button" class="linkbtn" id="clear-all-contacts" disabled
+              title="걸러진 범위와 상관없이, 지금 고른 사람을 모두 해제합니다">전체해제</button>
+      {# 누르면 반응 없는 분만 남기고 고른다 · 다시 누르면 함께 풀린다(#211 · `deals.js`).
+         수는 지금 조건 안의 반응 없는 분이다 — 판정은 `services/no_reaction` 한 곳. #}
+      <button type="button" class="linkbtn" id="select-noreact" aria-pressed="false"
+              title="반응 없는 분만 남기고 그분들을 고릅니다">반응 없는 담당자만 · {{ no_reaction_count }}명</button>
+      {# 그분들 전부를 전화 리마인드용 엑셀로(i246 — 성함 · 전화번호 · 회사명 …,
+         `data_io.export_no_reaction`). 거르기와 상관없이 위 처음 수 그대로다. #}
+      {% if no_reaction_count %}<a class="linkbtn" id="noreact-export" href="/api/export/no-reaction.xlsx" download
+         title="반응 없는 담당자 {{ no_reaction_count }}명의 성함 · 전화번호 · 회사명을 엑셀로 받습니다(전화 리마인드용)">엑셀 받기</a>{% endif %}
+    </div>
     {#
       **기준이 무엇인지, 왜 수가 다른지 여기서 말한다.**
 
@@ -679,16 +680,18 @@
       <b>{{ recipient_counts.sendable }}</b>명에게 지금 보낼 수 있습니다
       {#- 이을 연결이 없는데 `연결을 이어 주세요` 라고 하면, 어딘가 덜 된 줄 알고
           투자사 관리 현황을 뒤지게 된다. 남은 사람이 있을 때만 시킨다. #}
-      {%- if recipient_counts.blocked %} ·
-      나머지 {{ recipient_counts.blocked }}명은
-      {% for b in miss_reasons %}{{ b.label }} {{ b.count }}명{% if not loop.last %} · {% endif %}{% endfor %}
-      입니다 —
+      {#- 빠진 사람은 제 줄에 적는다 — 한 문장에 수 · 사유 · 할 일을 다 이으면
+          `… 6명 입니다 — …` 처럼 길게 늘어져 무엇을 하라는지 묻혔다. #}
+      {%- if recipient_counts.blocked %}.
+      <br>빠진 {{ recipient_counts.blocked }}명(
+      {%- for b in miss_reasons %}{{ b.label }} {{ b.count }}명{% if not loop.last %} · {% endif %}{% endfor -%}
+      )은
       {#- 멈춰 둔 것뿐이면 이을 연결이 없다. 그런데도 `연결을 이어 주세요` 라고
           하면 없는 할 일을 찾아 투자사 관리 현황을 뒤지게 된다. #}
       {%- if recipient_counts.blocked_by_stage %}
-      <a href="/contacts">투자사 관리 현황</a> 에서 연결을 이어 주세요.
+      <a href="/contacts">투자사 관리 현황</a>에서 연결을 이어 주세요.
       {%- elif recipient_counts.paused.count %}
-      <a href="/contacts">투자사 관리 현황</a> 에서 상태를 되돌리면 다시 대상이 됩니다.
+      <a href="/contacts">투자사 관리 현황</a>에서 상태를 되돌리면 다시 대상이 됩니다.
       {%- else %}
       휴대폰 문자로 직접 보내 주세요.
       {%- endif %}
@@ -696,22 +699,22 @@
       {% if recipient_counts.off_list %}
       <br>맡고 있는 {{ recipient_counts.held }}명 중
       <b>{{ recipient_counts.off_list }}</b>명은 <b>딜소개 명단 밖</b>이라 여기 뜨지 않습니다 —
-      보내야 할 사람이면 <a href="/contacts">투자사 관리 현황</a> 에서 그 명단을
+      보내야 할 사람이면 <a href="/contacts">투자사 관리 현황</a>에서 그 명단을
       <b>딜소개 명단으로 표시</b>하세요.
       {% endif %}
       {% elif recipient_counts.held %}
       맡고 있는 {{ recipient_counts.held }}명이 모두 <b>딜소개 명단 밖</b>입니다 —
-      <a href="/contacts">투자사 관리 현황</a> 에서 보낼 명단을
+      <a href="/contacts">투자사 관리 현황</a>에서 보낼 명단을
       <b>딜소개 명단으로 표시</b>해야 대상이 생깁니다.
       {% else %}
       맡고 있는 투자사가 없습니다 —
-      <a href="/contacts">투자사 관리 현황</a> 에서 명단을 할당받아야 보낼 수 있습니다.
+      <a href="/contacts">투자사 관리 현황</a>에서 명단을 할당받아야 보낼 수 있습니다.
       {% endif %}
       {% if recipient_counts.team_wide %}
       {# 관리자는 투자사 관리 현황에서 팀 전체를 보지만, 발송은 본인 담당분뿐이다 —
          남의 방으로 문구가 실제로 나가는 일이라 열지 않는다(deps.may_manage_team_contacts). #}
-      <br>투자사 관리 현황에는 팀 전체 {{ recipient_counts.team_total }}명이 뜨지만,
-      <b>발송 대상은 본인 담당분뿐입니다</b> — 남의 담당에게 실수로 나가면 안 됩니다.
+      <br><b>발송 대상은 본인 담당분뿐입니다</b> — 투자사 관리 현황에는 팀 전체
+      {{ recipient_counts.team_total }}명이 뜨지만, 남의 담당에게 실수로 나가면 안 되어 막아 두었습니다.
       {% endif %}
     </p>
     <div class="picker-search">
@@ -740,7 +743,9 @@
     <div class="pick-filters" id="contact-filters">
       <div class="filter-line" id="group-filter" data-empty="{{ empty_group }}"
            data-separate="{{ separate_group }}">
-        <span class="filter-label">그룹</span>
+        {# 칩 글자(그룹 이름)는 투자사 관리 현황에 적힌 값 그대로다 — 분야처럼 읽히는
+           이름도 그 칸의 값이라 고치지 않고, 무엇으로 묶은 줄인지는 라벨이 말한다. #}
+        <span class="filter-label" title="투자사 관리 현황의 [그룹] 칸 값으로 묶었습니다 — 칩 이름이 곧 그 칸의 값입니다">그룹</span>
         <button type="button" class="chip active" data-value="">
           전체 <b>{{ contacts|length }}</b></button>
         {% for g in contact_groups %}
@@ -889,8 +894,8 @@
             <span class="noreact-mark" data-cleared="{{ 1 if cleared else 0 }}">
               <span class="noreact-on"{% if cleared %} hidden{% endif %}><span class="tag warn">반응 없음</span>
                 <button type="button" class="linkbtn noreact-toggle"
-                        title="전화 · 다른 길로 반응이 있었던 분을 반응 없음 목록에서 뺍니다">반응 없음에서 빼기</button></span>
-              <span class="noreact-off"{% if not cleared %} hidden{% endif %}><span class="tag soft">반응 없음에서 뺌</span>
+                        title="전화 · 다른 길로 반응이 있었던 분을 반응 없음 목록에서 뺍니다">반응 있음으로 표시</button></span>
+              <span class="noreact-off"{% if not cleared %} hidden{% endif %}><span class="tag soft">반응 있음으로 표시함</span>
                 <button type="button" class="linkbtn noreact-toggle"
                         title="다시 반응 없음 목록에 넣습니다">되돌리기</button></span>
             </span>
@@ -908,7 +913,7 @@
           {% endif %}
           <div class="pick-room">
             {% if c.kakao_room_name %}
-              <span class="room-badge {{ 'ok' if c.room_verified in ['verified','unverified'] else 'warn' }}">💬 {{ c.kakao_room_name }}</span>
+              <span class="room-badge {{ 'ok' if c.room_verified in ['verified','unverified'] else 'warn' }}"><span aria-hidden="true">💬</span> 카톡방: {{ c.kakao_room_name }}</span>
             {% else %}
               <span class="room-badge warn">⚠ 카톡방 미등록</span>
             {% endif %}
@@ -1074,9 +1079,9 @@
           {% set link = sourcing_linked.get(c.id) %}
           <div class="pick-room">
             {% if c.kakao_room_name %}
-              <span class="room-badge {{ 'ok' if c.room_verified in ['verified','unverified'] else 'warn' }}">💬 {{ c.kakao_room_name }}</span>
+              <span class="room-badge {{ 'ok' if c.room_verified in ['verified','unverified'] else 'warn' }}"><span aria-hidden="true">💬</span> 카톡방: {{ c.kakao_room_name }}</span>
             {% elif link %}
-              <span class="room-badge ok" title="{{ link.room }}">💬 {{ link.room }}</span>
+              <span class="room-badge ok" title="{{ link.room }}"><span aria-hidden="true">💬</span> 카톡방: {{ link.room }}</span>
               <span class="tag soft">투자사 명단</span>
             {% else %}
               {# 어느 갈래도 투자사 딜소개 방을 이어받지 않는다 — 보내는 분 카톡의
@@ -1096,7 +1101,7 @@
   <!-- 3) 미리보기 + 발송 -->
   <section class="panel">
     <h2 class="panel-title">③ 미리보기 · 발송
-      <span class="hint" id="preview-state">고르는 대로 바로 나옵니다</span>
+      <span class="hint" id="preview-state">고르는 대로 바로 반영됩니다</span>
       {# 갱신 버튼은 없앴다 — 고르고 나서 한 번 더 눌러야 보이면, 안 누른 채로
          발송을 누르는 일이 생긴다. 화면은 항상 지금 고른 것을 보여야 한다. #}
       <button type="button" class="linkbtn" id="refresh-preview" hidden>미리보기 갱신</button>
@@ -1158,6 +1163,9 @@
         <a href="/templates#mail_subject">[딜 제안 문구] 의 <b>홍보메일 제목</b></a> 에
         제목을 만들어 두면 여기서 골라 쓸 수 있습니다.
       </p>
+      {% if mail.configured %}
+      <p class="hint">보내는 주소: <code>{{ mail.from_address }}</code></p>
+      {% endif %}
       <p class="hint">
         메일은 <b>서버가 바로 보냅니다</b> — 발송 프로그램을 켜 둘 필요가 없습니다.
         메일 주소가 없는 담당자는 발송 전에 막힙니다.
@@ -1167,8 +1175,8 @@
       </p>
     </div>
     <div class="send-summary" id="send-summary">
-      <span class="ss-item" id="ss-companies"><b>0</b>개 기업</span>
-      <span class="ss-arrow">→</span>
+      <span class="ss-item" id="ss-companies">기업 <b>0</b>곳</span>
+      <span class="ss-arrow" aria-hidden="true">→</span>
       <span class="ss-item"><b id="ss-contacts">0</b>명에게</span>
       <span class="ss-note muted" id="ss-note"></span>
     </div>
@@ -1221,11 +1229,11 @@
       <label for="send-at">예약 발송</label>
       <input type="datetime-local" id="send-at"
              data-earliest="{{ send_earliest_hour }}" data-latest="{{ send_latest_hour }}">
-      <span class="hint muted">비워 두면 지금 보냅니다 ·
-        {{ '%02d'|format(send_earliest_hour) }}:00~{{ '%02d'|format(send_latest_hour) }}:00 안에서 고를 수 있습니다</span>
+      <span class="hint muted">비워 두면 바로 보냅니다. 예약은
+        {{ '%02d'|format(send_earliest_hour) }}:00~{{ '%02d'|format(send_latest_hour) }}:00 사이로만 고를 수 있습니다.</span>
     </div>
-    <button type="button" id="send-btn" class="primary-btn" disabled data-send="proxy">발송 목록 생성 → 발송</button>
-    <p class="hint muted">발송 목록을 만들면 큐에 등록되고, 연결된 발송 발송 프로그램가 자동으로 처리합니다.</p>
+    <button type="button" id="send-btn" class="primary-btn" disabled data-send="proxy">발송 목록 만들고 보내기</button>
+    <p class="hint muted">발송 목록을 만들면 보낼 차례를 기다렸다가, 연결된 발송 프로그램이 자동으로 보냅니다.</p>
   </section>
 
   {#
