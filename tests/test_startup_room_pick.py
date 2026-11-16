@@ -340,7 +340,7 @@ def test_찾은_제목은_후보로만_담기고_투자사_방은_빠진다(db, 
     assert row.room_verified == "unverified"
     assert row.kakao_joined is None
     assert item.status == "failed"
-    assert "후보 2개" in item.error and "방 매칭" in item.error
+    assert "후보 2개" in item.error and "카톡방 매칭" in item.error
     assert "고유하게" not in item.error
 
 

@@ -324,7 +324,7 @@ def collect(db: Session, row: Automation, sender: User,
             judge = why_not_decision if decision else why_not
             why = judge(db, meeting, contact, others.get(meeting.contact_id, []))
             if not why and not decision and meeting.id in old:
-                why = "미팅 결과 확인 대기 목록으로 이미 섰습니다"
+                why = "미팅 결과 확인 대기 회차로 이미 섰습니다"
             if not why and contact.id in seen:
                 # 같은 분과 같은 날 미팅이 둘 — 한 통이면 된다. 첫 번째와 두 번째가
                 # 겹치는 것은 장부(같은 분 하루 N통)가 막는다.
@@ -551,7 +551,7 @@ def notes(db: Session, user: User, row: Optional[Automation], now: datetime) -> 
     who = " · ".join(f"{name} {count}" for name, count in per.items())
     return [{"level": "info", "title": BACKLOG_TITLE.format(count=len(rows)),
              "detail": (f"{who} — 미팅 후 검토결과 문의 자동화는 사흘 넘게 지난 미팅을 "
-                        "줍지 않습니다(한꺼번에 나가지 않게). 담당 팀원이 손으로 묻고 "
+                        "줍지 않습니다(한꺼번에 나가지 않게). 담당 팀원이 직접 묻고 "
                         "결과를 적으면 사라집니다"),
              "href": "/ir#meetings", "count": len(rows)}]
 

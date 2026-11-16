@@ -689,7 +689,7 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None,
     if rooms["unverified"]:
         blockers.append({
             "count": rooms["unverified"], "label": "카톡방 확인이 안 된 투자사",
-            "hint": "제목이 실제와 다르면 그때 가서 빠집니다 — [방 연결 확인]을 돌리세요",
+            "hint": "제목이 실제와 다르면 그때 가서 빠집니다 — [카톡방 연결 확인]을 돌리세요",
             "href": room_href("unverified", sheet_scope), "level": "warn",
         })
     not_introducible = len(companies) - len(introducible)

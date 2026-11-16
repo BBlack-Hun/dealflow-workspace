@@ -478,7 +478,7 @@ def export_no_reaction(db: Session = Depends(get_db),
         body.append([r["name"], r["title"], r["firm"], phone, kind,
                      r["last_deal"] or "", r["last_deal_note"], r["owner"]])
     today = date.today().isoformat()
-    return _xlsx(f"반응 없는 담당자_{today}.xlsx", "반응 없는 담당자",
+    return _xlsx(f"반응 없는 심사역_{today}.xlsx", "반응 없는 심사역",
                  NO_REACTION_HEADERS, body)
 
 

@@ -189,7 +189,7 @@
         // 되돌리지 **않은** 줄이 있으면 반드시 말한다 — 조용히 넘어가면
         // "되돌렸다" 는 말과 화면이 어긋난다.
         alert(res.d.restored + "곳을 되돌렸습니다."
-              + (res.d.kept ? "\n" + res.d.kept + "곳은 그 뒤에 손으로 고쳐서 그대로 두었습니다." : ""));
+              + (res.d.kept ? "\n" + res.d.kept + "곳은 그 뒤에 직접 고쳐서 그대로 두었습니다." : ""));
       })
       .catch(function () { undoBtn.disabled = false; alert("되돌리지 못했습니다"); });
   });

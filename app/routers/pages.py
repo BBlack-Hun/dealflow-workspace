@@ -886,7 +886,7 @@ def job_page(
                             if can_view and job.user_id != user.id and ir_job
                             and db.get(User, job.user_id) is not None else ""),
                 # 찾은 후보를 보고 확정하는 화면의 이름 — 진행 화면 링크 · 끝날 때 묻는 창.
-                "rooms_label": "대표 카톡방 맞추기" if ir_job else "방 매칭",
+                "rooms_label": "대표 카톡방 맞추기" if ir_job else "카톡방 매칭",
                 # 엑셀은 회차 주인 · 세운 사람만 받는다(`data_io.export_job`) — 못 받는 사람
                 # 앞에 단추를 세우지 않는다(누르면 없는 회차라고 나온다).
                 "export_ok": can_view and (job.user_id == user.id or made),

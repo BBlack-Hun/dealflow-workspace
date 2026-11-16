@@ -552,7 +552,7 @@ def pick_room(job_id: int, item_id: int, body: RoomPickIn,
     if room_name.title_key(now) != room_name.title_key(vc_room_search.started_from(item)):
         raise HTTPException(status_code=409,
                             detail=f"찾은 뒤 그 사이 방 이름이 바뀌어 덮지 않았습니다(지금: '{now}') — "
-                                   "그 이름이 맞는지 [방 연결 확인]으로 다시 확인하세요")
+                                   "그 이름이 맞는지 [카톡방 연결 확인]으로 다시 확인하세요")
     if not vc_room_search.searchable(contact, sheet_owner.hidden_labels(db)):
         raise HTTPException(status_code=409,
                             detail="이 줄은 지금 방 확인 대상이 아닙니다(방 나감 · 참여 안 함 · "

@@ -19,7 +19,7 @@ const el = dom_.el;
 
 const JOB_ID = 77;
 const PICK_HREF = "/deals/startup-ir/rooms?ids=11,12";
-const DONE_TEXT = "방 찾기가 끝났습니다 — 찾음 1 · 여럿 1 · 못 찾음 0";
+const DONE_TEXT = "카톡방 찾기가 끝났습니다 — 찾음 1 · 여럿 1 · 못 찾음 0";
 
 function payload(over) {
   return Object.assign({
@@ -125,7 +125,7 @@ function run(first, opts) {
 
 // ── ④ 고를 화면이 없는 갈래 — 알림창 하나 ─────────────────────────────────
 (function 투자사_방_연결_확인은_알림창이다() {
-  const text = "방 연결 확인이 끝났습니다 — 확인 완료 3 · 불일치 1";
+  const text = "카톡방 연결 확인이 끝났습니다 — 확인 완료 3 · 불일치 1";
   const s = run(payload(), { link: false, confirm: true });
   s.next(done({ room_done: { sentence: text, pick: false } }));
   assert.deepStrictEqual(s.said, [text]);
@@ -135,7 +135,7 @@ function run(first, opts) {
 (function 다시_돌리면_다시_알린다() {
   // [불일치 재확인] 으로 회차가 다시 돌고 또 끝났다 — 새로 끝난 것이다.
   const s = run(payload(), { link: false });
-  const text = "방 연결 확인이 끝났습니다 — 확인 완료 1 · 불일치 0";
+  const text = "카톡방 연결 확인이 끝났습니다 — 확인 완료 1 · 불일치 0";
   s.next(done({ room_done: { sentence: text, pick: false } }));
   s.next(payload({ status: "queued" }));
   s.next(done({ room_done: { sentence: text, pick: false } }));

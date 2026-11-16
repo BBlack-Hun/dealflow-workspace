@@ -771,7 +771,7 @@ def set_mark(db: Session, contact: VcContact, value: Optional[str],
             row = create_row(db, contact, revive, user, assignee=assignee, bucket=bucket)
             action = ACT_CREATED
             message = (f"딜 소싱 › {sourcing_buckets.shown(bucket)} 에 '{row.participation}' 으로 새로 "
-                       "넣었습니다 — 카톡방은 딜 소싱 화면의 [방 후보 찾기]로 보내는 분 "
+                       "넣었습니다 — 카톡방은 딜 소싱 화면의 [카톡방 후보 찾기]로 보내는 분 "
                        "카톡에서 찾아 확정하세요.")
             if not takes_part(row):
                 message += (" 동의하시면 딜 소싱 화면의 `참여` 칸을 '참여' 로 바꿔야 "

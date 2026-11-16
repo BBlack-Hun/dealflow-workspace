@@ -200,7 +200,7 @@ def test_a_meeting_already_on_the_old_review_list_is_not_asked_again(db, users, 
     result = _run(db)
     assert result["status"] == "ready", result
     assert {i.contact_id for i in _items(db)} == {team["people"]["u2"].id}
-    assert any("미팅 결과 확인 대기 목록으로 이미 섰습니다" in why for why in result["skipped"])
+    assert any("미팅 결과 확인 대기 회차로 이미 섰습니다" in why for why in result["skipped"])
 
 
 @pytest.mark.parametrize("case,asks", [

@@ -927,7 +927,7 @@ def test_끝나면_찾음_여럿_못_찾음을_세고_줄마다_결과를_적는
     got = me.get(f"/api/jobs/{job_id}").json()
     assert got["status"] == "done_with_errors"
     assert got["room_done"] == {
-        "sentence": "방 찾기가 끝났습니다 — 찾음 1 · 여럿 1 · 못 찾음 1 · 확인 완료 1",
+        "sentence": "카톡방 찾기가 끝났습니다 — 찾음 1 · 여럿 1 · 못 찾음 1 · 확인 완료 1",
         "pick": True}
     results = {i["id"]: i["result"] for i in got["items"]}
     assert results[item_of[seeded["typed"].id]] == "확인 완료"
@@ -964,7 +964,7 @@ def test_투자사_방_연결_확인은_확인됨_불일치로_센다(db, seeded
                          status="failed")])
     db.commit()
     got = _login(client).get(f"/api/jobs/{job.id}").json()
-    assert got["room_done"] == {"sentence": "방 연결 확인이 끝났습니다 — 확인 완료 1 · 불일치 1",
+    assert got["room_done"] == {"sentence": "카톡방 연결 확인이 끝났습니다 — 확인 완료 1 · 불일치 1",
                                 "pick": False}
     assert all(i["result"] is None for i in got["items"]), "투자사 줄은 상태 말을 안 바꾼다"
 
@@ -1153,8 +1153,8 @@ def test_스타트업_명단_줄의_찾기도_같은_말로_센다(db, seeded, c
     db.commit()
     me = _login(client)
     got = me.get(f"/api/jobs/{job.id}").json()
-    assert got["room_done"] == {"sentence": "방 찾기가 끝났습니다 — 찾음 0 · 여럿 1 · 못 찾음 0",
+    assert got["room_done"] == {"sentence": "카톡방 찾기가 끝났습니다 — 찾음 0 · 여럿 1 · 못 찾음 0",
                                 "pick": True}
     assert got["items"][0]["result"] == "여럿(후보 2)"
     page = me.get(f"/jobs/{job.id}").text
-    assert 'id="room-pick-link" data-label="방 매칭"' in page
+    assert 'id="room-pick-link" data-label="카톡방 매칭"' in page

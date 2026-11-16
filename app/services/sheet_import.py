@@ -1569,7 +1569,7 @@ def _apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
     if report.activities_stale:
         report.notes.insert(0, (
             f"시트에서 없어진 활동 줄 {report.activities_stale}건 — "
-            f"**지우지 않습니다.** 이 표에는 손으로 적은 줄과 발송이 만든 "
+            f"**지우지 않습니다.** 이 표에는 직접 기록한 줄과 발송이 만든 "
             f"줄이 함께 삽니다(지우려면 `scripts/drop_shifted_activities.py`)."))
 
     if dry_run:
