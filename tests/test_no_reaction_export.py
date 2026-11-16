@@ -103,7 +103,7 @@ def test_딜제안관리에_엑셀_단추가_서고_반응_없는_분이_없으�
 
     _login(client, "01000000001")
     assert re.search(r'<a class="linkbtn" id="noreact-export" href="/api/export/no-reaction.xlsx"'
-                     r' download\s+title="반응 없는 담당자 3명', client.get("/deals").text)
+                     r' download\s+title="반응 없는 심사역 3명', client.get("/deals").text)
 
     _login(client, "01000000002")
     assert 'id="noreact-export"' in client.get("/deals").text

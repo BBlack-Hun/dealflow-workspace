@@ -227,7 +227,7 @@ function opened(replies, opts) {
   assert.ok(badge, "그 줄에 아무 표시도 안 남았다");
   const state = s.dom.document.getElementById("ir-send-state");
   assert.strictEqual(state.hidden, false);
-  assert.ok(state.textContent.indexOf("발송 목록") >= 0, state.textContent);
+  assert.ok(state.textContent.indexOf("발송 회차") >= 0, state.textContent);
   // 어디까지 갔는지 볼 길.
   const job = s.dom.document.getElementById("ir-send-job");
   assert.strictEqual(job.hidden, false);

@@ -117,7 +117,7 @@ def test_미리보기가_보낼_곳과_빠지는_까닭을_가른다(db, seeded,
     assert reasons[seeded["blocked"].id] == "딜소개 불가"
     assert reasons[seeded["closed"].id] == "폐업"
     assert "검토중단" in reasons[seeded["paused"].id]
-    assert reasons[seeded["typed"].id] == "확인 안 됨"
+    assert reasons[seeded["typed"].id] == "확인 전"
     assert reasons[seeded["noroom"].id] == "카톡방 이름 없음"
 
     [p] = d["previews"]
@@ -165,7 +165,7 @@ def test_대기_목록은_보내는_계정_회차로_서고_묶음은_누른_사
 
 
 @pytest.mark.parametrize("key, why", [("blocked", "딜소개 불가"), ("closed", "폐업"),
-                                      ("paused", "검토중단"), ("typed", "확인 안 됨"),
+                                      ("paused", "검토중단"), ("typed", "확인 전"),
                                       ("noroom", "카톡방 이름 없음")])
 def test_섞인_곳이_있으면_통째로_거절한다(db, seeded, client, key, why):
     res = _send(_login(client), _ids(seeded, "ok", key))
@@ -184,7 +184,7 @@ def test_세우는_함수를_바로_불러도_같은_판정이_막는다(db, see
 
     me = _login(client)
     for key, why in (("blocked", "딜소개 불가"), ("closed", "폐업"),
-                     ("paused", "검토중단"), ("typed", "확인 안 됨")):
+                     ("paused", "검토중단"), ("typed", "확인 전")):
         res = me.post("/api/deals/send", json={
             "mode": "startup_msg_ir", "topic": "startup_msg_quote",
             "contact_ids": [seeded[key].id]})
@@ -750,7 +750,7 @@ def test_같은_방_제목의_기업은_대조하지_않고_여럿으로_적는�
     me = _login(client)
     res = me.post("/api/ir-rooms/check", json={"company_ids": [seeded["typed"].id, twin.id]})
     assert res.status_code == 400
-    assert "같은 방 제목" in res.json()["detail"]
+    assert "같은 카톡방 제목" in res.json()["detail"]
     assert not _jobs(db)
     db.expire_all()
     assert seeded["typed"].room_verified == "ambiguous" and twin.room_verified == "ambiguous"
@@ -927,10 +927,10 @@ def test_끝나면_찾음_여럿_못_찾음을_세고_줄마다_결과를_적는
     got = me.get(f"/api/jobs/{job_id}").json()
     assert got["status"] == "done_with_errors"
     assert got["room_done"] == {
-        "sentence": "방 찾기가 끝났습니다 — 찾음 1 · 여럿 1 · 못 찾음 1 · 확인됨 1",
+        "sentence": "방 찾기가 끝났습니다 — 찾음 1 · 여럿 1 · 못 찾음 1 · 확인 완료 1",
         "pick": True}
     results = {i["id"]: i["result"] for i in got["items"]}
-    assert results[item_of[seeded["typed"].id]] == "확인됨"
+    assert results[item_of[seeded["typed"].id]] == "확인 완료"
     assert results[item_of[seeded["noroom"].id]] == "여럿(후보 2)"
     # 후보 하나를 찾은 건 — 건은 `sent` 지만 고르기 전이라 `확인됨` 이 아니다.
     assert results[item_of[seeded["notfound"].id]] == "찾음"
@@ -989,13 +989,13 @@ def test_맞추기_화면에_찾기_결과가_서고_투자사_방은_빠진다(
     body = me.get(f"/deals/startup-ir/rooms?ids={ids}").text
 
     assert 'data-testid="room-find-summary"' in body
-    for label in ("찾는 중 <b>1곳</b>", "확인됨 <b>1곳</b>", "찾음 <b>1곳</b>",
+    for label in ("찾는 중 <b>1곳</b>", "확인 완료 <b>1곳</b>", "찾음 <b>1곳</b>",
                   "못 찾음 <b>1곳</b>", "안 찾아봄 <b>1곳</b>"):
         assert label in body, label
     for state in ("busy", "verified", "found", "none", "never"):
         assert f'data-find="{state}"' in body, state
     assert "차카타벤처스" not in body, "투자사 방이 후보로 섰다"
-    assert "투자사 방 1개는 후보에서 뺐습니다" in body
+    assert "투자사 카톡방 1개는 후보에서 뺐습니다" in body
     assert 'class="chip room-pick named picked"' in body
     assert 'aria-pressed="true"' in body
     assert body.count('class="linkbtn room-confirm"') == 5
@@ -1024,7 +1024,7 @@ def test_맞추기_화면_줄의_확정은_그_줄만_넣고_수정_기록이_�
     d = res.json()
     assert d["ok"] and d["room"] == pick
     assert (d["state"], d["state_label"], d["find"], d["find_label"]) == (
-        "verified", "확인됨", "verified", "확인됨")
+        "verified", "확인 완료", "verified", "확인 완료")
     db.expire_all()
     assert (seeded["noroom"].kakao_room_name, seeded["noroom"].room_verified) == (pick, "verified")
     assert seeded["typed"].kakao_room_name == ROOM_TYPED, "[확정] 을 안 누른 줄이 들어갔다"
@@ -1051,7 +1051,7 @@ def test_줄의_확정은_적혀_있던_후보_제목도_확인됨으로_올린�
         "ids": str(seeded["noroom"].id), "company_ids": [seeded["noroom"].id],
         "rooms": [title], "only": str(seeded["noroom"].id)})
     d = res.json()
-    assert d["state"] == "verified" and "확인됨으로 확정" in d["msg"]
+    assert d["state"] == "verified" and "확인 완료로 확정" in d["msg"]
     # 한꺼번에 [고른 것 확정] 은 바뀐 줄만 — 그대로인 줄을 몰래 올리지 않는다.
     seeded["notfound"].kakao_room_name = "다다랩스 방"
     room_match.save_candidates(seeded["notfound"], ["다다랩스 방"], at=now_iso(), query="다다랩스")

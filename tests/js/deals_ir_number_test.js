@@ -278,7 +278,7 @@ function reply(previews) { return deals_.previewReply(previews); }
       "담당자를 안 골랐을 뿐인데 '번호 없음' 이라고 적었다: " + row);
   });
   const note = dom.document.getElementById("ir-no-note");
-  assert.ok(note && !note.hidden && /담당자/.test(note.textContent),
+  assert.ok(note && !note.hidden && /심사역/.test(note.textContent),
     "번호가 왜 안 뜨는지 안 적혀 있다: " + (note && note.textContent));
 }
 

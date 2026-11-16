@@ -332,7 +332,7 @@ def test_한_번도_안_찾아본_곳과_찾았는데_없는_곳을_가른다(db
     body = _rows(_login(client)).text
 
     assert "아직 찾아보지 않았습니다" in body
-    assert "카톡에 걸린 방이" in body
+    assert "걸린 카톡방이" in body
 
 
 # ── 4. 한 번에 저장한다 ─────────────────────────────────────────────────────
@@ -349,7 +349,7 @@ def test_여러_줄을_한_번에_넣는다(db, seeded, client):
     assert seeded["spaced"].kakao_room_name == SPACED_ROOM
     assert seeded["plain"].kakao_room_name == f"{CEO} 대표 {PLAIN}"
     assert seeded["corp"].kakao_room_name is None   # 빈 칸은 그대로 빈 칸이다
-    assert "2곳의 방 제목을 넣었습니다" in unquote(res.headers["location"])
+    assert "2곳의 카톡방 제목을 넣었습니다" in unquote(res.headers["location"])
 
 
 def test_앞뒤_공백은_떼고_가운데는_안_건드린다(db, seeded, client):
@@ -471,7 +471,7 @@ def test_보내는_표가_맞추기_표를_가리킨다(db, seeded, client):
     body = _login(client).get("/deals/startup-ir").text
 
     assert "/deals/startup-ir/rooms" in body
-    assert "확인 안 됨" in body
+    assert "확인 전" in body
 
 
 # ── 7. 정해진 한 계정만 ────────────────────────────────────────────────────
