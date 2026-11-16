@@ -102,7 +102,9 @@ KINDS: List[Kind] = [
     Kind(STARTUP_MONTHLY, "스타트업 월간 발송",
          "홀수 달 3주차 목요일 · 짝수 달 4주차 수요일 11:00, "
          "토·일이면 앞 평일 — 스타트업 월간 발송 메뉴의 계정으로"),
-    Kind(CONTRACT_DAY7, "계약 Day7 우편 발송",
+    # 이름은 `7일차` — 영문 `Day7` 은 화면에서 읽히지 않았다(UX 점검 11/16). 열쇠
+    # (`contract_day7`)는 저장값이라 그대로다.
+    Kind(CONTRACT_DAY7, "계약 7일차 우편 발송",
          "계약 완료(무료·유료) 7일 뒤 10:00 계약 담당 팀원 카톡방에 계약서 우편 발송 알림, "
          "계약서 수신이 O 가 아니면 14·21·28일 뒤 같은 방에 수신 확인"),
     Kind(FOLLOW_ROUND, "후속라운드 시작 알림",
@@ -580,7 +582,7 @@ def follow_startup_menu(db: Session) -> Tuple[bool, int, str]:
     why = ("이미 풀렸거나 나갈 시각이 지났습니다" if again is None
            else again.get("error") or {"empty": "보낼 곳 0곳"}.get(again["status"],
                                                                   again["status"]))
-    return False, stopped, (f"이 달 A5 회차는 새 계정으로 다시 세우지 않았습니다({why}) — "
+    return False, stopped, (f"이 달 자동 월간 발송 회차는 새 계정으로 다시 세우지 않았습니다({why}) — "
                             f"{startup_send.LABEL} 화면에서 손으로 보내세요")
 
 

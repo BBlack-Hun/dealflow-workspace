@@ -302,7 +302,7 @@ def health(now: Optional[datetime] = None) -> Health:
     at = datetime.fromtimestamp(newest.stat().st_mtime, tz=now.tzinfo)
     age = (now - at).total_seconds() / 3600
     stale = age > STALE_AFTER_HOURS
-    detail = (f"{day:%Y-%m-%d} 백업까지 있습니다 (일일 {len(dated)}개 보관)"
+    detail = (f"최근 백업 {day:%Y-%m-%d} (일일 백업 {len(dated)}개 보관 중)"
               if not stale else
               f"마지막 일일 백업이 {int(age)}시간 전입니다 — 백업이 멈춘 것 같습니다")
     return Health(newest.name, at, age, stale, len(dated), _LAST_ERROR, detail)
@@ -347,12 +347,17 @@ def start_scheduler() -> Optional[threading.Thread]:
 # 되돌릴 지점이라는 점에서는 같고, 배포가 잦은 주에는 그쪽이 훨씬 촘촘하다.
 # 하나만 보여 주면 "어제 오후" 로 돌아갈 방법이 있는데도 없다고 알게 된다.
 
+# 화면에 쓰는 말. `배포` 는 팀에게 `업데이트` 다(UX 점검 11/16). 파일 이름 자체는
+# 관리자가 그대로 쓰므로 화면이 작게라도 늘 같이 보인다(`restore.html`).
 KIND_LABELS = {
     DAILY_PREFIX: "일일 자동",
-    PREDEPLOY_PREFIX: "배포 직전",
+    PREDEPLOY_PREFIX: "업데이트 직전",
     BEFORE_RESTORE_PREFIX: "되돌리기 직전",
     BEFORE_TAB_DELETE_PREFIX: "탭 삭제 직전",
 }
+#: 운영 스크립트가 고치기 전에 뜨는 사본(`snapshot-before-<작업>-날짜.db`). 탭 삭제
+#: 직전(위)도 이 머리로 시작하므로 위 목록을 먼저 본다.
+BEFORE_JOB_PREFIX = "snapshot-before-"
 
 
 @dataclass
@@ -377,8 +382,10 @@ def _kind_of(name: str) -> str:
     for prefix, label in KIND_LABELS.items():
         if name.startswith(prefix):
             return label
+    if name.startswith(BEFORE_JOB_PREFIX):
+        return "작업 직전"
     # 사람이 손으로 뜬 것. 이름 규칙이 없으므로 나머지는 전부 여기로 온다.
-    return "손으로 뜬 것"
+    return "수동 백업"
 
 
 def read_revision(path: Path) -> Optional[str]:
@@ -436,14 +443,15 @@ def verdict_for(revision: Optional[str], known: set, head: Optional[str]) -> tup
     판이 없는 백업(`alembic_version` 표 자체가 없음)도 막는다. 알렘빅이 돌기
     전의 파일이라 `upgrade head` 가 이미 있는 표를 다시 만들려다 죽는다.
     """
+    # 사유는 **쉬운 말**로 적는다 — 판 이름(`0138_…`)은 화면이 따로 작게 보인다
+    # (`restore.html` 의 `데이터 구조 판`). 알렘빅 · 스키마는 팀이 쓰는 말이 아니다.
     if revision is None:
-        return "unknown", "알렘빅 판을 읽을 수 없습니다 — 되돌릴 수 없습니다"
+        return "unknown", "데이터 구조 판을 읽을 수 없어 되돌릴 수 없습니다"
     if revision == head:
-        return "same", "지금 코드와 같은 판입니다"
+        return "same", "지금 앱과 같은 데이터 구조입니다"
     if revision in known:
-        return "behind", f"옛 판({revision})입니다 — 되돌린 뒤 최신 판으로 올립니다"
-    return "ahead", (f"코드가 모르는 판({revision})입니다 — 이 백업이 지금 코드보다 "
-                     f"새 것이라 되돌리면 안 됩니다")
+        return "behind", "예전 데이터 구조입니다 — 되돌린 뒤 지금 앱에 맞게 올립니다"
+    return "ahead", ("지금 앱보다 새 데이터 구조라(앱이 모르는 판) 되돌리면 안 됩니다")
 
 
 SAFE_VERDICTS = ("same", "behind")

@@ -379,6 +379,34 @@ def today_lines(db: Session, user: User, now: datetime) -> List[dict]:
     return out
 
 
+#: 판 첫 칸 끝말 — 누구 계정으로 나가나.
+MENU_NOTE = "스타트업 월간 발송 메뉴의 계정으로"
+
+
+def summary(values: dict) -> str:
+    """판 첫 칸 — **저장된 순환 줄**로 적는다. 이름(`스타트업 월간 발송`)에 일정을 붙여
+    두면 순환을 바꾼 뒤에도 옛 날짜가 남는다(UX 점검 11/16)."""
+    names = runner.WEEKDAYS
+    try:
+        slots = parse_slots(values["slots"])
+    except ValueError:
+        return f"날짜·시각 순환을 읽을 수 없습니다 — {MENU_NOTE}"
+
+    def one(slot) -> str:
+        day, hhmm = slot
+        if isinstance(day, tuple):
+            return f"{day[0]}주차 {names[day[1]]}요일 {hhmm}"
+        return f"{day}일 {hhmm}"
+
+    if len(slots) == 1:
+        when = f"매월 {one(slots[0])}"
+    elif len(slots) == 2:
+        when = f"홀수 달 {one(slots[0])} · 짝수 달 {one(slots[1])}"
+    else:
+        when = "달마다 차례로 " + " → ".join(one(s) for s in slots)
+    return f"{when}, 토·일이면 앞 평일 — {MENU_NOTE}"
+
+
 def times(values: dict) -> List[str]:
     """보낼 시각들 — 순환 줄마다의 시각(팀 시간대 안인지 저장 자리에서 본다)."""
     return [hhmm for _day, hhmm in parse_slots(values["slots"])]
@@ -387,4 +415,4 @@ def times(values: dict) -> List[str]:
 runner.register(runner.Spec(
     key=automation.STARTUP_MONTHLY, kind=STARTUP_SEND_KIND, plan=plan,
     collect=collect, fields=FIELDS, check=_check, describe=describe,
-    times=times))
+    times=times, summary=summary))

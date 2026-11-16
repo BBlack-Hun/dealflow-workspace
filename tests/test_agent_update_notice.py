@@ -198,13 +198,13 @@ def test_several_old_pcs_are_listed_by_name():
 
 
 def test_team_screen_tags_old_versions(client, db, users):
-    """팀 현황: 최신보다 낡았지만 `MIN_AGENT_VERSION` 위인 판에 `옛 버전` 딱지."""
+    """팀 현황: 최신보다 낡았지만 `MIN_AGENT_VERSION` 위인 판에 `새 버전 있음` 딱지."""
     users["u2"].role = "admin"
     db.commit()
     _set_device(db, users["u1"].id, version.MIN_AGENT_VERSION)
     _set_device(db, users["u2"].id, version.VERSION)
     html = _login(client, "01000000002").get("/team").text
-    assert html.count(">옛 버전</span>") == 1
+    assert html.count(">새 버전 있음</span>") == 1
 
 
 # ── 6. [오늘 하루 보지 않기] ─────────────────────────────────────────────────

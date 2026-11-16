@@ -578,7 +578,7 @@ def restore_apply(name: str = Form(""), db: Session = Depends(get_db),
 
     note = f"{result['restored']} 지점으로 되돌렸습니다"
     if result.get("migrated_to"):
-        note += f" (스키마를 {result['migrated_to']} 로 올렸습니다)"
+        note += f" (데이터 구조를 지금 앱에 맞게 올렸습니다: {result['migrated_to']})"
     note += f". 되돌리기 직전 상태는 {result['safety']} 에 남겨 두었습니다"
 
     # **로그인 세션도 DB 안에 있다**(`sessions` 표). 되돌리면 지금 쓰는 세션이
@@ -1504,11 +1504,11 @@ def save_startup_send(
     if not startup_send.is_on(setting):
         note = f"{label} 메뉴를 껐습니다 — 아무 계정에도 보이지 않습니다"
         if a5_off or stopped:
-            note += f" · 자동화 A5 도 껐습니다(보낼 계정이 없습니다){gone}"
+            note += f" · 매월 자동 발송도 껐습니다(보낼 계정이 없습니다){gone}"
         return RedirectResponse(f"/team?msg={quote(note)}", status_code=303)
     note = f"{label} 메뉴 켜짐 — {member.name} 계정에만 보입니다"
     if stopped:
-        note += f" · 자동화 A5 도 이 계정으로{gone}"
+        note += f" · 매월 자동 발송도 이 계정으로{gone}"
     return RedirectResponse(f"/team?msg={quote(note)}", status_code=303)
 
 

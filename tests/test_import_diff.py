@@ -359,7 +359,7 @@ def test_로그_화면이_한_판을_그린다(portal_admin, db, owners, monkeyp
               "--save-baseline", str(base), "--apply")
 
     body = portal_admin.get("/team/edit-log").text
-    assert "시트 한 판" in body and LIST in body
+    assert "시트 올리기" in body and LIST in body
     assert "덮어씀" in body
 
 

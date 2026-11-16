@@ -258,7 +258,7 @@ def test_the_company_screen_says_the_same_thing(logged_in, db, users):
 def test_the_toggle_is_on_the_team_screen(as_admin, db, users):
     r = as_admin.get("/team")
     assert f"/team/members/{users['u1'].id}/auto-attach" in r.text
-    assert "자료 자동첨부" in r.text
+    assert "자료 자동 첨부" in r.text
 
 
 def test_the_table_reads_the_same_judgment_as_the_screen(as_admin, logged_in,

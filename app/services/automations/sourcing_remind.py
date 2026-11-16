@@ -88,6 +88,24 @@ def _check(values: dict) -> None:
         raise ValueError("보낼 갈래를 하나 이상 넣으세요")
 
 
+def schedule_label(values: dict) -> str:
+    """`매월 2주차 수요일 10:00` — **저장된** 주차 · 요일 · 시각으로 적는다(참여 제안도 같은 칸).
+
+    판 첫 칸의 일정이 기본값 글(`2주차 화요일`)에 박혀 있어, 요일을 수요일로 바꾼 뒤에도
+    `화요일` 이라 적혀 있고 바로 옆 상태 칸은 `다음 12/9(수)` 였다(UX 점검 §18-5).
+    """
+    try:
+        weeks = "·".join(str(n) for n in _weeks(values["weeks"]))
+    except ValueError:
+        weeks = str(values["weeks"])
+    return f"매월 {weeks}주차 {values['weekday']}요일 {values['time']}"
+
+
+def summary(values: dict) -> str:
+    return (f"{schedule_label(values)} — 딜 소싱 '참여' 분 중 이번 달 딜을 아직 안 준 "
+            "심사역께 [참여 심사역 딜 발송 요청] 문구")
+
+
 FIELDS = (
     runner.Field("groups", "갈래(한 줄에 하나)", "lines", DEFAULT_GROUPS,
                  hint="딜 소싱 화면의 갈래 탭 이름 그대로"),
@@ -228,4 +246,4 @@ def manual(db: Session, _values: dict, target, day: date) -> str:
 runner.register(runner.Spec(
     key=automation.SOURCING_REMIND, kind="sourcing_intro", topic=KIND, plan=plan,
     collect=collect, still_ok=still_ok, fields=FIELDS, check=_check,
-    manual=manual, alert=True))
+    manual=manual, alert=True, summary=summary))

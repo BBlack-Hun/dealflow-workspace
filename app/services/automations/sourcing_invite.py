@@ -49,7 +49,7 @@ from .. import (automation, sender_rooms, sourcing_buckets, sourcing_link, sourc
 from .. import automation_runner as runner
 from .. import message_composer as mc
 # 칸 모양(갈래 · 주차 · 요일 · 시각)이 소싱 리마인드와 같다 — 읽고 가리는 손도 같은 것.
-from .sourcing_remind import _check, _weeks, week_of_month
+from .sourcing_remind import _check, _weeks, schedule_label, week_of_month
 
 KEY = automation.SOURCING_INVITE
 
@@ -128,6 +128,12 @@ def still_ok(db: Session, rec: AutomationSend) -> str:
     return "" if value == sourcing_sync.OFFER_PENDING else value
 
 
+def summary(values: dict) -> str:
+    """판 첫 칸 — 저장된 주차 · 요일 · 시각으로(`sourcing_remind.schedule_label`)."""
+    return (f"{schedule_label(values)} — 딜 소싱 '제안 대기중' 분께 [검토 가능 심사역 참여 안내] "
+            "문구, 한 분께 한 번(나가면 '물어보는 중'으로 바뀌어 다음 달엔 안 감)")
+
+
 def manual(db: Session, _values: dict, target, _day: date) -> str:
     from .. import automation_dedup
 
@@ -137,4 +143,4 @@ def manual(db: Session, _values: dict, target, _day: date) -> str:
 runner.register(runner.Spec(
     key=KEY, kind=sourcing_sync.INVITE_JOB_KIND, topic=None, plan=plan,
     collect=collect, still_ok=still_ok, fields=FIELDS, check=_check,
-    manual=manual, alert=True))
+    manual=manual, alert=True, summary=summary))

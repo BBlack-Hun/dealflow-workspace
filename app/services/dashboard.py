@@ -1170,8 +1170,13 @@ def admin_dashboard(db: Session, today: Optional[date] = None) -> dict:
             # 최근 활동의 `미팅` — 갈래 넷을 합친다(`meeting_kind.ALL`).
             # 한 갈래만 세면 시트 머리글이 다른 명단만 조용히 0 이 된다.
             "meeting": sum(acts.get(k, 0) for k in mk.ALL),
-            "agent": (f"{names.get(via, via)} 발송기로 보냄 · " if via else "")
-                     + _agent_label(device),
+            # 발송 프로그램 칸 — 상태 · PC 이름 · 남의 발송기로 보내는지를 **따로** 싣는다.
+            # 한 글자로 이어 붙이면(`○○ 발송기로 보냄 · 연결됨 · PC이름`) 표에서도
+            # 고르개 한 줄에서도 상태 넷이 한 덩이로 읽혔다(UX 점검 11/16).
+            # PC 이름은 관리자가 어느 PC 인지 알아야 해서 그대로 보인다.
+            "agent": _agent_label(device),
+            "agent_host": (device.hostname or "") if device else "",
+            "agent_via_name": names.get(via, str(via)) if via else "",
             # 발송기 고르개(`routers/dashboard.set_send_via`) — 지금 고른 계정과,
             # 이 발송기로 맡긴 계정들(맡은 쪽은 남에게 다시 맡길 수 없다).
             "send_via": via,
@@ -1224,14 +1229,17 @@ def admin_dashboard(db: Session, today: Optional[date] = None) -> dict:
                       if c.user_id not in {u.id for u in users}])
 
     return {
+        # 단위(`unit`)는 숫자 바로 뒤에 붙고, `sub` 는 그 아래 한 줄이다. 단위를
+        # `sub` 에 두면 `11` 아래 줄에 `명` 하나만 떨어져 섰다(UX 점검 11/16).
         "kpis": [
-            {"key": "users", "label": "팀원", "value": len(users), "sub": "명", "href": "/team"},
+            {"key": "users", "label": "팀원", "value": len(users), "unit": "명",
+             "sub": "", "href": "/team"},
             {"key": "contacts", "label": "전체 투자사", "value": len(contacts),
-             "sub": "명", "href": "/contacts"},
+             "unit": "명", "sub": "", "href": "/contacts"},
             {"key": "companies", "label": "소개 가능 기업", "value": len(introducible),
-             "sub": f"등록 {len(companies)}개 중", "href": "/companies"},
-            {"key": "sent", "label": "이번 달 발송", "value": sum(sent_by_user.values()),
-             "sub": "건 성공", "href": "/team"},
+             "unit": "곳", "sub": f"등록 {len(companies)}곳 중", "href": "/companies"},
+            {"key": "sent", "label": "이번 달 발송 성공", "value": sum(sent_by_user.values()),
+             "unit": "건", "sub": "", "href": "/team"},
         ],
         "members": rows,
         # 맡길 수 있는 발송기 — 딜소개를 보내고 정지되지 않았고 연결키가 있고
@@ -1293,11 +1301,12 @@ def _agent_label(device: Optional[AgentDevice]) -> str:
         mins = (clock.now() - ts).total_seconds() / 60
     except ValueError:
         return "확인 불가"
+    # PC 이름은 여기 붙이지 않는다 — 표가 `agent_host` 로 따로 적는다.
     if mins < 2:
-        return f"연결됨 · {device.hostname or '이름 없음'}"
+        return "연결됨"
     if mins < 60:
-        return f"{int(mins)}분 전"
-    return f"{int(mins // 60)}시간 전"
+        return f"{int(mins)}분 전 연결"
+    return f"{int(mins // 60)}시간 전 연결"
 
 
 def _admin_warnings(rows: List[dict], unassigned: int) -> List[dict]:
@@ -1324,17 +1333,17 @@ def _admin_warnings(rows: List[dict], unassigned: int) -> List[dict]:
     if no_agent:
         out.append({"level": "bad", "label": "발송 프로그램 미연결",
                     "detail": ", ".join(no_agent),
-                    "hint": "그 PC에서 [발송 프로그램 설치]를 해야 발송이 나갑니다"})
+                    "hint": "각 계정이 쓰는 PC에서 [발송 프로그램 설치]를 해야 발송이 나갑니다"})
     pending = [r["name"] for r in rows if r["password_pending"]]
     if pending:
-        out.append({"level": "warn", "label": "초기 비밀번호를 아직 안 바꾼 계정",
+        out.append({"level": "warn", "label": "초기 비밀번호 미변경",
                     "detail": ", ".join(pending),
-                    "hint": "첫 로그인 시 변경 화면으로 유도됩니다"})
+                    "hint": "다음 로그인 때 비밀번호 변경 화면이 뜹니다"})
     blocked = [f"{r['name']}({r['missing']}명)" for r in senders if r["missing"]]
     if blocked:
-        out.append({"level": "warn", "label": "카톡방이 없거나 연결 실패한 담당자",
+        out.append({"level": "warn", "label": "카톡방 없음·연결 실패",
                     "detail": ", ".join(blocked),
-                    "hint": "그 담당자에게는 발송이 나가지 않습니다"})
+                    "hint": "괄호 속 인원에게는 발송되지 않습니다"})
     empty = [r["name"] for r in senders if r["contacts"] == 0 and r["role"] != "admin"]
     if empty:
         out.append({"level": "muted", "label": "담당 투자사가 없는 계정",
