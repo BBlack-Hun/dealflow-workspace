@@ -1196,7 +1196,7 @@ def test_the_data_says_how_many_went_in_and_why(db, users):
     assert len(out["investors"]) == 1 and out["investors"][0]["id"] == f"V-{kept.id}"
     # 무엇이 빠졌는지도 자료 안에 적혀 있어야 한다 — 담기지 않은 투자사가
     # 있다는 것을 모르면 "왜 이 투자사가 없지" 를 알 길이 없다.
-    assert "확인됨" in out["note"] and "내 명단" in out["note"]
+    assert "확인 완료" in out["note"] and "내 명단" in out["note"]
 
 
 def test_the_count_in_the_data_is_the_number_of_rows_in_it(db, users):
