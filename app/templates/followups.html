@@ -73,7 +73,7 @@
 
   <section class="panel" id="rules">
     <h2 class="panel-title">발송 주기
-      <span class="hint">기본은 매월 첫째·셋째 수요일 — 관리자가 바꿉니다</span>
+      <span class="hint">{% if cycle_desc %}딜소개 {{ cycle_desc }} — {% endif %}관리자가 바꿉니다</span>
     </h2>
     <ul class="import-stats">
       {% for rule in rules %}

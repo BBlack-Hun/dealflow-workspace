@@ -76,7 +76,7 @@
   </div>
   <div class="table-wrap">
   <table class="grid-table compact" id="closed-table">
-    <thead><tr><th>심사역</th><th>마지막 단계</th><th>상태</th><th>사유</th><th></th></tr></thead>
+    <thead><tr><th>심사역</th><th>마지막 단계</th><th>상태</th><th>사유</th><th>처리</th></tr></thead>
     <tbody>
       {% for r in closed %}
       {#
@@ -127,7 +127,8 @@
           <div class="closed-actions">
           {% if r.status in ['stopped', 'responded'] %}
           <form method="post" action="/followups/{{ r.id }}/resume">
-            <button class="linkbtn" type="submit">다시 켜기</button>
+            {# 무엇을 다시 켜는지 단추 글자에 — `다시 켜기` 만으로는 알 수 없었다. #}
+            <button class="linkbtn" type="submit">리마인드 다시 켜기</button>
           </form>
           <span class="sep" aria-hidden="true">·</span>
           {% endif %}

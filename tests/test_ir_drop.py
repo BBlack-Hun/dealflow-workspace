@@ -159,7 +159,7 @@ def test_lost_still_counts_as_sent(db, users, seed):
 def test_drop_view_and_confirm_then_undo(client, db, users, seed):
     c = _login(client)
     html = c.get("/ir/no-meeting?view=drop").text
-    assert "드랍 의심 1" in html and "드랍 확정" in html
+    assert "드랍 의심 1건" in html and "드랍 확정" in html
     body = html.split('id="irnm-table"', 1)[1]
     assert "샘플애그" in body and "테스트랩" not in body and "성춘향" not in body
 
@@ -170,7 +170,7 @@ def test_drop_view_and_confirm_then_undo(client, db, users, seed):
     assert res.status_code == 303 and res.headers["location"] == "/ir/no-meeting?view=drop"
     db.refresh(seed["rows"]["quiet"])
     assert seed["rows"]["quiet"].status == "lost"
-    assert "드랍 의심 0" in c.get("/ir/no-meeting").text
+    assert "드랍 의심 0건" in c.get("/ir/no-meeting").text
     assert "샘플애그" not in c.get("/ir/no-meeting").text.split('id="irnm-table"', 1)[-1]
 
     shown = c.get("/ir/no-meeting?drop=show").text
