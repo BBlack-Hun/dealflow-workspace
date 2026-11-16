@@ -223,7 +223,7 @@
     <select name="meeting_id" class="input wide">
       <option value="">어느 미팅 것으로 만들까요</option>
       {% for m in test_meetings %}
-      <option value="{{ m.id }}">{% if m.due %}[결과 문의 차례] {% endif %}{{ m.who }}{% if m.firm %} · {{ m.firm }}{% endif %}{% if m.when %} — {{ m.when }}{% endif %} {{ m.kind_label }}</option>
+      <option value="{{ m.id }}">{% if m.due %}[결과 확인 차례] {% endif %}{{ m.who }}{% if m.firm %} · {{ m.firm }}{% endif %}{% if m.when %} — {{ m.when }}{% endif %} {{ m.kind_label }}</option>
       {% endfor %}
     </select>
     <button class="btn primary" type="submit">시험방으로 보내보기</button>
@@ -232,7 +232,7 @@
     {# 거르지 않는 까닭은 `_test_meetings` 에 적었다. 짧게: 문구가 미팅을 안
        읽어서 걸러도 글자가 같고, 거르면 발송기를 깔 때 목록이 비어 버린다. #}
     <b>고른 심사역에게는 아무것도 가지 않습니다</b> — 시험방 한 곳뿐입니다.<br>
-    <b>결과 문의 차례</b> 인 미팅이 맨 위에 옵니다.
+    <b>결과 확인 차례</b> 인 미팅이 맨 위에 옵니다.
   </p>
   {% else %}
   {# 미팅이 하나도 없는 화면. 기업 리마인드와 같은 자리, 같은 답이다 —

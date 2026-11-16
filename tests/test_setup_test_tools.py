@@ -1121,7 +1121,7 @@ def test_the_picker_is_not_narrowed_to_due_followups(logged_in, rehearsal, db,
     html = logged_in.get("/setup").text
     assert "정다래" in html, "결과 문의 차례가 아니라고 목록에서 빠졌다"
     # 차례인 것이 먼저 오고, 그 표가 붙는다.
-    assert "[결과 문의 차례] 김영주" in html
+    assert "[결과 확인 차례] 김영주" in html
     assert html.index("김영주") < html.index("정다래")
 
 

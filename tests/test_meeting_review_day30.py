@@ -357,7 +357,7 @@ def test_still_ok_reads_each_round_by_its_own_rules(db, users, world):
     assert a7.still_ok(db, first) == "결과가 이미 적혀 있습니다"
     assert a7.still_ok(db, second) == ""
     meeting.outcome = None
-    assert a7.still_ok(db, first) == "결과 문의를 이미 했습니다"
+    assert a7.still_ok(db, first) == "미팅 결과 확인을 이미 했습니다"
     assert a7.still_ok(db, second) == ""
     meeting.outcome = "pass"
     assert a7.still_ok(db, second) == "결과가 거절로 적혀 있습니다"

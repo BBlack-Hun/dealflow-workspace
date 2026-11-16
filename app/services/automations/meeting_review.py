@@ -239,7 +239,7 @@ def why_not(db: Session, meeting: Optional[Meeting], contact: Optional[VcContact
     if (meeting.outcome or "") not in ASKABLE_OUTCOMES:
         return "결과가 이미 적혀 있습니다"
     if meeting.followup_done or (meeting.followup_note or "").strip():
-        return "결과 문의를 이미 했습니다"
+        return "미팅 결과 확인을 이미 했습니다"
     if _superseded(meeting, others):
         return "그 뒤 미팅이 또 잡혀 있습니다"
     return _contact_problem(db, contact)
@@ -324,7 +324,7 @@ def collect(db: Session, row: Automation, sender: User,
             judge = why_not_decision if decision else why_not
             why = judge(db, meeting, contact, others.get(meeting.contact_id, []))
             if not why and not decision and meeting.id in old:
-                why = "결과 문의 대기 목록으로 이미 섰습니다"
+                why = "미팅 결과 확인 대기 목록으로 이미 섰습니다"
             if not why and contact.id in seen:
                 # 같은 분과 같은 날 미팅이 둘 — 한 통이면 된다. 첫 번째와 두 번째가
                 # 겹치는 것은 장부(같은 분 하루 N통)가 막는다.

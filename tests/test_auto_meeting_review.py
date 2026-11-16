@@ -128,7 +128,7 @@ def test_skipped_ones_are_named(db, users, team):
     result = _run(db)
     joined = " / ".join(result["skipped"])
     assert "결과가 이미 적혀 있습니다" in joined
-    assert "결과 문의를 이미 했습니다" in joined
+    assert "미팅 결과 확인을 이미 했습니다" in joined
     assert "그 뒤 미팅이 또 잡혀 있습니다" in joined
     assert "검토중단" in joined
     assert "방 이름 없음" in joined
@@ -200,7 +200,7 @@ def test_a_meeting_already_on_the_old_review_list_is_not_asked_again(db, users, 
     result = _run(db)
     assert result["status"] == "ready", result
     assert {i.contact_id for i in _items(db)} == {team["people"]["u2"].id}
-    assert any("결과 문의 대기 목록으로 이미 섰습니다" in why for why in result["skipped"])
+    assert any("미팅 결과 확인 대기 목록으로 이미 섰습니다" in why for why in result["skipped"])
 
 
 @pytest.mark.parametrize("case,asks", [
