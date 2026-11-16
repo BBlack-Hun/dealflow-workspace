@@ -18,8 +18,12 @@ from sqlalchemy.orm import Session
 from .. import clock, config
 from ..models import (SEND_KINDS, AgentDevice, IrCompany, MessageTemplate,
                       SendItem, SendJob, User)
-from . import cadence, pipeline, sheet_owner
+from . import cadence, pipeline, report as report_svc, sheet_owner
 from .dashboard import _SENDABLE_ROOM, _room_state
+
+# 점검 문구에 주소(`/setup`)를 적지 않는다 — 사람은 왼쪽 메뉴의 이름으로 찾는다.
+# 그 화면으로 가는 길은 각 줄의 [가기] 링크(`href`)가 그대로 맡는다.
+SETUP_SCREEN = "발송 프로그램 설치"
 
 OK = "ok"
 WARN = "warn"
@@ -98,13 +102,15 @@ def _test_room_check(rehearsal: bool) -> dict:
     if room and config.IS_PRODUCTION:
         # 운영에서는 시험 자리가 늘 닫힌다(`routers/setup.test_tools_on`).
         return _check(OK, "시험방",
-                      f"'{room}' — 운영이라 `/setup` 시험 자리는 닫혀 있습니다",
+                      f"'{room}' — 운영 서버에서는 {SETUP_SCREEN} 화면의 시험 발송을 "
+                      "쓸 수 없습니다",
                       "", "/setup")
     if room:
         return _check(OK, "시험방",
-                      f"'{room}' — `/setup` 의 시험 단추만 이 방으로 갑니다",
+                      f"'{room}' — {SETUP_SCREEN} 화면의 시험 단추만 이 방으로 갑니다",
                       "딜 소개·IR 전달·리마인드는 각 담당자 방으로 나갑니다", "/setup")
-    return _check(OK, "시험방", "정해져 있지 않습니다 — `/setup` 시험 자리가 닫혀 있습니다",
+    return _check(OK, "시험방",
+                  f"정해져 있지 않습니다 — {SETUP_SCREEN} 화면의 시험 발송은 쓸 수 없습니다",
                   "", "/setup")
 
 
@@ -134,13 +140,13 @@ def _targets_check(db: Session, user: User) -> List[dict]:
         out.append(_check(OK, "발송 대상",
                           f"{sendable}명 · 딜소개 명단 {len(contacts)}명 중", "", "/contacts"))
     if failed or missing:
-        out.append(_check(WARN, "방을 못 찾은 담당자",
-                          f"{failed + missing}명에게는 나가지 않습니다",
-                          "[방 연결 확인]을 돌리거나 방 제목을 고치세요", "/contacts"))
+        out.append(_check(WARN, "카톡방을 찾지 못한 담당자",
+                          f"{failed + missing}명 — 이 사람들에게는 발송되지 않습니다",
+                          "[방 연결 확인]을 실행하거나 카톡방 제목을 고쳐 주세요", "/contacts"))
     if unverified:
-        out.append(_check(WARN, "방 이름 미확인",
-                          f"{unverified}명은 실제 방 제목과 대조하지 않았습니다",
-                          "[방 연결 확인]을 돌리면 맞춰집니다", "/contacts"))
+        out.append(_check(WARN, "카톡방 제목 확인 전",
+                          f"{unverified}명은 실제 카톡방 제목과 아직 맞춰 보지 않았습니다",
+                          "[방 연결 확인]을 실행하면 맞춰집니다", "/contacts"))
     return out
 
 
@@ -150,7 +156,7 @@ def _companies_check(db: Session) -> dict:
     if not ready:
         return _check(BLOCK, "소개할 기업", "소개 문구를 만들 수 있는 기업이 없습니다",
                       "한줄소개와 숫자를 채우세요", "/companies")
-    return _check(OK, "소개할 기업", f"{len(ready)}개 · 등록 {len(companies)}개 중",
+    return _check(OK, "소개할 기업", f"{len(ready)}곳 · 등록 {len(companies)}곳 중",
                   "", "/companies")
 
 
@@ -181,14 +187,15 @@ def _rehearsal_check(db: Session, user: User, today: date) -> dict:
                func.coalesce(SendItem.sent_at, "") >= cutoff)
     ).scalar() or 0
     if recent:
-        return _check(OK, "최근 발송 확인", f"최근 7일 안에 {recent}건 성공", "")
+        return _check(OK, "최근 발송 확인", f"최근 7일 성공 {recent}건", "")
     # **"테스트 모드를 켜고 한 건 보내 보세요" 라고 적던 자리다.** 그 말이
     # 맞던 때는 시험방이 켜져 있으면 발송이 전부 그리로 갔기 때문인데, 이제는
     # 켜도 투자사에게 그대로 나간다 — 그대로 두면 이 화면이 **실발송을 시키는**
     # 안내가 된다. 발송기가 도는지만 보려면 `/setup` 의 시험 단추가 그 자리다
     # (그쪽은 `SEND_KINDS` 밖이라 여기 세어지지는 않는다).
-    return _check(WARN, "최근 발송 확인", "최근 7일 안에 성공한 발송이 없습니다",
-                  "발송기가 도는지는 `/setup` 의 시험 단추로 먼저 보세요", "/setup")
+    return _check(WARN, "최근 발송 확인", "최근 7일 동안 성공한 발송이 없습니다",
+                  f"발송 프로그램이 도는지는 {SETUP_SCREEN} 화면의 시험 단추로 먼저 확인하세요",
+                  "/setup")
 
 
 def _open_requests_check(db: Session, user: User) -> dict:
@@ -197,8 +204,9 @@ def _open_requests_check(db: Session, user: User) -> dict:
     overdue = items["overdue_requests"]
     if overdue:
         names = ", ".join(f"{r['name']}({r['company_name']})" for r in overdue[:3])
-        return _check(WARN, "답 못 한 IR 요청",
-                      f"{len(overdue)}건이 사흘 넘게 밀려 있습니다 — {names}",
+        # `pipeline` 의 `overdue` 는 요청일에서 3일이 지나면 켜진다(`waited >= 3`).
+        return _check(WARN, "답하지 않은 IR 요청",
+                      f"{len(overdue)}건 — 요청받고 3일이 지났습니다 · {names}",
                       "새 회차를 보내기 전에 먼저 답하세요", "/ir")
     if items["open_requests"]:
         return _check(WARN, "보낼 자료",
@@ -237,6 +245,8 @@ def report(db: Session, user: User, today: Optional[date] = None,
     next_send = upcoming[0]
     return {
         "checks": checks,
+        # 화면에 적는 날짜(`11/18(수)`) — 업무 보고·대시보드와 같은 표기.
+        "next_send_label": report_svc.day_label(next_send.isoformat()),
         "blocked": [c for c in checks if c["level"] == BLOCK],
         "warned": [c for c in checks if c["level"] == WARN],
         "ready": not any(c["level"] == BLOCK for c in checks),

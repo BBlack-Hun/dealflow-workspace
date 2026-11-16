@@ -56,8 +56,9 @@ def build(db: Session, user: User, today: Optional[date] = None) -> dict:
     if ir["overdue_requests"]:
         names = ", ".join(f"{r['name']}({r['company_name']})"
                           for r in ir["overdue_requests"][:3])
+        # `overdue` 는 요청일에서 3일이 지나면 켜진다(`pipeline` 의 `waited >= 3`).
         items.append(_item(
-            "ir", "urgent", "사흘 넘게 못 보낸 IR 자료",
+            "ir", "urgent", "요청받고 3일이 지나도록 못 보낸 IR 자료",
             f"{names}{' 외' if len(ir['overdue_requests']) > 3 else ''}",
             "/ir", len(ir["overdue_requests"])))
     elif ir["open_requests"]:
@@ -203,13 +204,14 @@ def build(db: Session, user: User, today: Optional[date] = None) -> dict:
     # 4) 회차 준비 — 발송일이 가까울수록 급해진다.
     ready = readiness.report(db, user, today)
     days = ready["days_left"]
+    # 무엇의 며칠 전인지(발송일)를 제목이 말한다. 날짜는 `11/18(수)` 꼴 하나다.
     if days <= 0:
-        items.append(_item("cycle", "urgent", "오늘이 딜 제안 날입니다",
+        items.append(_item("cycle", "urgent", "오늘이 딜소개 발송일입니다",
                            "기업을 고르고 발송하세요", "/deals"))
     elif days <= 3:
-        items.append(_item("cycle", "soon", f"딜 제안 {days}일 전",
-                           f"{ready['next_send'].strftime('%m월 %d일')} · 준비 상태를 확인하세요",
-                           "/readiness"))
+        items.append(_item("cycle", "soon",
+                           f"딜소개 발송 {days}일 전 ({ready['next_send_label']})",
+                           "준비 상태를 확인하세요", "/readiness"))
     for blocked in ready["blocked"]:
         items.append(_item("block", "urgent", blocked["title"],
                            blocked["detail"], blocked["href"] or "/readiness"))

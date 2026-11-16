@@ -137,7 +137,11 @@ def test_live_send_with_a_test_room_is_not_blocked(db, ready_state, monkeypatch)
     # 막지는 않되 **켜져 있다는 사실은 적는다** — 모른 채 누르면 안 된다.
     room_check = next(c for c in result["checks"] if c["title"] == "시험방")
     assert "나와의 채팅" in room_check["detail"]
-    assert "/setup" in room_check["detail"]
+    # 시험 단추가 어디 있는지 말한다 — 주소(`/setup`)가 아니라 메뉴 이름으로 적고,
+    # 그 화면으로 가는 길은 [가기] 링크가 맡는다.
+    assert readiness.SETUP_SCREEN in room_check["detail"]
+    assert "/setup" not in room_check["detail"]
+    assert room_check["href"] == "/setup"
 
 
 def test_a_test_room_no_longer_means_rehearsal(db, ready_state, monkeypatch):

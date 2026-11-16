@@ -354,26 +354,30 @@ def today_lines(db: Session, user: User, now: datetime) -> List[dict]:
     row = automation.load(db, automation.STARTUP_MONTHLY)
     out = []
     gone = missed(db, row, now)
+    # 이 줄은 주간 업무 화면에 그대로 뜬다 — 내부 번호(`A5`)·`회차가 선다` 같은 말은
+    # 적지 않는다. 제목은 **무슨 일인지**만, 무엇을 할지는 설명 줄로 옮긴다(뜻은 그대로).
     if gone is not None:
         out.append({
             "level": "urgent",
             "title": f"스타트업 월간 발송 — {gone['month_num']}월분이 아직 안 나갔습니다",
-            "detail": (f"이 달 A5 날짜({gone['slot']})가 지났는데 나간 회차가 없습니다"
+            "detail": (f"이 달 발송 예정일({gone['slot']})이 지났는데 나간 발송이 없습니다"
                        + (f" — {gone['error']}" if gone["error"] else "")
-                       + ". A5 는 그날이 지나면 다시 세우지 않습니다 — 달이 끝나기 전에 "
+                       + ". 자동 발송은 그날이 지나면 다시 준비하지 않습니다 — 달이 끝나기 전에 "
                        "스타트업 월간 발송 화면에서 손으로 보내세요(같은 달 두 번은 막힙니다)"),
             "href": "/deals/startup-ir" if user.id == menu else "/team#automations",
             "count": None})
     off = off_reminder(db, row, now)
     if off is not None:
         when = "이번 달" if off["this_month"] else f"{off['month_num']}월"
-        title = (f"스타트업 월간 발송(A5)이 시험 모드라 {when} 발송이 실제로는 안 나갑니다 "
-                 "— 팀 현황 › 자동화에서 실제 발송으로 바꾸세요" if off["test"] else
-                 f"스타트업 월간 발송(A5)이 꺼져 있어 {when} 발송이 안 나갑니다 "
-                 "— 팀 현황 › 자동화에서 켜세요")
-        detail = (f"이 달 날짜({off['slot']})가 지났습니다 — 이 달은 스타트업 월간 발송 "
-                  "화면에서 손으로 보내세요" if off["passed"] else
-                  f"A5 날짜 {off['slot']} — 켜 두면 그날 아침 회차가 서고 그 시각에 나갑니다")
+        title = (f"스타트업 월간 발송이 시험 모드입니다 — {when} 발송은 실제로 나가지 않습니다"
+                 if off["test"] else
+                 f"스타트업 월간 발송이 꺼져 있습니다 — {when} 발송은 나가지 않습니다")
+        fix = ("팀 현황 › 자동화에서 실제 발송으로 바꾸세요" if off["test"]
+               else "팀 현황 › 자동화에서 켜세요")
+        detail = (f"이 달 발송 예정일({off['slot']})이 지났습니다 — 이 달은 스타트업 월간 발송 "
+                  f"화면에서 손으로 보내세요. 다음 달부터 자동으로 보내려면 {fix}"
+                  if off["passed"] else
+                  f"발송 예정일 {off['slot']} — {fix}. 그러면 그 시각에 자동으로 나갑니다")
         out.append({"level": "urgent" if off["passed"] else "soon", "title": title,
                     "detail": detail, "href": "/team#automations", "count": None})
     return out
