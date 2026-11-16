@@ -646,11 +646,13 @@ def test_the_seed_is_the_code_fallback(db, users):
 
 def test_the_kind_is_on_the_templates_page(client, db, users):
     from app.models import MessageTemplate
-    from app.routers.templates_crud import KIND_LABELS, VARIABLES
+    from app.routers.templates_crud import KIND_LABELS, VARIABLE_WHERE, VARIABLES
     from scripts import bootstrap
 
     assert KIND_LABELS["meeting_review_decision"] == "문구만 — 미팅 30일 뒤 투자 결정 문의"
-    assert "미팅 30일 뒤 투자 결정 문의에서만" in dict(VARIABLES)["{미팅 기업}"]
+    assert "{미팅 기업}" in dict(VARIABLES)
+    # 쓸 수 있는 곳은 변수 표의 셋째 칸이다(예시 뒤 괄호에서 뗐다).
+    assert "미팅 30일 뒤 투자 결정 문의에서만" in VARIABLE_WHERE["{미팅 기업}"]
     bootstrap.bootstrap(db)
     db.commit()
 
@@ -710,9 +712,11 @@ def test_the_templates_page_says_the_days_set_on_the_panel(client, db, users):
     decision = _panel(client.get("/templates").text, "meeting_review_decision")
     assert "날수가 0 이라 안 나갑니다" in decision and "미팅 완료" not in decision
 
-    # 제목은 한 줄 — 오른쪽 설명이 길면 설명 쪽이 접힌다(제목이 `… 결정 문 / 의` 로
-    # 갈리던 것).
-    assert 'class="panel-title tpl-kind-title"' in page
+    # 제목은 한 줄 — 설명은 제목 줄 밖 제 줄이라 제목을 밀어 접지 않는다(제목이
+    # `… 결정 문 / 의` 로 갈리던 것). 제목 줄 안에는 설명(.hint)이 없어야 한다.
+    heads = re.findall(r'<h2 class="panel-title tpl-kind-title">(.*?)</h2>', page, re.S)
+    assert heads and not any('class="hint' in h for h in heads), heads[:2]
+    assert re.search(r'</h2>\s*<p class="hint tpl-kind-desc">[^<]*자동화의 두 번째', decision)
     css = (Path(__file__).resolve().parent.parent / "app" / "static" / "css"
            / "app.css").read_text(encoding="utf-8")
-    assert re.search(r"\.tpl-kind-title \.hint\s*\{[^}]*flex:\s*1 1 0", css)
+    assert re.search(r"\.tpl-kind-desc\s*\{", css)

@@ -314,6 +314,11 @@ NO_ROOM_NOTE = "딜 소싱 카톡방 없음 — 딜 소싱 화면의 [방 후보
 #: 딜 소개에 **따로 딜을 받는 갈래**(`group_name.SEPARATE`)가 섞였다 — 막지 않고
 #: 말만 한다. 그 칩만 골라 따로 보내는 길이 이 화면이기 때문이다. `{n}` 은 인원.
 SEPARATE_NOTE = f"{group_name.SEPARATE} {{n}}명이 들어 있습니다 — 이분들은 별도 딜 소개 대상입니다"
+#: 딜 소개에 아직 기업을 안 고른 것 — 사람마다의 경고(`○○○: 선택된 기업이 없습니다.`)
+#: 로 세우면 경고 칸에 오류문이 본문처럼 섰다. 고르기 전의 **빈 상태**라 미리보기 위에
+#: 한 줄로만 적는다(`deals.js` 의 `renderPreview`). 발송은 원래대로 서버가 막는다
+#: (`build_send_list` — 기업 1~10개).
+NO_COMPANIES_NOTE = "선택된 기업이 없습니다 — ① 에서 기업을 골라 주세요."
 #: 미팅 후기 탭 — **자동화(A7)가 이미 물은** 분(#31). 막지 않고 말만 한다.
 AUTO_ASKED_NOTE = ("자동 문의함 {day} — 미팅 후 검토결과 문의 자동화가 이미 물었습니다. "
                    "같은 글을 또 보내기 전에 답이 왔는지 보세요")
@@ -1033,6 +1038,8 @@ def preview(
         )
     companies = _picked_companies(db, req)
     previews = []
+    # 기업을 안 고른 빈 상태였는지 — 사람마다가 아니라 한 줄로 적는다(`NO_COMPANIES_NOTE`).
+    no_companies = False
     sourcing = req.mode == MODE_SOURCING
     # 딜 소싱 제안의 [보낼 문구] — 처음 안내 / 월간 리마인드 / Series A 딜 공유.
     topic = _sourcing_topic(req.mode, req.topic)
@@ -1112,6 +1119,8 @@ def preview(
                                       series_a_empty=(series_a_share.NOTHING_SLOT
                                                       if share and not sample else ""),
                                       later=later)
+        compose_warns = [w for w in result.warnings if w != mc.NO_COMPANIES]
+        no_companies = no_companies or len(compose_warns) != len(result.warnings)
         room = _room_of(contact, linked, mine)
         room_ok = bool(room) and contact.room_verified in ("verified", "unverified")
         if sample:
@@ -1159,7 +1168,7 @@ def preview(
             "parts": list(result.parts),
             "char_count": result.char_count,
             "too_long": result.too_long,
-            "warnings": (result.warnings + fit.warnings + thin_warnings
+            "warnings": (compose_warns + fit.warnings + thin_warnings
                          + ([twin_block[contact.id]] if contact.id in twin_block
                             else [])
                          + ([RECEIVED_NOTE] if contact.id in received else [])
@@ -1227,7 +1236,8 @@ def preview(
         warnings.append(f"{sheet_owner.left_room_label()} {len(left)}명 제외 — "
                         f"{sheet_owner.LEFT_ROOM_WHY}: {', '.join(left)}")
     return {"previews": previews, "auto_attach": attach_on, "warnings": warnings,
-            "left_room": len(left)}
+            "left_room": len(left),
+            "empty_note": NO_COMPANIES_NOTE if no_companies else ""}
 
 
 @router.post("/send", dependencies=[Depends(no_send_as_member)])

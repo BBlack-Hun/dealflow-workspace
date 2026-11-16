@@ -35,6 +35,11 @@ STAGE_MEETING = 3
 # Length warning threshold (kept in sync with app.config.MESSAGE_WARN_CHARS).
 MESSAGE_WARN_CHARS = 3000
 
+#: 딜 소개에 기업을 하나도 안 골랐을 때의 경고. **본문에는 들어가지 않는다** —
+#: 경고 목록에만 선다. 발송 화면은 이것을 사람마다의 경고로 세우지 않고 미리보기
+#: 위 빈 상태 한 줄로 바꿔 적는다(`routers/deals.py` 의 `NO_COMPANIES_NOTE`).
+NO_COMPANIES = "선택된 기업이 없습니다."
+
 # 1회 딜소개에 담을 수 있는 기업 수 상한.
 # 실제 운영 문구가 "핵심 딜 7개사" 형태로 나가므로 3개 제한은 현실과 맞지 않는다.
 MAX_COMPANIES_PER_SEND = 10
@@ -392,7 +397,7 @@ def compose_message(
 
     if stage == STAGE_DAY1:
         if not companies:
-            warnings.append("선택된 기업이 없습니다.")
+            warnings.append(NO_COMPANIES)
         # 번호는 `deal_numbers` 가 정한다 — 회차에 남는 `position` 과 자료
         # 전달의 "[기업2] …" 이 같은 자리에서 나와야 서로 어긋나지 않는다.
         # **모양도 거기서 나온다**(`label`) — 투자사는 받은 글자 그대로

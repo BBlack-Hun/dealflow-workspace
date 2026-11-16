@@ -160,22 +160,44 @@ def _desc(db: Session, kind: str) -> str:
     when = f"미팅 완료 {days}일 뒤 자동으로 나갑니다" if days else "지금은 날수가 0 이라 안 나갑니다"
     return f"{desc} · {when}(팀 현황 › 자동화에서 고침)"
 
-# 문구에 쓸 수 있는 치환 변수 (화면 안내용)
+# 문구에 쓸 수 있는 치환 변수 (화면 안내용) — (변수, 결과 예시).
+# **변수 이름은 고치지 않는다** — 저장된 문구가 이 글자로 적혀 있어, 이름을 바꾸면
+# 그 문구의 자리가 글자 그대로 나간다(`message_composer.render_template` 은 모르는
+# `{…}` 를 그대로 둔다).
 VARIABLES = [
-    ("{기업목록}", "[기업1] 샘플애그 (IR 자료 전달에서만)"),
+    ("{기업목록}", "[기업1] 샘플애그 — 딜 소개 때 붙은 번호와 기업 이름이 한 줄로"),
     ("{담당자명}", "김영주"),
-    ("{직함}", "심사역님 (없으면 자동으로 '님')"),
+    ("{직함}", "심사역님 — 직함이 비어 있으면 '님'만 붙습니다"),
     ("{투자사}", "가나벤처스"),
-    ("{개수}", "선택한 기업 수"),
-    ("{월}", "10 — 이 달 숫자 (딜 소싱 리마인드에서만)"),
-    ("{기업 목록}", "[기업1] · 분야 · 투자라운드 · 소개 (기업명은 가림) — 고른 기업마다 한 "
-                  "덩어리 (Series A 딜 공유에서만)"),
-    ("{미팅 기업}", "샘플바이오 — 그 미팅의 기업 이름, 비었으면 '기업' "
-                  "(미팅 30일 뒤 투자 결정 문의에서만)"),
-    ("{기업명}", "샘플바이오 (팀원 알림 — 계약서 우편 발송 · 수신 확인에서만)"),
-    ("{계약일}", "10/26 — 계약 완료로 바뀐 날 (계약서 우편 발송에서만)"),
-    ("{회차}", "1/3 — 수신 확인 몇 번째인가 (계약서 수신 확인에서만)"),
+    ("{개수}", "3 — 고른 기업 수"),
+    ("{월}", "10 — 이 달 숫자"),
+    ("{기업 목록}", "[기업1] · 분야 · 투자라운드 · 소개 — 고른 기업마다 한 덩어리"
+                  "(기업명은 번호로 가림)"),
+    ("{미팅 기업}", "샘플바이오 — 그 미팅의 기업 이름, 비었으면 '기업'"),
+    ("{기업명}", "샘플바이오"),
+    ("{계약일}", "10/26 — 계약 완료로 바뀐 날"),
+    ("{회차}", "1/3 — 수신 확인 몇 번째인가"),
 ]
+#: 변수마다 **쓸 수 있는 곳** — 표의 셋째 칸. 예시 뒤 괄호에 붙여 두니 길고,
+#: 이름이 비슷한 `{기업목록}` · `{기업 목록}` 이 어디서 다른지가 안 보였다.
+#: 둘은 실제로 다른 변수다: `{기업목록}` 은 자료 전달의 번호 + 이름 한 줄
+#: (`render_template` · `deal_numbers.company_list`), `{기업 목록}` 은 Series A 딜
+#: 공유의 기업 덩어리 자리다(`series_a_share.slot` — 이 글에서만 `{기업목록}` 도
+#: 같은 자리로 받는다).
+VARIABLE_WHERE = {
+    "{기업목록}": ("IR 자료 전달 · IR 자료 전달 — 추후 발송 안내 · Series A 딜 공유"
+                 "(여기서는 {기업 목록}과 같습니다) — 딜 제안 관리의 다른 탭에서는 빈칸이 됩니다"),
+    "{담당자명}": "딜 제안 관리의 모든 탭 · 홍보메일 제목",
+    "{직함}": "딜 제안 관리의 모든 탭 · 홍보메일 제목",
+    "{투자사}": "딜 제안 관리의 모든 탭 · 홍보메일 제목",
+    "{개수}": "딜 소개 · Series A 딜 공유 · 홍보메일 제목 — 기업을 안 고르는 탭에서는 0",
+    "{월}": "딜 소싱 리마인드에서만",
+    "{기업 목록}": "Series A 딜 공유에서만 — 딜 제안 관리의 다른 탭에서는 글자 그대로 남습니다",
+    "{미팅 기업}": "미팅 30일 뒤 투자 결정 문의에서만",
+    "{기업명}": "팀원 알림 — 계약서 우편 발송 · 수신 확인에서만",
+    "{계약일}": "계약서 우편 발송에서만",
+    "{회차}": "계약서 수신 확인에서만",
+}
 
 
 def _visible(db: Session, user: User) -> List[MessageTemplate]:
@@ -299,10 +321,13 @@ def _slot_view(db: Session, user: User, kind: str, variant: str,
         "undecided": template_pick.pick(db, user.id, kind, variant) is None,
         "options": [{
             "id": o.id,
-            "name": o.name or "이름 없는 문구",
+            # 빈 이름은 빈 채로 — 화면이 `(이름 없음)` 을 옅게 적는다. 글자를 지어
+            # 넣으면 `이름 없는 문구` 가 진짜 이름처럼 목록에 섞였다.
+            "name": o.name or "",
             # 사용자가 실제로 고르는 것은 이 둘 중 하나다 — 팀이 정해 둔
             # 문구를 쓸 것인가, 내가 손본 문구를 쓸 것인가.
-            "owner": "내 문구" if o.user_id == user.id else "기본 문구",
+            # 꼬리표는 아래 문구 칸(`팀 기본` · `내 문구`)과 같은 이름으로 부른다.
+            "owner": "내 문구" if o.user_id == user.id else "팀 기본",
             "snippet": _snippet(o.body),
             "selected": o.id == picked,
         } for o in options],
@@ -379,7 +404,8 @@ def templates_page(request: Request, db: Session = Depends(get_db),
               for kind, label, _desc in KINDS if kind not in tabbed]
 
     ctx = base_ctx(request, db, user, active="templates")
-    ctx.update({"tabs": tabs, "others": others, "variables": VARIABLES, "msg": msg})
+    ctx.update({"tabs": tabs, "others": others, "variables": VARIABLES,
+                "variable_where": VARIABLE_WHERE, "msg": msg})
     return jinja.TemplateResponse(request, "templates.html", ctx)
 
 

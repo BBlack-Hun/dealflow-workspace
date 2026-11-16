@@ -5,7 +5,7 @@
 //
 // ── 무엇으로 찾나 ───────────────────────────────────────────────────────
 //
-// 문구 하나가 싣는 글자 = 그 구간 제목줄(종류 이름 · 딜 제안 관리 탭 · 설명) +
+// 문구 하나가 싣는 글자 = 그 구간 제목줄(종류 이름 · 딜 제안 관리 탭) + 그 아래 설명 줄 +
 // 갈래 이름(딜 소싱) + 문구 이름 + 꼬리표(팀 기본 · 내 문구 …) + 본문.
 // 제목줄은 **화면에 그려진 글자를 그대로 읽는다** — 서버에서 한 벌 더 실으면
 // 설명을 고친 날 화면 글자와 찾는 글자가 갈린다.
@@ -86,7 +86,8 @@
     list(document.querySelectorAll(".tpl-kind-title")).forEach(function (head) {
       var sec = head.closest(".panel");
       if (!sec) return;
-      var secHay = norm(head.textContent);
+      // 설명은 제목 줄 밖 제 줄이다(`.tpl-kind-desc`) — 함께 읽어야 설명 글자로도 찾는다.
+      var secHay = [norm(head.textContent), texts(sec, ".tpl-kind-desc")].join(SEP);
       var secHit = !on || hits(secHay, ws);
       var anySlot = false;
       list(sec.querySelectorAll(".tpl-slot")).forEach(function (slot) {
