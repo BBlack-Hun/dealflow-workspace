@@ -3,14 +3,14 @@
 {% block content %}
 <h1 class="page-title">{{ page_title }}</h1>
 <p class="muted">
-  카톡방은 각자 계정에 있어서, 실제 전송은 <b>내 PC에서 도는 작은 프로그램</b>이 대신 합니다.
+  카톡방은 각자의 카카오톡 계정에 있어서, 실제 발송은 <b>내 PC에서 켜 두는 발송 프로그램</b>이 맡습니다.
   아래에서 내려받아 켜 두면 이 화면과 자동으로 연결됩니다.
 </p>
 
 <div class="panel">
   <h2 class="panel-title">① 내려받기</h2>
-  <p class="whoami">지금 내려받는 프로그램은 <b>{{ user.name }}{% if user.phone %} ({{ user.phone }}){% endif %}</b>
-    계정으로 연결됩니다.</p>
+  {# 로그인 아이디는 싣지 않는다 — 화면 공유·캡처마다 따라 나간다(아래 연결 정보 표에 있다). #}
+  <p class="whoami">이 설치 파일은 <b>{{ user.name }}</b> 계정으로 연결됩니다.</p>
   <div class="dl-row">
     <a class="btn primary" href="/download/agent?os_kind=windows">⬇ Windows용 내려받기</a>
     <a class="btn" href="/download/agent?os_kind=mac">⬇ macOS용 내려받기</a>
@@ -22,33 +22,36 @@
   </p>
 </div>
 
-<div class="panel">
-  <h2 class="panel-title">② 설치하고 켜기 — Windows</h2>
+{# Windows 와 macOS 는 **둘 중 하나**를 고르는 길이라 한 단계(②) 안에 나란히 둔다.
+   예전에는 판 둘이 모두 `②` 를 달고 따로 서서 번호가 겹쳐 보였다 — 그렇다고 ③ 으로
+   밀면 둘 다 해야 하는 차례로 읽히고, 아래 ③ 자료 폴더를 가리키는 말들이 어긋난다. #}
+<div class="panel install-steps">
+  <h2 class="panel-title">② 설치하고 켜기</h2>
+  <p class="hint">내 PC 에 맞는 쪽 <b>하나만</b> 따라 하세요.</p>
+  <h3>Windows</h3>
   <ol class="steps">
     <li>내려받은 파일의 <b>압축을 풉니다</b></li>
-    <li><b>setup.bat</b> 을 더블클릭 <span class="hint">(처음 한 번, 몇 분 걸립니다)</span></li>
+    <li><b>setup.bat</b>을 더블클릭 <span class="hint">(처음 한 번, 몇 분 걸립니다)</span></li>
     <li>카카오톡에 로그인합니다</li>
-    <li><b>run_agent.bat</b> 을 더블클릭 → 검은 창이 뜨면 <b>그대로 켜 둡니다</b></li>
-    <li>이 화면 왼쪽 아래가 <b>“발송 프로그램 연결됨”</b> 으로 바뀌면 준비 끝</li>
+    <li><b>run_agent.bat</b>을 더블클릭 → 검은 창이 뜨면 <b>그대로 켜 둡니다</b></li>
+    <li>이 화면 왼쪽 아래가 <b>‘발송 프로그램 연결됨’</b>으로 바뀌면 준비 끝</li>
   </ol>
-</div>
 
-<div class="panel">
-  <h2 class="panel-title">② 설치하고 켜기 — macOS</h2>
+  <h3>macOS</h3>
   <ol class="steps">
     <li>내려받은 파일의 <b>압축을 풉니다</b>
       <span class="hint">(다운로드 폴더나 바탕화면처럼 iCloud 동기화가 없는 곳이 좋습니다)</span></li>
-    <li><b>1. 설치하기</b> 를 더블클릭 <span class="hint">(처음 한 번, 몇 분 걸립니다)</span></li>
+    <li><b>‘1. 설치하기’</b>를 더블클릭 <span class="hint">(처음 한 번, 몇 분 걸립니다)</span></li>
     <li>카카오톡에 로그인합니다</li>
-    <li><b>2. 발송 프로그램 켜기</b> 를 더블클릭 → 창이 뜨면 <b>그대로 켜 둡니다</b></li>
-    <li>이 화면 왼쪽 아래가 <b>“발송 프로그램 연결됨”</b> 으로 바뀌면 준비 끝</li>
+    <li><b>‘2. 발송 프로그램 켜기’</b>를 더블클릭 → 창이 뜨면 <b>그대로 켜 둡니다</b></li>
+    <li>이 화면 왼쪽 아래가 <b>‘발송 프로그램 연결됨’</b>으로 바뀌면 준비 끝</li>
   </ol>
-  <p class="hint">
-    처음 더블클릭할 때 <b>“확인되지 않은 개발자”</b> 경고가 뜨면,
-    그 파일을 <b>마우스 오른쪽 클릭 → 열기</b> 로 한 번만 실행해 주세요.<br>
-    카카오톡 창을 대신 눌러야 해서
-    <b>시스템 설정 → 개인정보 보호 및 보안 → 손쉬운 사용</b> 에서 터미널을 허용해야 합니다.
-  </p>
+  <ul class="steps hint">
+    <li>처음 더블클릭할 때 <b>“확인되지 않은 개발자”</b> 경고가 뜨면 →
+      그 파일을 <b>마우스 오른쪽 클릭 › 열기</b>로 한 번만 실행합니다.</li>
+    <li>카카오톡 창을 대신 눌러야 해서 터미널을 허용해야 합니다 →
+      <b>시스템 설정 › 개인정보 보호 및 보안 › 손쉬운 사용</b>에서 <b>터미널</b>을 켭니다.</li>
+  </ul>
 </div>
 
 {# ── ③ 자료 폴더 — **자동 첨부를 켜 준 계정에만** ────────────────────────
@@ -88,10 +91,9 @@
   </form>
   <p class="hint">
     <b>내 계정에만 저장됩니다.</b> PC 마다 자리가 다르므로 그 PC 를 쓰는 본인이 넣어야 합니다.<br>
-    비워 두면 자료 보내기가 <b>“자료 폴더가 정해지지 않았습니다”</b> 로 실패합니다 —
-    아무 폴더나 뒤지지 않습니다.<br>
-    자료는 <b>파일 이름</b>으로 찾습니다. 이름에 <code>/</code> 나 <code>..</code> 가 들어가면
-    보내지 않습니다(그 폴더 밖 파일이 나가는 것을 막습니다).
+    비워 두면 자료 보내기가 <b>“자료 폴더가 정해지지 않았습니다”</b>로 실패합니다(다른 폴더를 대신 찾지 않습니다).<br>
+    자료는 <b>파일 이름</b>으로 찾고, 이름에 <code>/</code> 나 <code>..</code> 가 든 파일은
+    보내지 않습니다 — 그 폴더 밖 파일이 나가는 것을 막습니다.
   </p>
 </div>
 {% elif ir_root_kept %}
@@ -295,7 +297,17 @@
   <table class="kv">
     <tr><th>서버 주소</th><td><code>{{ server_url }}</code></td></tr>
     <tr><th>사용자</th><td>{{ user.name }}{% if user.phone %} <code>{{ user.phone }}</code>{% endif %}</td></tr>
-    <tr><th>내 연결키</th><td><code class="token">{{ token }}</code></td></tr>
+    {# 연결키는 **가려 둔다** — 화면 공유·캡처 한 번이면 키가 나갔다. 끝 네 자리만 보여
+       어느 키인지만 알아보게 하고, 값은 [복사] 단추만 든다(아래 스크립트).
+       설치 파일은 이 칸을 읽지 않는다 — 내려받을 때 서버가 키를 다시 읽어 넣는다
+       (`routers/setup.py: download_agent`). #}
+    <tr><th>내 연결키</th><td>
+      <code class="token" id="token-masked" data-testid="token-masked">{{ '•' * 12 }}{{ token[-4:] }}</code>
+      <button type="button" class="btn js-copy-token" data-token="{{ token }}"
+              aria-label="내 연결키 복사">복사</button>
+    </td></tr>
+    {# 사이드바에서는 제품 이름의 툴팁이다 — 툴팁이 없는 폰에서도 여기서 본다. #}
+    <tr><th>앱 버전</th><td>v{{ app_version }}</td></tr>
   </table>
   <p class="hint">연결키는 <b>내 발송 건만</b> 받아오는 열쇠입니다. 다른 사람과 공유하지 마세요.</p>
 </div>
@@ -307,7 +319,54 @@
     <li>테스트는 반드시 <b>나와의 채팅</b> 등 안전한 방으로 하세요.</li>
     <li>방 제목이 정확히 일치할 때만 전송되며, 다르면 그 건은 실패 처리되고
         <b>엉뚱한 방으로는 가지 않습니다.</b></li>
-    <li>카카오 운영정책상 자동화는 계정 제재 소지가 있습니다. 발송 간격·상한을 임의로 줄이지 마세요.</li>
+    {# 간격은 줄이면, 상한은 늘리면 빨라진다 — 예전 문장은 둘 다 '줄이지 마세요' 라 상한 쪽 방향이 거꾸로였다. #}
+    <li>카카오 운영정책상 자동화는 계정 제재 소지가 있습니다. 발송 간격을 줄이거나 상한을 늘리지 마세요.</li>
   </ul>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// 연결키 [복사] — 키는 화면에 가려 두고 단추만 그 값을 든다(`data-token`).
+// `navigator.clipboard` 는 https 나 localhost 가 아니면 아예 없다. 눌렀는데 아무 일도
+// 안 나면 복사된 줄 알고 빈 것을 붙여 넣으므로 옛 방식(`execCommand`)으로 한 번 더 하고,
+// 그마저 막히면 **키를 펼쳐 골라 두고** 그렇게 말해 준다(ir_attach_list.js 와 같은 차례).
+(function () {
+  var btn = document.querySelector(".js-copy-token");
+  var code = document.getElementById("token-masked");
+  if (!btn || !code) return;
+  var token = btn.getAttribute("data-token");
+  function say(text) {
+    btn.textContent = text;
+    setTimeout(function () { btn.textContent = "복사"; }, 2000);
+  }
+  function fallback() {
+    var ta = document.createElement("textarea");
+    ta.value = token;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    var ok = false;
+    try { ok = !!document.execCommand("copy"); } catch (e) { ok = false; }
+    document.body.removeChild(ta);
+    if (ok) { say("복사했습니다"); return; }
+    code.textContent = token;
+    var range = document.createRange();
+    range.selectNodeContents(code);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    say("Ctrl/⌘+C 로 복사하세요");
+  }
+  btn.addEventListener("click", function () {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(token).then(function () { say("복사했습니다"); }, fallback);
+    } else {
+      fallback();
+    }
+  });
+})();
+</script>
 {% endblock %}

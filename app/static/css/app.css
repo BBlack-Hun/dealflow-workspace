@@ -80,6 +80,8 @@ a:hover { text-decoration: underline; }
 .agent-badge .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--gray); }
 .agent-badge.on { color: #7ee2a8; } .agent-badge.on .dot { background: var(--green); box-shadow: 0 0 6px var(--green); }
 .agent-badge.off { color: #9aa4b0; } .agent-badge.off .dot { background: var(--gray); }
+/* 배지 바로 밑 [발송 프로그램 설치] — 점(9px)+틈(8px) 만큼 들여 배지 글자와 줄을 맞춘다. */
+.agent-setup { display: block; margin: 3px 0 0 17px; font-size: 11.5px; color: #8b95a3; }
 
 .content { flex: 1; padding: 24px 28px; min-width: 0; }
 /* 화면 제목. `.page-title` 은 `<header class="page-head">` 없이 h1 만 쓰는
@@ -310,6 +312,8 @@ td.mail-primary:has(.cell-input)::before { display: none; }
           padding: 8px 12px; font-size: 13px; margin: 0 0 10px; }
 .steps { margin: 6px 0 0 18px; padding: 0; line-height: 1.9; }
 .steps li { margin-bottom: 4px; }
+/* ② 안의 Windows · macOS 갈래 — 판 제목(14px)보다 커서 순서가 뒤집혀 보이지 않게 시험용 자리의 h3 와 같은 크기. */
+.install-steps h3 { font-size: 13px; margin: 14px 0 2px; }
 /* 이름-값 표(설치 안내의 연결 정보 · 문구 관리의 딜 제안 문구).
    **한 곳에서만 정한다.** 예전에는 여기와 아래 문구 관리 자리에 같은 선택자가
    두 벌 적혀 있었고, 뒤쪽이 앞쪽 여백을 덮어써서 앞쪽 값은 아무 일도 하지
@@ -1069,11 +1073,17 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
 .login-error { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b;
                border-radius: 6px; padding: 8px 10px; font-size: 13px; margin-bottom: 4px; }
 .login-hint { margin-top: 14px; }
+/* 비밀번호 변경 — 로그인 칸처럼 이름 위 · 칸 아래 · 규칙은 그 칸 바로 밑. */
+.pw-form { display: grid; gap: 12px; max-width: 340px; }
+.pw-field label { display: block; font-size: 12.5px; color: var(--muted, #6b7280); margin-bottom: 4px; }
+.pw-field input { width: 100%; padding: 8px 10px; border: 1px solid var(--line, #e5e7eb);
+                  border-radius: 6px; font-size: 14px; }
+.pw-field .hint { margin: 4px 0 0; }
+.pw-form .btn { justify-self: start; }
 .me { padding: 10px 12px; border-top: 1px solid var(--line, #e5e7eb); font-size: 12.5px; }
 .me-name { font-weight: 600; }
-.me-phone { color: var(--muted, #6b7280); font-family: ui-monospace, Menlo, monospace;
-            font-size: 11.5px; margin-top: 1px; }
-.me-links { margin-top: 6px; display: flex; gap: 10px; }
+/* 200px 사이드바에 셋이 한 줄에 다 안 들어간다 — 낱말 속이 아니라 고리 사이에서 꺾는다. */
+.me-links { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 2px 10px; }
 .me-links a { color: var(--muted, #6b7280); font-size: 11.5px; }
 /* 로그아웃은 POST 폼이다 — 옆 링크와 같은 글자로 보이게 한다. */
 .me-links .logout-form { display: inline; margin: 0; }
@@ -2397,11 +2407,6 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
 .split-notice ol { margin: 5px 0 4px 18px; padding: 0; }
 .split-notice li { margin: 1px 0; }
 
-/* 지금 돌고 있는 버전. 무엇이 이상하다는 말을 들었을 때 먼저 묻는 숫자다.
-   맨 아래에 두면 스크롤해야 보여서, 정작 물어볼 때 아무도 못 찾는다. */
-.brand-ver { font-size: 10.5px; font-weight: 400; opacity: .6;
-             margin-left: 5px; vertical-align: middle; letter-spacing: 0; }
-
 /* 금액 칸의 단위. 숫자만 있으면 `1,000` 이 천만 원인지 천억인지 알 수 없다. */
 .th-unit { font-weight: 400; opacity: .7; margin-left: 3px; font-size: 10.5px; }
 
@@ -2551,7 +2556,8 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
      844px 폰에서 머리말이 355px 아래에 있었다. 한 줄로 흘려 둔다. */
   .me { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px;
         padding: 6px 0; border-top: 0; }
-  .me-phone, .me-links { margin-top: 0; }
+  .me-links { margin-top: 0; }
+  .agent-setup { margin: 0; }
   .content { padding: 14px 14px 40px; }
 }
 
@@ -2689,8 +2695,8 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
   /* 글자 모양이지만 실제로는 단추인 것들 — `수정`·`삭제`·`가기`·`일정 바꾸기`,
      그리고 왼쪽 메뉴 아래의 계정 링크. 16~18px 이라 옆 것이 같이 눌렸다.
      생김새는 그대로 두고 눌리는 자리만 넓힌다(줄 안에서는 가운데 정렬된다). */
-  .linkbtn, .hero-rule, .me-links a { min-height: 44px; display: inline-flex;
-                                      align-items: center; }
+  .linkbtn, .hero-rule, .me-links a, .agent-setup { min-height: 44px; display: inline-flex;
+                                                    align-items: center; }
   /* 표 안과 칸 편집창은 제 밀도를 지킨다.
      특히 머리글 칸의 필터 단추(`.filter-btn`)는 일부러 두지 않는다 — 키우면
      컬럼 이름이 두 줄을 넘겨 머리글 모양이 바뀐다. */

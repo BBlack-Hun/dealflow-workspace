@@ -16,12 +16,11 @@
   <div class="layout">
     <aside class="sidebar">
       <a class="brand-link" href="/">
-        <div class="brand">CONTACTVC ASSET
-          {# 무엇이 이상하다는 말을 들었을 때 먼저 묻는 숫자다. 화면 맨 아래에
-             두면 스크롤해야 보여서, 정작 물어볼 때 아무도 못 찾는다. #}
-          <span class="brand-ver">v{{ app_version }}</span>
-        </div>
-        <div class="brand-sub">Investor Management Portal</div>
+        {# 버전은 무엇이 이상하다는 말을 들었을 때 먼저 묻는 숫자다. 화면 맨 아래에
+           두면 스크롤해야 보여서 맨 위 제품 이름에 둔다 — 다만 늘 보이는 글자가
+           아니라 **대 보면 뜨는 툴팁**이다(화면 공유·캡처마다 따라 나갔다).
+           툴팁이 없는 폰에서는 `/setup` 의 연결 정보 표에서 본다. #}
+        <div class="brand" title="CONTACTVC ASSET v{{ app_version }}">CONTACTVC ASSET</div>
       </a>
       <nav class="menu">
         {% for m in menu %}
@@ -36,8 +35,9 @@
            (`ui.base_ctx` 의 `me`). 비밀번호·로그아웃이 본인 것이기 때문이다. #}
         {% set me = me or user %}
         <div class="me">
+          {# 로그인 아이디(휴대폰 번호 꼴)는 여기 두지 않는다 — 모든 화면에 늘 서서
+             화면 공유·캡처마다 따라 나갔다. 본인 것은 `/setup` 연결 정보 표에 있다. #}
           <div class="me-name">{{ me.name }}{% if me.role == 'admin' %} · 관리자{% endif %}</div>
-          {% if me.phone %}<div class="me-phone">{{ me.phone }}</div>{% endif %}
           <div class="me-links">
             <a href="/account/password">비밀번호 변경</a>
             <a href="/account/name">이름 바꾸기</a>
@@ -45,7 +45,6 @@
             <form method="post" action="/logout" class="logout-form">
               <button type="submit" class="linkbtn">로그아웃</button>
             </form>
-            <a href="/setup">발송 프로그램 설치</a>
           </div>
           {% if view_as_targets %}
           {# 고르기만 하면 바로 바뀐다(팀 현황의 권한·발송기 고르개와 같은 꼴). 지금 보는
@@ -66,10 +65,15 @@
           </form>
           {% endif %}
         </div>
-        <div id="agent-badge" class="agent-badge {% if agent.online %}on{% else %}off{% endif %}">
+        {# PC 이름은 배지 글자가 아니라 툴팁이다(`deps.agent_status` 의 `tip`).
+           [발송 프로그램 설치] 는 계정 고리 사이가 아니라 **연결 상태 바로 밑**에 둔다 —
+           `연결 안 됨` 을 본 자리에서 바로 누른다. #}
+        <div id="agent-badge" class="agent-badge {% if agent.online %}on{% else %}off{% endif %}"
+             {% if agent.tip %}title="{{ agent.tip }}"{% endif %}>
           <span class="dot"></span>
           <span id="agent-badge-label">{{ agent.label }}</span>
         </div>
+        <a class="agent-setup" href="/setup">발송 프로그램 설치</a>
       </div>
     </aside>
     <main class="content">

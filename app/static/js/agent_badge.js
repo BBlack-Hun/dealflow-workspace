@@ -11,6 +11,9 @@
         badge.classList.toggle("on", !!d.online);
         badge.classList.toggle("off", !d.online);
         if (label) label.textContent = d.label;
+        // PC 이름은 글자가 아니라 툴팁이다(`deps.agent_status` 의 `tip`).
+        if (d.tip) badge.setAttribute("title", d.tip);
+        else badge.removeAttribute("title");
       })
       .catch(function () {});
   }
