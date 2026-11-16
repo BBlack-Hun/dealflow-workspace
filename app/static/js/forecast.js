@@ -36,6 +36,9 @@
       cell.textContent = cells[f].text;
       cell.setAttribute("data-value", cells[f].value);
       cell.classList.toggle("fc-auto", !!cells[f].auto);
+      // `자동` 배지는 칸 옆의 따로 선 요소다(`forecast.html` · 칸 글자에 섞이지 않게).
+      var tag = cell.parentNode.querySelector(".fc-auto-tag");
+      if (tag) tag.hidden = !cells[f].auto;
     });
   });
 

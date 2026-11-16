@@ -3350,13 +3350,16 @@ input[data-sector-picker] + .sector-pick-toggle + div { margin-top: 6px; max-hei
    후속라운드 시작 년월)의 값만 빨강(11/01 요청). 머리글은 `.grid-table th` 의 회색을 이기게 좁혀 건다. */
 .grid-table.fc-table th { color: var(--ink); }
 .fc-remind { color: var(--red); }
-/* 자동으로 읽어 온 값은 색 대신 회색 `자동` 딱지(`.tag.soft` 와 같은 모양). 칸 글자는 값
-   그대로여야 해서(`inline_edit.js` 가 textContent 를 읽는다) 요소를 끼우지 않고 ::after 로
-   단다. 고치는 중(입력칸이 든 동안)에는 뗀다. 글자는 `자동` 의 유니코드 이스케이프다 — 주석 밖
-   한글은 막아 둔다(tests/test_ir_number_matches_deal.py). */
-.fc-table .cell.fc-auto:not(:has(.cell-input))::after {
-  content: "\C790\B3D9"; font-size: 11px; background: var(--line); color: var(--muted);
-  border-radius: 6px; padding: 1px 7px; margin-left: 4px; }
+/* 자동으로 읽어 온 값은 색 대신 회색 `자동` 배지(`.tag.soft`). 예전엔 칸에 ::after 로 붙여
+   화면 읽기 · 복사에서 값과 한 덩어리(`50억자동`)가 됐다 — 이제 칸 **옆의 따로 선 요소**다
+   (`forecast.html` 의 `.fc-auto-tag`). 칸이 남은 폭을 다 먹어 누르는 자리는 그대로고, 배지는
+   오른쪽 끝에 선다. 고치는 중(입력칸이 든 동안)에는 숨긴다. */
+.fc-table .fc-val { display: flex; align-items: flex-start; gap: 4px; }
+.fc-table .fc-val > .cell { flex: 1 1 auto; min-width: 0; }
+.fc-table .fc-auto-tag { flex: none; margin-left: 0; white-space: nowrap; }
+.fc-table .fc-val:has(.cell-input) > .fc-auto-tag { display: none; }
+/* 성공보수율은 저장값이 수(`3`)라 단위는 보일 때만 붙인다 — 값 · 엑셀은 그대로. */
+.fc-table .cell[data-field="fee_rate"]:not(:empty):not(:has(.cell-input))::after { content: "%"; }
 .fc-table .cell-sub { margin-top: 2px; }
 .fc-total { margin: 8px 0; font-size: 13px; }
 

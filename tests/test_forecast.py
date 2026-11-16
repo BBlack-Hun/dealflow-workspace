@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import io
+import re
 
 import pytest
 
@@ -112,6 +113,7 @@ def test_빈_칸은_원본에서_읽는다(portal, db, company):
     page = portal["u1"].get("/report/forecast").text
     assert 'class="cell fc-auto" data-field="ceo_name"' in page
     assert "비면 자동 — 스타트업DB — 대표자명" in page
+    assert "자동 · 출처: 스타트업DB — 대표자명" in page, "칸에 손을 올리면 출처"
 
 
 def test_글자는_검정이고_리마인드_두_칸_값만_빨강(portal, db, company):
@@ -131,9 +133,16 @@ def test_글자는_검정이고_리마인드_두_칸_값만_빨강(portal, db, c
     assert ".fc-remind { color: var(--red); }" in css
     assert ".grid-table.fc-table th { color: var(--ink); }" in css
     assert ".fc-auto, .grid-table th.fc-auto { color: var(--red); }" not in css
-    # 자동이라는 뜻은 색 대신 회색 `자동` 딱지로 남는다.
-    assert '.cell.fc-auto:not(:has(.cell-input))::after {\n  content: "\\C790\\B3D9"' in css
-    assert '<span class="tag soft">자동</span> 딱지' in page
+    # 자동이라는 뜻은 색 대신 회색 `자동` 배지로 남는다 — 칸 **옆의 따로 선 요소**라
+    # 값과 한 덩어리(`50억자동`)로 읽히지 않는다. 칸 글자는 값 그대로다.
+    assert "::after {\n  content: \"\\C790\\B3D9\"" not in css, "칸에 붙던 ::after 딱지는 뗐다"
+    auto = re.search(r'data-field="ceo_name"[^>]*>대표가</div>\s*'
+                     r'<span class="tag soft fc-auto-tag">자동</span>', page)
+    assert auto, "자동 값 옆에 따로 선 `자동` 배지가 없다"
+    assert re.search(r'data-field="follow_round_month"[^>]*>2027-03</div>\s*'
+                     r'<span class="tag soft fc-auto-tag"', page) is None, \
+        "출처 없는 칸에는 배지 자리도 없다"
+    assert '<span class="tag soft">자동</span> 표시' in page
 
 
 def test_적은_값이_우선이고_비우면_자동_원본과_같으면_빈칸(portal, db, company):
@@ -437,11 +446,13 @@ def test_합계는_화면_범위의_줄만_가능성별로_더하고_엑셀도_�
 
     page = portal["u1"].get("/report/forecast").text
     assert "<b>예상 수수료 합계 0.8억</b>" in page
-    assert "· 가능성 상 0.3억" in page and "· 가능성 중 0.5억" in page
-    assert "· 가능성 하 0억" in page and "가능성 미정" not in page
+    # 가능성별 수는 합계 옆 알약으로 따로 선다.
+    pill = '<span class="count-pill">가능성 {} <b>{}</b>억</span>'.format
+    assert pill("상", "0.3") in page and pill("중", "0.5") in page
+    assert pill("하", "0") in page and "가능성 미정" not in page
     assert "예상 수수료가 없는 1줄은 빠졌습니다" in page
     team = portal["admin"].get("/report/forecast?scope=team").text
-    assert "<b>예상 수수료 합계 1.1억</b>" in team and "· 가능성 하 0.3억" in team
+    assert "<b>예상 수수료 합계 1.1억</b>" in team and pill("하", "0.3") in team
     assert "<b>예상 수수료 합계 0.3억</b>" in portal["admin"].get("/report/forecast?member=2").text
 
     r = portal["u1"].get("/api/export/forecast.xlsx")

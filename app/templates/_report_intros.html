@@ -52,7 +52,8 @@
 <div class="table-wrap">
 <table class="grid-table compact" data-inline-url="/api/companies">
   <thead><tr>
-    {% if pick %}<th class="pick-col" style="width:32px" title="딜 소개에 담을 기업을 고릅니다"></th>{% endif %}
+    {# 머리글이 비어 있으면 무슨 칸인지 몰라 `선택` 을 적는다 — 긴 뜻은 손을 올리면. #}
+    {% if pick %}<th class="pick-col" style="width:40px" title="딜 소개에 담을 기업을 고릅니다">선택</th>{% endif %}
     <th>기업명</th>
     <th class="num" style="width:96px"
         title="지금까지(기간 없이) 본인이 이 기업을 소개한 횟수 — 서로 다른 날 수 · IR 기업 현황 '담당별 소개' 의 본인 계정 수와 같습니다">본인 누적 소개</th>
@@ -154,8 +155,11 @@
   {% set band = band if band in intro_bands|map('first')|list else '' %}
   {% set left = intro_left|selectattr('band', 'equalto', band)|list if band else intro_left %}
   <div class="bucket" id="intro-left">
-    <h3 class="bucket-head">소개 후보 — {{ intro_label }} 딜소개 하지 않은 기업 {{ intro_left|length }}곳
-      <span class="hint">투자유치희망금액(구간이면 아래값) 높은 순 · 금액을 모르는 곳은 맨 아래 · 이 달에 이 팀원이 안 보낸 소개 가능 기업</span>
+    {# 제목 · 곳 수 알약 · 짧은 조건으로 가른다 — 한 줄에 100자가 붙어 제목이 안 읽혔다.
+       정렬의 잔조건(구간이면 아래값)은 손을 올리면 보인다. #}
+    <h3 class="bucket-head">소개 후보
+      <span class="count-pill on"><b>{{ intro_left|length }}</b>곳</span>
+      <span class="hint" title="투자유치희망금액이 구간이면 아래값으로 견줍니다. 이 달에 이 팀원이 보내지 않은 소개 가능 기업입니다.">{{ intro_label }} 딜소개 하지 않은 기업 · 투자유치희망금액 높은 순(모르는 곳은 맨 아래)</span>
     </h3>
     <nav class="quick-chips intro-bands" aria-label="투자유치희망금액으로 고르기" data-testid="intro-bands">
       <a class="chip{% if not band %} active{% endif %}"
