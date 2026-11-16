@@ -206,7 +206,7 @@ def test_page_and_check_button_for_admin(client, db, users, team):
     _login(client, "01000000002")
     page = client.get("/team/sender-rooms")
     assert page.status_code == 200
-    assert "PC로 전체 방 확인 (1명)" in page.text
+    assert "PC로 전체 카톡방 확인 (1명)" in page.text
     answer = client.post("/team/sender-rooms/check",
                          data={"sender_id": users["u2"].id}, follow_redirects=False)
     assert answer.status_code == 303
@@ -344,7 +344,7 @@ def test_page_lists_sourcing_people_and_confirms_by_kind(client, db, users, team
     db.commit()
     _login(client, "01000000002")
     page = client.get("/team/sender-rooms")
-    assert "PC로 전체 방 확인 (3명)" in page.text
+    assert "PC로 전체 카톡방 확인 (3명)" in page.text
     assert f"딜 소싱 · {GROUP}" in page.text
     assert 'data-kind="sourcing"' in page.text
     client.post(f"/team/sender-rooms/{person.id}/confirm",

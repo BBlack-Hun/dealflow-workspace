@@ -147,7 +147,7 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
 # `no_send_as_member` 한 곳이 허용 목록으로 가른다. 고친 것은 수정 로그에 관리자
 # 이름으로 남는다(로그는 세션 쿠키를 읽는다 — `edit_log.actor_from_request`).
 VIEW_AS_COOKIE = "dealflow_view_as"
-VIEW_AS_BLOCKED = "팀원 화면으로 보는 중에는 방 찾기·딜 소개 발송 말고는 발송·예약을 할 수 없습니다"
+VIEW_AS_BLOCKED = "팀원 화면으로 보는 중에는 카톡방 찾기·딜 소개 발송 말고는 발송·예약을 할 수 없습니다"
 
 # 보는 중에도 **관리자 본인으로** 여는 자리. 팀원 쪽으로 가면 안 되는 것들이다:
 # 팀 현황의 "나 자신은 정지 못 함" 같은 판정 · 비밀번호 바꾸기 · 발송 프로그램
@@ -316,7 +316,7 @@ async def no_send_as_member(request: Request, user: User = Depends(get_current_u
 def view_as_send_note(db: Session, member: User, online: bool) -> str:
     """보는 중에 방 찾기 · 딜 소개 발송을 누를 때 확인창 첫 줄 — **어느 PC 카톡인가.**"""
     pc = db.get(User, agent_user_id(db, member.id)) or member
-    note = f"{pc.name} 계정 PC 카톡으로 나갑니다"
+    note = f"{pc.name} PC 카톡으로 나갑니다"
     if not online:
         # 회차 화면의 `standing-note`(progress.js)와 같은 말이다.
         note += (" — 지금 그 PC 의 발송 프로그램이 연결되어 있지 않습니다. 회차는 큐에 "

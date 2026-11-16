@@ -584,12 +584,12 @@ SECRET_HINTS = ("password", "token", "secret", "hash", "api_key", "credential")
 # 화면에서 읽을 칸 이름. 없으면 칸 이름을 그대로 보여 준다 — 억지로 다 적어
 # 두면 칸이 하나 늘 때 여기만 낡아서, 화면에 옛 이름이 남는다.
 FIELD_LABELS = {
-    "user_id": "담당", "editor_user_id": "줄 편집 허용",
+    "user_id": "담당 팀원", "editor_user_id": "줄 편집 허용",
     "assignee_name": "담당자 이름", "source_sheet": "명단",
-    "sheet": "탭", "bucket": "갈래", "group_name": "묶음", "role": "권한",
+    "sheet": "탭", "bucket": "탭", "group_name": "묶음", "role": "권한",
     "name": "이름", "label": "이름", "title": "제목", "firm": "소속",
     "company_name": "기업", "connect_stage": "연결 단계", "status": "상태",
-    "kakao_room_name": "카톡방 이름", "room_verified": "방 확인",
+    "kakao_room_name": "카톡방 이름", "room_verified": "카톡방 확인",
     "channel_kakao": "카톡 발송", "channel_email": "메일 발송",
     "channel_sms": "문자(직접 발송)",
     "is_hidden": "숨김", "is_active": "사용", "is_deal_list": "딜 명단",
@@ -603,7 +603,7 @@ FIELD_LABELS = {
     "contract_status": "계약 상태", "funding_status": "투자 상태",
     "contract_done_at": "계약 완료로 바뀐 날",
     "outcome": "결과", "meet_mode": "미팅 방식", "kind": "종류",
-    "enabled": "켜짐", "firm_type": "기관 유형", "variant": "갈래",
+    "enabled": "켜짐", "firm_type": "기관 유형", "variant": "탭",
     "vc_contact_id": "투자사 관리 현황 연결", "participation": "참여",
     # `Series A 이상 딜 소싱` 탭 — 시트 머리글 그대로.
     "shared_by": "공유 심사역", "source_firm": "회사", "deal_type": "Type",
@@ -649,16 +649,16 @@ FIELD_LABELS = {
     "tab_deleted_ir_requests": "함께 지운 IR 요청",
     "tab_deleted_meetings": "함께 지운 미팅",
     "tab_canceled_jobs": "비어서 취소한 발송 회차",
-    "tab_deleted_columns": "함께 지운 달 칸",
+    "tab_deleted_columns": "함께 지운 달 열",
     "tab_snapshot": "지우기 직전 백업",
     # 계정 이름 바꾸기 한 번(`log_account_rename`). 위 두 판과 같은 이유로 부르는 쪽이
     # 세어서 넘긴다 — 줄마다는 안 남는다(`one_line`).
     "rename_tab": "같이 바꾼 탭",
-    "rename_vc_contacts": "담당자 칸 · 투자사 관리 현황",
-    "rename_sourcing_contacts": "담당자 칸 · 딜 소싱",
-    "rename_ir_companies": "담당자 칸 · IR 기업 현황",
-    "rename_series_a_companies": "담당자 칸 · Series A 이상 딜 소싱",
-    "rename_sheet_owners": "담당자 칸 · 명단 설정",
+    "rename_vc_contacts": "담당자 열 · 투자사 관리 현황",
+    "rename_sourcing_contacts": "담당자 열 · 딜 소싱",
+    "rename_ir_companies": "담당자 열 · IR 기업 현황",
+    "rename_series_a_companies": "담당자 열 · Series A 이상 딜 소싱",
+    "rename_sheet_owners": "담당자 열 · 명단 설정",
     "ir_company_id": "IR 기업 연결", "ir_link_auto": "자동 연결",
     "region": "지역", "quote_attached": "견적서 첨부 여부", "success_fee": "성공보수율",
     "contact_name": "대표자명", "contact_phone": "연락처", "contact_email": "이메일",

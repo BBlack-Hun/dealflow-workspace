@@ -1344,7 +1344,7 @@ def _admin_warnings(rows: List[dict], unassigned: int) -> List[dict]:
     if no_agent:
         out.append({"level": "bad", "label": "발송 프로그램 미연결",
                     "detail": ", ".join(no_agent),
-                    "hint": "각 계정이 쓰는 PC에서 [발송 프로그램 설치]를 해야 발송이 나갑니다"})
+                    "hint": "각 팀원이 쓰는 PC에서 [발송 프로그램 설치]를 해야 발송이 나갑니다"})
     pending = [r["name"] for r in rows if r["password_pending"]]
     if pending:
         out.append({"level": "warn", "label": "초기 비밀번호 미변경",
@@ -1357,11 +1357,11 @@ def _admin_warnings(rows: List[dict], unassigned: int) -> List[dict]:
                     "hint": "괄호 속 인원에게는 발송되지 않습니다"})
     empty = [r["name"] for r in senders if r["contacts"] == 0 and r["role"] != "admin"]
     if empty:
-        out.append({"level": "muted", "label": "담당 투자사가 없는 계정",
+        out.append({"level": "muted", "label": "담당 투자사가 없는 팀원",
                     "detail": ", ".join(empty),
                     "hint": "현황 시트를 업로드하면 채워집니다"})
     if unassigned:
-        out.append({"level": "bad", "label": "주인이 없는 담당자",
+        out.append({"level": "bad", "label": "주인이 없는 심사역",
                     "detail": f"{unassigned}명",
-                    "hint": "계정이 지워졌는데 담당자가 남아 있습니다"})
+                    "hint": "계정이 지워졌는데 심사역이 남아 있습니다"})
     return out

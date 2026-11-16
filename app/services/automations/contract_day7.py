@@ -135,13 +135,13 @@ def member_of(db: Session, company: IrCompany) -> Tuple[Optional[User], str]:
     name = pipeline.current_assignee(company.assignee_name)
     if not name:
         return None, ("IR 기업현황 담당자 칸이 비어 있습니다" if not company.assignee_name
-                      else f"담당자 칸 '{company.assignee_name}' 에서 지금 담당자를 못 읽었습니다")
+                      else f"담당자 칸 '{company.assignee_name}' 에서 지금 담당 팀원을 못 읽었습니다")
     found = db.execute(
         select(User).where(User.name == name, User.is_active == 1)
     ).scalars().all()
     if len(found) != 1:
-        return None, (f"담당자 '{name}' 을 팀원 계정에서 못 찾았습니다" if not found
-                      else f"담당자 '{name}' 이름의 계정이 {len(found)}개라 못 정했습니다")
+        return None, (f"담당 팀원 '{name}' 을 계정에서 못 찾았습니다" if not found
+                      else f"담당 팀원 '{name}' 이름의 계정이 {len(found)}개라 못 정했습니다")
     return found[0], ""
 
 

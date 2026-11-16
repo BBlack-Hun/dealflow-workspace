@@ -235,7 +235,7 @@ def rename_account(request: Request, member: int = Form(0), name: str = Form("")
         return RedirectResponse(back + quote(str(exc)), status_code=303)
     db.commit()
     text = (f"이름을 {done.before} → {done.after} 로 바꿨습니다 "
-            f"(탭 {len(done.tabs)}개 · 담당자 칸 {done.total}줄)")
+            f"(탭 {len(done.tabs)}개 · 담당자 열 {done.total}줄)")
     if target.id != user.id:
         return RedirectResponse(f"/team?msg={quote(text)}", status_code=303)
     return RedirectResponse(f"/account/name?msg={quote(text)}", status_code=303)
