@@ -590,10 +590,12 @@ class FakeAgentClient:
         return {"canceled": False, "canceled_items": []}
 
     def report_item(self, item_id, status, error=None, screenshot_b64=None,
-                    verify_result=None, found_room=None, candidates=None):
+                    verify_result=None, found_room=None, candidates=None,
+                    verify_reason=None):
         self.items.append({"id": item_id, "status": status, "error": error,
                            "verify_result": verify_result,
-                           "found_room": found_room, "candidates": candidates})
+                           "found_room": found_room, "candidates": candidates,
+                           "verify_reason": verify_reason})
 
     def report_job(self, job_id, status):
         self.jobs.append((job_id, status))

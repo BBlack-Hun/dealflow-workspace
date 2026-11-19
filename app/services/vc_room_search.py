@@ -89,7 +89,7 @@ from sqlalchemy.orm import Session, object_session
 
 from .. import clock
 from ..models import SendItem, SendJob, VcContact
-from . import edit_log, room_joined, room_name, sheet_owner
+from . import edit_log, room_joined, room_name, room_unchecked, sheet_owner
 from .sheet_import import CONNECT_DONE, STAGE_CONNECTED
 
 
@@ -234,6 +234,11 @@ def apply_result(item: SendItem, body) -> None:
     db = object_session(item)
     # 적어 둔 이름으로 못 찾은 까닭(`fall_back`) — 방 이름이 빈 줄의 건에는 없다.
     before = (item.error or "").removeprefix(SEARCHING).strip()
+    if room_unchecked.is_note(before):
+        # (0.11.16) 앞의 대조가 **확인 못 함**이었다 — 이번 결과가 읽혔으면 그 말을 앞에
+        # 붙이지 않는다(붙이면 후보를 찾은 건까지 `확인 못 함` 으로 선다). 이번에도 못
+        # 읽었으면 아래에서 이번 결과의 말을 적는다.
+        before = ""
     # 발송기가 올린 그대로다 — 같은 제목이 두 번이면 같은 제목의 방이 둘이다.
     rooms = [str(r).strip() for r in (body.candidates or []) if str(r).strip()]
     found = (body.found_room or "").strip()
@@ -242,7 +247,9 @@ def apply_result(item: SendItem, body) -> None:
     # 사유 글에는 잘려 적히는 제목을 자르지 않고 건에 담는다 — 확정 못 하면 진행 화면이
     # 제목마다 단추를 세운다(`pick_view`). 확정한 건(`sent`)에는 안 선다.
     save_rooms(item, rooms)
-    error = (body.error or "").strip()
+    # (0.11.16) 발송기가 **검색 결과를 못 읽었다**고 알려 온 결과는 발송기 오류와 같은
+    # 길이다(줄은 그대로) — `찾지 못했습니다` 대신 그 말을 적는다(`room_unchecked`).
+    error = (body.error or "").strip() or room_unchecked.note(body)
     written = (contact.kakao_room_name or "").strip()
     if written:
         # 방 이름 칸에 적힌 이름 그대로 건에 되돌린다 — 진행 화면에 그 이름이 서고,

@@ -450,6 +450,9 @@
             {% if not r.kakao_room_name %}<span class="room-badge warn">방 없음</span>{% endif %}
             {% if mine_state == 'not_found' %}
             <span class="room-badge warn">이 계정 카톡에서 못 찾음</span>
+            {% elif mine_state == 'unchecked' %}
+            {# 방이 없다고 확인된 것이 아니다 — 무엇을 볼지는 풍선 도움말에(`room_unchecked`). #}
+            <span class="room-badge warn" title="{{ mine.note }}">확인 못 함 — 보내는 PC 카톡 확인</span>
             {% else %}
             <span class="room-badge muted">{{ mine.state_label if mine else '아직 안 찾아봄' }}</span>
             {% endif %}

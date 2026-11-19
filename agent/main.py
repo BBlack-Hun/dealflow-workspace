@@ -241,13 +241,17 @@ class AgentClient:
         return r.json()
 
     def report_item(self, item_id: int, status: str, error=None, screenshot_b64=None,
-                    verify_result=None, found_room=None, candidates=None):
+                    verify_result=None, found_room=None, candidates=None,
+                    verify_reason=None):
+        body = {"status": status, "error": error, "screenshot_b64": screenshot_b64,
+                "verify_result": verify_result,
+                "found_room": found_room, "candidates": candidates}
+        if verify_reason:
+            # (0.11.16) 방 확인을 **못 한** 까닭 — 있을 때만 싣는다. 모르는 서버는
+            # 이 칸을 그냥 버린다(예전 문구 그대로).
+            body["verify_reason"] = verify_reason
         return self.session.post(
-            f"{self.base}/api/agent/items/{item_id}/result",
-            json={"status": status, "error": error, "screenshot_b64": screenshot_b64,
-                  "verify_result": verify_result,
-                  "found_room": found_room, "candidates": candidates},
-            timeout=15,
+            f"{self.base}/api/agent/items/{item_id}/result", json=body, timeout=15,
         )
 
     def report_diagnostics(self, payload: dict):
@@ -705,6 +709,57 @@ def process_verify_job(client: AgentClient, sender, job: dict, cfg: dict):
                 log.warning("방 확인 뒤 카톡 정리 실패(결과는 그대로): %s", exc)
 
 
+#: (0.11.16) 방 확인 한 잡에서 **확인을 못 한** 건의 증거(화면 한 장 · 진단 기록)를
+#: 올리는 건수. 한 PC 에서 16명이 전부 못 읽혀도 같은 화면을 16장 올리지 않는다.
+#: `config.yaml: verify_evidence_per_job` 로 바꾼다(0 이면 안 올린다).
+VERIFY_EVIDENCE_PER_JOB = 2
+
+
+def _begin_verify_note(sender, want_evidence: bool) -> None:
+    """방 확인 한 건의 기록을 시작한다(Windows 발송기만 — 없으면 아무것도 안 한다)."""
+    begin = getattr(sender, "begin_verify_item", None)
+    if begin is None:
+        return
+    try:
+        begin(want_evidence=want_evidence)
+    except Exception as exc:  # noqa: BLE001 - 기록 때문에 확인을 멈추지 않는다
+        log.debug("방 확인 기록을 시작하지 못했습니다: %s", exc)
+
+
+def _end_verify_note(sender) -> dict:
+    """그 건의 기록 — `reason`(확인을 못 한 까닭, 없으면 빈 글자) · 증거. 없으면 `{}`."""
+    end = getattr(sender, "end_verify_item", None)
+    if end is None:
+        return {}
+    try:
+        note = end()
+        return note if isinstance(note, dict) else {}
+    except Exception as exc:  # noqa: BLE001 - 기록 때문에 판정을 바꾸지 않는다
+        log.debug("방 확인 기록을 읽지 못했습니다: %s", exc)
+        return {}
+
+
+def _report_unreadable(client: AgentClient, sender, room: str, note: dict) -> None:
+    """확인을 못 한 건의 진단 기록을 올린다 — 최근 로그 · 창 제목 · 메인 창 자식 창 줄.
+    **던지지 않는다**(이미 올린 판정은 그대로다)."""
+    upload = getattr(client, "report_diagnostics", None)
+    if upload is None:
+        return
+    try:
+        payload = collect_diagnostics(
+            sender, "verify_unreadable", target_room=room,
+            error=("방 확인을 못 했습니다 — 까닭 {reason} · 검색 {marks} · 메인 창 {tab}"
+                   .format(reason=note.get("reason") or "",
+                           marks=",".join(str(m) for m in note.get("marks") or []),
+                           tab=note.get("tab") or "unknown")))
+        lines = [str(x) for x in (note.get("ui_dump") or [])]
+        if lines:
+            payload["ui_dump"] = lines + list(payload.get("ui_dump") or [])
+        upload(payload)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("방 확인 진단 업로드 실패(결과는 그대로): %s", exc)
+
+
 def _verify_items(client: AgentClient, sender, job: dict, cfg: dict):
     """방 이름 대조 잡 (ROADMAP 2.5) — 검색만 하고 **전송은 하지 않는다**.
 
@@ -720,6 +775,16 @@ def _verify_items(client: AgentClient, sender, job: dict, cfg: dict):
 
     any_fail = False
     checked = False   # 첫 건 앞에는 쉬지 않는다
+    try:
+        evidence_left = int(cfg.get("verify_evidence_per_job", VERIFY_EVIDENCE_PER_JOB))
+    except (TypeError, ValueError):
+        evidence_left = VERIFY_EVIDENCE_PER_JOB
+    # (0.11.16) 이 잡에서 검색이 **한 번이라도 읽혔나**(줄을 읽었거나 맨 위 방이 열렸다).
+    # 결과 줄을 UIA 로 못 읽는 PC 에서는 방이 정말 없을 때도 `하나도 못 읽음` 으로
+    # 보인다 — 앞 건에서 읽힌 적이 있으면 그 PC 카톡은 검색이 되는 상태이므로, 뒤 건의
+    # 까닭 모를 `unreadable` 은 예전처럼 `못 찾음` 으로 둔다. 잠금모드 · 다른 탭 ·
+    # 포커스처럼 **확인된** 까닭은 그대로 올린다.
+    readable = False
     for i, item in enumerate(items, start=1):
         if checked:
             time.sleep(random.uniform(float(cfg.get("verify_delay_min_sec", 1)),
@@ -741,6 +806,9 @@ def _verify_items(client: AgentClient, sender, job: dict, cfg: dict):
         exact = bool(item.get("exact"))
         query = room if exact else ((item.get("query") or "").strip() or room)
         marker = str(cfg.get("room_marker", "") or "")
+        # (0.11.16) 이 건의 검색들이 어떻게 끝났는지 적게 한다 — 하나도 못 읽었으면
+        # `못 찾음` 이 아니라 **확인 못 함**이다(아래 `verify_reason`).
+        _begin_verify_note(sender, evidence_left > 0 and not readable)
         try:
             # 방 이름은 생성으로 맞출 수 없다 → 이름+직함으로 **검색해 실제 제목을 찾는다**.
             found = []
@@ -777,18 +845,43 @@ def _verify_items(client: AgentClient, sender, job: dict, cfg: dict):
                 verdict = sender.verify_room(room)
         except Exception as exc:  # noqa: BLE001 - 한 건 실패로 전체를 멈추지 않는다
             log.exception("verify 실패 room=%r", room)
+            _end_verify_note(sender)
             verdict = "not_found"
             client.report_item(item["id"], "failed", error=f"verify error: {exc}",
                                verify_result=verdict)
             any_fail = True
         else:
+            note = _end_verify_note(sender)
             ok = verdict == "verified"
             any_fail = any_fail or not ok
+            # ★ 판정은 그대로다 — 못 읽은 건은 여전히 `not_found` 로 올린다. 까닭은
+            #   **아무것도 못 찾았고 검색이 하나도 안 읽혔을 때만** 곁들인다.
+            reason = ""
+            if not found and verdict == "not_found":
+                reason = str(note.get("reason") or "")
+            if reason == "unreadable" and readable:
+                reason = ""   # 앞 건에서 읽혔다 — 이 PC 에서는 `못 찾음` 이 맞는 말이다
+            if found or any(m in ("read", "opened") for m in note.get("marks") or []):
+                readable = True
+            more = {}
+            evidence = bool(reason) and evidence_left > 0
+            if reason:
+                more["verify_reason"] = reason
+            if evidence:
+                evidence_left -= 1
+                if note.get("screenshot_b64"):
+                    more["screenshot_b64"] = note["screenshot_b64"]
             client.report_item(item["id"], "sent" if ok else "failed",
                                verify_result=verdict,
                                found_room=hits[0] if len(hits) == 1 else None,
-                               candidates=found or None)
+                               candidates=found or None, **more)
             log.info("  [%d/%d] %s query=%r found=%r", i, len(items), verdict, query, found)
+            if reason:
+                log.warning("  [%d/%d] 확인 못 함(%s) — 검색 결과를 하나도 읽지 못했습니다. "
+                            "카톡이 채팅 탭인지 · 잠금모드가 아닌지 보세요 (검색 %s)",
+                            i, len(items), reason, ",".join(note.get("marks") or []))
+            if evidence:
+                _report_unreadable(client, sender, room, note)
 
     client.report_job(job_id, "done_with_errors" if any_fail else "done")
     log.info("verify job %s complete (mismatch=%s)", job_id, any_fail)
