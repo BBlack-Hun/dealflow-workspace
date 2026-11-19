@@ -41,6 +41,7 @@
     · 확인 완료 <b>{{ board.counts.confirmed }}</b>
     · 골라야 함 <b>{{ board.counts.picks }}</b>
     · 못 찾음 <b>{{ board.counts.not_found }}</b>
+    {% if board.counts.unchecked %}· 확인 못 함 <b>{{ board.counts.unchecked }}</b>{% endif %}
     · 아직 안 찾아봄 <b>{{ board.counts.never }}</b>
   </p>
   <form method="post" action="/team/sender-rooms/check" class="inline-form" data-send>
@@ -93,6 +94,9 @@
         </ul>
         {% elif r.state == 'not_found' %}
         <p class="hint">못 찾았습니다 — {{ board.sender }} 님 카톡에서 이 카톡방이 있는지 확인해 주세요.</p>
+        {% elif r.state == 'unchecked' %}
+        {# 방이 없다고 확인된 것이 아니다 — 그 PC 카톡에서 무엇을 볼지 적는다(`room_unchecked`). #}
+        <p class="hint" data-testid="sender-room-unchecked">{{ r.note }}</p>
         {% endif %}
         {% if r.state == 'confirmed' %}
         <form method="post" action="/team/sender-rooms/{{ r.contact_id }}/clear" class="inline-form">

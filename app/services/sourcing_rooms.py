@@ -72,7 +72,8 @@ from sqlalchemy.orm import Session, object_session
 from .. import clock
 from ..models import (SENDER_ROOM_TOPIC, SOURCING_ROOM_TOPIC, SendItem, SendJob,
                       SenderRoom, SourcingContact, User, VcContact)
-from . import edit_log, room_match, sourcing_buckets, sourcing_link, sourcing_sync
+from . import (edit_log, room_match, room_unchecked, sourcing_buckets, sourcing_link,
+               sourcing_sync)
 # 줄의 상태 문구 · 확정 못 하는 까닭은 스타트업 [방 매칭] 과 **한 벌**이다 —
 # 두 벌이면 한쪽만 고친 날 두 [방 후보 찾기] 화면이 다른 말을 한다(PR #284 리뷰).
 from .startup_room_pick import STATE_LABELS, NotPickable  # noqa: F401 — 라우터가 잡는다
@@ -264,7 +265,9 @@ def apply_result(item: SendItem, body) -> None:
     found = (body.found_room or "").strip()
     if found and found not in rooms:
         rooms.insert(0, found)
-    error = (body.error or "").strip()
+    # (0.11.16) 발송기가 **검색 결과를 못 읽었다**고 알려 온 결과도 오류로 끝난 찾기와
+    # 같은 길이다 — 찾아본 결과가 아니니 후보를 `후보 없음` 으로 덮지 않는다.
+    error = (body.error or "").strip() or room_unchecked.note(body)
     if not rooms and error:
         _note_failure(contact, error)
         item.status = "failed"
@@ -365,7 +368,8 @@ def search_summary(db: Session, job: SendJob) -> Optional[dict]:
 
     보내는 계정 회차(`SENDER_ROOM_TOPIC` — `sender_rooms.queue_sourcing`)는 그 계정 표의
     상태로 센다. 그쪽은 발송기 오류를 따로 담지 않아(`sender_rooms.apply_result`) 오류도
-    `못 찾음` 으로 선다.
+    `못 찾음` 으로 선다. 다만 발송기가 **검색 결과를 못 읽었다**고 알려 온 건(0.11.16 —
+    `room_unchecked`)은 두 회차 모두 `failed` 로 세고 그 말을 까닭으로 싣는다.
 
     아직 안 끝났거나 딜 소싱 줄이 없는 회차는 `None` — 발송 진행 화면이 2초마다 묻는
     자리(`routers/jobs.job_status`)라 끝난 뒤에만 센다.
@@ -387,6 +391,10 @@ def search_summary(db: Session, job: SendJob) -> Optional[dict]:
             got["canceled"] += 1
             continue
         if mine is not None:
+            if item.status == "failed" and room_unchecked.is_note(item.error):
+                got["failed"] += 1
+                errors.append(item.error)
+                continue
             state = (mine.get(item.sourcing_contact_id) or {}).get("state")
         else:
             contact = item.sourcing_contact
@@ -398,7 +406,9 @@ def search_summary(db: Session, job: SendJob) -> Optional[dict]:
         got[state if state in ("confirmed", "picks") else "not_found"] += 1
     reason = errors[0] if errors and errors[0] and len(set(errors)) == 1 else ""
     got["reason"] = reason
-    got["hint"] = KAKAO_HINT if ("카카오톡" in reason or "카톡" in reason) else ""
+    # 확인 못 함의 말에는 무엇을 볼지가 이미 들어 있다 — 안내를 겹쳐 적지 않는다.
+    got["hint"] = (KAKAO_HINT if ("카카오톡" in reason or "카톡" in reason)
+                   and not room_unchecked.is_note(reason) else "")
     return got
 
 

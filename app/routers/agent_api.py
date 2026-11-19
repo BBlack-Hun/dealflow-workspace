@@ -29,7 +29,8 @@ from sqlalchemy.orm import Session
 from .. import clock, config
 from ..db import get_db
 from ..services import (cadence, pipeline, room_joined, room_match, room_name,
-                        scheduled_send, send_guard, sourcing_sync, vc_room_search)
+                        room_unchecked, scheduled_send, send_guard, sourcing_sync,
+                        vc_room_search)
 from ..deps import agent_serves, get_agent_device, may_auto_attach, now_iso
 from ..models import (ROOM_SEARCH_TOPIC, SENDER_ROOM_TOPIC, SOURCING_ROOM_TOPIC,
                       AgentDevice, SendItem, SendJob, User)
@@ -444,6 +445,11 @@ class ItemResult(BaseModel):
     # **대조에만** 쓴다 — 방 이름 칸을 이 값으로 바꾸지 않는다(`_exact_verdict`).
     found_room: Optional[str] = None
     candidates: Optional[list] = None
+    # (0.11.16) kind=verify_room 에서만: 발송기가 **확인을 못 한** 까닭 — 검색 결과를
+    # 하나도 못 읽었을 때만 온다(unreadable · not_chat_tab · locked · no_focus).
+    # 판정(`verify_result`)은 여전히 not_found 로 온다 — 사유 글과 상태 말만 달라진다
+    # (`services/room_unchecked.py`). 예전 발송기는 이 칸을 안 보낸다.
+    verify_reason: Optional[str] = None
 
 
 @router.post("/items/{item_id}/result")
@@ -474,6 +480,10 @@ def item_result(
 
     if is_verify:
         _apply_verify_result(item, body, device)
+        if body.screenshot_b64 and room_unchecked.note(body):
+            # (0.11.16) 확인을 못 한 건 — 발송기가 **검색 결과가 떠 있을 때** 찍은 카톡
+            # 메인 창이다(회차마다 처음 몇 건만 온다). 실패 화면과 같은 자리에 둔다.
+            item.screenshot_path = _save_screenshot(item_id, body.screenshot_b64)
     elif body.status == "sent":
         item.status = "sent"
         item.sent_at = now_iso()
@@ -600,7 +610,11 @@ def _apply_verify_result(item: SendItem, body: ItemResult,
     elif verdict == "not_found" and titles:
         item.error = _mismatch_error(titles, _other_rooms(item))
     else:
-        item.error = body.error or VERIFY_ERRORS.get(verdict, verdict)
+        # (0.11.16) 발송기가 검색 결과를 하나도 못 읽었으면 `못 찾음` 대신 **확인 못 함**
+        # 으로 적는다(`room_unchecked`). ★ 글만 다르다 — 위의 판정 · 확인 표시와 아래의
+        # 이름으로 다시 찾기는 예전 그대로다(결과 줄을 못 읽는 PC 는 그 길로 방을 찾는다).
+        item.error = (body.error or room_unchecked.note(body)
+                      or VERIFY_ERRORS.get(verdict, verdict))
     # 적어 둔 이름으로 **찾아봤는데 없었다** — 같은 건을 이름+직급 → 이름으로 한 번 더
     # 찾는다. 발송기 오류 · 판정 없이 온 결과 · 판을 못 믿는 발송기 · 잡 뒤에 고친
     # 이름은 뺀다(찾아본 결과가 아니다). 적어 둔 이름은 여기서는 그대로이고, 위에서 적은
@@ -784,7 +798,9 @@ def _apply_company_candidates(item: SendItem, company, body: ItemResult,
         item.error = (f"투자사 방 {len(dropped)}개만 걸렸습니다 — 카톡에서 대표와의 "
                       "방을 직접 찾아 적어 주세요")
     else:
-        item.error = body.error or VERIFY_ERRORS.get(verdict, verdict)
+        # (0.11.16) 검색 결과를 못 읽은 건은 **확인 못 함**으로 적는다(`room_unchecked`).
+        item.error = (body.error or room_unchecked.note(body)
+                      or VERIFY_ERRORS.get(verdict, verdict))
 
 
 def _pick_screen(company) -> str:

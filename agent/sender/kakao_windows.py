@@ -180,7 +180,49 @@ ROOM_SEARCH_DEFAULTS = {
     "open_top_fallback": True,
     # 맨 위 결과를 여는 키. 실기에서 Enter 가 첫 줄을 안 열면 ["down", "enter"].
     "open_top_keys": ["enter"],
+    # (0.11.16) 여는 키를 눌렀는데 새 채팅창이 안 뜨면 검색창을 닫고 **한 번만** 더
+    # 찾는다 — 보낼 때의 다시 찾기(`OPEN_ROOM_TRIES`)와 같은 차례다. 끄려면 false.
+    "open_top_retry": True,
 }
+
+# ── 메인 창이 **채팅 탭**인지 보는 길 (0.11.16) ─────────────────────────────
+#
+# 발송기는 검색 단축키(Ctrl+F)를 **지금 보이는 탭**에서 누른다. 친구 탭 · 더보기
+# 탭이거나 잠금모드면 채팅방 검색이 아니라서 줄도 안 읽히고 Enter 로 방도 안 열린다.
+#
+# ★ **Windows 카톡에는 채팅 탭으로 가는 공식 단축키가 없다**(카카오 고객센터
+#   「Windows 버전 단축키」 — 탭 전환 키가 표에 없다. Mac 만 ⌘+1/2/3). 그래서
+#   기본값은 **아무 키도 누르지 않는다**(`switch_keys: []`). 0.11.3 이 확인 안 된
+#   Ctrl+A 를 눌러 '친구 추가' 창을 띄운 일이 있다 — 근거 없는 키는 넣지 않는다.
+#
+# 하는 일은 **읽기뿐**이다 — 메인 창 자식 창의 제목 · 보임 여부를 본다.
+#   · 잠금모드: 자식 창 제목이 `LockModeView` 로 시작(공개 소스 KakaoTalkAdBlock 이
+#     메인 창을 `OnlineMainView` · `LockModeView` 로 알아본다 — 기본으로 본다).
+#   · 채팅 탭 / 다른 탭: 자식 창 제목(`ChatRoomListView` · `ContactListView` 로
+#     알려져 있으나 **실기 확인 전**)은 기본값을 비워 둔다 — 비면 `unknown` 이다.
+# 모르면 `unknown` 이고, `unknown` 이면 예전과 **똑같이** 움직인다.
+CHAT_TAB_DEFAULTS = {
+    "main_view_titles": ["OnlineMainView"],
+    "lock_view_titles": ["LockModeView"],
+    "chat_view_titles": [],
+    "other_view_titles": [],
+    # 다른 탭으로 **확인됐을 때만** 누를 키 묶음들. 비면 안 누른다(기본).
+    "switch_keys": [],
+    # 참이면 다른 탭 · 잠금모드로 **확인됐을 때** 검색을 하지 않는다(키 입력 없음).
+    "skip_search": False,
+}
+
+#: 카톡 메인 창에서 **다른 일을 하는** 공식 단축키 — `chat_tab.switch_keys` 에 적혀
+#: 있어도 누르지 않는다(카카오 고객센터 「Windows 버전 단축키」: 친구 추가 Ctrl+A ·
+#: 새로운 채팅 Ctrl+N · 잠금모드 Ctrl+L · 로그아웃 Alt+N · 종료 Alt+X · 서랍 Ctrl+J ·
+#: 톡캘린더 Ctrl+D · 모든 창 닫기 Ctrl+Shift+W). Alt+F4 는 창을 닫는다.
+KAKAO_OTHER_CHORDS = (
+    {"ctrl", "a"}, {"ctrl", "n"}, {"ctrl", "l"}, {"alt", "n"}, {"alt", "x"},
+    {"ctrl", "j"}, {"ctrl", "d"}, {"ctrl", "shift", "w"}, {"alt", "f4"},
+)
+
+#: 방 확인 한 건의 증거에 싣는 메인 창 자식 창 줄 수 상한.
+BLIND_DUMP_MAX_LINES = 60
 
 #: 줄을 못 읽었을 때 한 번만 떠 두는 카톡 창 구조. 셀렉터를 고칠 때 본다.
 UIA_MAIN_DUMP_FILE = "kakao_uia_dump.txt"
@@ -228,6 +270,19 @@ class KakaoDesktopSender(Sender):
     #: 파일 첨부 진단 줄들(`_note_windows`) — 실패 보고에 실린다(`agent/main.py:
     #: collect_diagnostics`). 방을 열 때마다 비운다. 늘 **새 목록으로 바꿔 끼운다**.
     ui_dump: List[str] = []
+    #: (0.11.16) 방 확인 **한 건** 동안의 검색들이 어떻게 끝났나(`begin_verify_item` ~
+    #: `end_verify_item`). `None` 이면 적지 않는다 — 방 확인 건 밖에서는 아무것도 안 한다.
+    _verify_marks: Optional[List[str]] = None
+    #: 그 건에서 떠 둔 증거 — 검색 결과가 떠 있을 때 찍은 메인 창(base64 PNG) · 자식 창 줄.
+    _blind_shot: Optional[str] = None
+    _blind_lines: tuple = ()
+    _shot_budget = 0
+    #: 마지막 맨 위 방 열기가 어떻게 끝났나 — `skipped` · `no_window` · `opened`.
+    _open_top_state = ""
+    #: 그 뒤 검색창을 닫았나(포커스가 확인돼 Esc 를 눌렀나) — 다시 찾기의 앞선 조건.
+    _open_top_closed = False
+    #: 마지막으로 본 메인 창 상태 — `chat` · `other` · `locked` · `unknown`(`_chat_tab_ok`).
+    _last_tab_state = "unknown"
 
     def __init__(self, selectors: dict, screenshot_dir: str):
         if not is_supported():  # defense in depth
@@ -457,35 +512,78 @@ class KakaoDesktopSender(Sender):
             #   등 엉뚱한 창으로 들어간 적이 있다(실기).
             if not self._focus_verified(win):
                 log.warning("discover_rooms: 카톡 포커스 실패 — 후보 0건 query=%r", query)
+                self._mark("no_focus")
                 return []
             fallback = bool(conf.get("open_top_fallback", True))
-            titles = self._search_titles(win, query, conf, keep_open=fallback,
-                                         exact=exact)
-            # ↑ keep_open 이면 검색창이 **열린 채** 돌아온다. 아래에서 반드시 닫는다.
+            # (0.11.16) 여는 키를 눌렀는데 새 창이 안 떴으면 **한 번만** 더 찾는다 —
+            # 보낼 때의 다시 찾기(`_open_room_verified`)와 같은 차례: 검색창을 닫고
+            # (`_open_top_room_title` 이 포커스를 확인하고 닫는다), 포커스를 다시
+            # 확인하고, **다른 글자**로 찾는다(`retry_query`). 돌려주는 제목은 여전히
+            # 처음 검색어로 거른다.
+            tries = 2 if fallback and conf.get("open_top_retry", True) else 1
             found: List[str] = []
-            opened = False
-            try:
-                if titles is not None:
-                    found = filter_room_titles(titles, query, marker=marker,
-                                               max_rows=_max_rows(conf))
-                state = getattr(self, "_last_search_state", "unread")
-                if state == "foreground_lost":
-                    # ★ 메인 창이 앞에 없다 — Enter·Esc 모두 누르지 않는다.
-                    opened = True
-                elif fallback and not found and state != "typed_mismatch":
-                    # ★ 목록을 못 읽었거나 읽은 줄에 맞는 것이 없다 — **맨 위 방을
-                    #   열어 창 제목을 읽는다.** 검색칸에 남의 글자가 있던 경우
-                    #   (typed_mismatch)는 열지 않는다 — 보이는 목록이 남의 결과다.
-                    opened = True
-                    found = self._open_top_room_title(win, query, marker, conf,
-                                                      company=company)
-            finally:
-                if fallback and not opened:
-                    self._close_search()
+            for attempt in range(1, tries + 1):
+                typed = query if attempt == 1 else retry_query(query)
+                found, again = self._discover_once(win, query, typed, marker, conf,
+                                                   company=company, exact=exact,
+                                                   fallback=fallback)
+                if found or not again or attempt == tries:
+                    break
+                time.sleep(self._t("after_close_search", 0.3))
+                # ★ 키를 더 누르기 전에 카톡 창이 앞에 있는지 다시 확인한다.
+                if not self._focus_verified(win):
+                    log.info("맨 위 방 열기: 다시 찾으려 했지만 카톡 포커스를 못 잡아 "
+                             "그만둡니다(키 입력 안 함) query=%r", query)
+                    break
+                log.info("맨 위 방 열기: 새 채팅창이 안 떴습니다 — 검색창을 닫았고 한 번 더 "
+                         "찾습니다 query=%r", query)
             return found
         except Exception:  # noqa: BLE001
             log.exception("discover_rooms 실패 — 후보 0건 query=%r", query)
+            self._mark("error")
             return []
+
+    def _discover_once(self, win, query: str, typed: str, marker: str, conf: dict,
+                       company: bool, exact: bool, fallback: bool) -> tuple:
+        """검색 한 번 — `(후보 제목들, 한 번 더 찾아볼 만한가)`.
+
+        `typed` 는 검색칸에 넣는 글자(다시 찾을 때는 `retry_query`), `query` 는 제목을
+        거르는 **처음 검색어**다. 한 번 더 찾아볼 만한 것은 **여는 키를 눌렀는데 새 창이
+        안 떴고, 그 뒤 검색창을 닫았을 때**뿐이다. 검색칸에 남의 글자가 있었으면
+        (`typed_mismatch`) · 메인 창이 앞에 없었으면(`foreground_lost`) 여는 키를 누르지
+        않으니 다시 찾지도 않는다.
+        """
+        titles = self._search_titles(win, typed, conf, keep_open=fallback,
+                                     exact=exact)
+        # ↑ keep_open 이면 검색창이 **열린 채** 돌아온다. 아래에서 반드시 닫는다.
+        found: List[str] = []
+        opened = again = False
+        try:
+            if titles is not None:
+                found = filter_room_titles(titles, query, marker=marker,
+                                           max_rows=_max_rows(conf))
+            state = getattr(self, "_last_search_state", "unread")
+            mark = "read" if titles is not None else search_mark(state)
+            if state in ("foreground_lost", "not_ready"):
+                # ★ 메인 창이 앞에 없다(또는 검색을 걸지 않았다) — Enter·Esc 모두
+                #   누르지 않는다.
+                opened = True
+            elif fallback and not found and state != "typed_mismatch":
+                # ★ 목록을 못 읽었거나 읽은 줄에 맞는 것이 없다 — **맨 위 방을
+                #   열어 창 제목을 읽는다.** 검색칸에 남의 글자가 있던 경우
+                #   (typed_mismatch)는 열지 않는다 — 보이는 목록이 남의 결과다.
+                opened = True
+                found = self._open_top_room_title(win, query, marker, conf,
+                                                  company=company)
+                if self._open_top_state == "opened":
+                    mark = "read" if titles is not None else "opened"
+                again = (self._open_top_state == "no_window"
+                         and self._open_top_closed)
+            self._mark(mark)
+        finally:
+            if fallback and not opened:
+                self._close_search()
+        return found, again
 
     def verify_room(self, room_name: str) -> str:
         """Search only; count EXACT-title matches. 1=verified, 0=not_found, >=2=ambiguous.
@@ -507,6 +605,7 @@ class KakaoDesktopSender(Sender):
             win = self._kakao_window()
             if not self._focus_verified(win):
                 log.warning("verify_room: 카톡 포커스 실패 room=%r", room_name)
+                self._mark("no_focus")
                 return "not_found"
             # 판정은 글자까지 같은 줄을 세므로 결과도 **이 이름의 것**이 될 때까지
             # 기다린다(`exact`, 0.11.14).
@@ -514,12 +613,188 @@ class KakaoDesktopSender(Sender):
                                          exact=True)
         except Exception:  # noqa: BLE001
             log.exception("verify_room 실패 room=%r", room_name)
+            self._mark("error")
             return "not_found"
         if titles is None:
             log.warning("verify_room: 검색 결과를 읽지 못했습니다(확인됨으로 올리지 "
                         "않습니다) room=%r", room_name)
+            self._mark(search_mark(getattr(self, "_last_search_state", "unread")))
             return "not_found"
+        self._mark("read")
         return verdict_from_titles(titles, room_name)
+
+    # ── 방 확인 한 건의 기록 (0.11.16) ───────────────────────────────────────
+    #
+    # 검색 결과 줄을 못 읽고 맨 위 방도 안 열리면 발송기는 `not_found` 를 올린다 —
+    # 서버 · 화면에서는 **방이 없다**와 **확인을 못 했다**가 같은 말이었다(운영의
+    # 윈도우 PC 한 대에서 16명 확인 건이 전부 `못 찾음` 으로 섰다). 그래서 한 건
+    # 동안의 검색들이 어떻게 끝났는지 적어 두었다가(`_mark`), 하나도 못 읽었으면
+    # 그 까닭(`blind_reason`)과 증거를 건 결과에 함께 올린다(`agent/main.py:
+    # _verify_items`).
+    #
+    # ★ 판정은 **안 바꾼다** — 못 읽은 건은 여전히 `not_found` 다. 까닭은 곁들이는
+    #   말일 뿐이고, 무엇도 `verified` 로 올리지 않는다.
+    # ★ 증거를 뜨는 길은 **키를 누르지 않고 던지지 않는다.**
+
+    def begin_verify_item(self, want_evidence: bool = False) -> None:
+        """방 확인 한 건을 시작한다 — 이제부터의 검색 결과를 적는다.
+
+        `want_evidence` 면 이 건에서 못 읽는 일이 생길 때 증거(화면 한 장 · 자식 창
+        줄)를 **한 번** 떠 둔다. 몇 건까지 뜰지는 부르는 쪽이 센다(잡마다 처음 몇 건).
+        """
+        self._verify_marks = []
+        self._blind_shot = None
+        self._blind_lines = ()
+        self._shot_budget = 1 if want_evidence else 0
+
+    def end_verify_item(self) -> dict:
+        """그 건의 기록을 돌려주고 비운다.
+
+        `reason` 이 빈 글자면 검색이 한 번이라도 읽혔다(줄을 읽었거나 맨 위 방이
+        열렸다) — 판정은 찾아본 결과다. 아니면 **확인을 못 한** 까닭이다:
+        `unreadable` · `not_chat_tab` · `locked` · `no_focus`.
+        """
+        marks = list(self._verify_marks or [])
+        out = {"reason": blind_reason(marks, self._last_tab_state),
+               "marks": marks, "tab": self._last_tab_state,
+               "screenshot_b64": self._blind_shot,
+               "ui_dump": list(self._blind_lines or ())}
+        self._verify_marks = None
+        self._blind_shot = None
+        self._blind_lines = ()
+        self._shot_budget = 0
+        return out
+
+    def _mark(self, word: str) -> None:
+        if self._verify_marks is not None:
+            self._verify_marks.append(word)
+
+    def _note_blind(self, win) -> None:
+        """줄도 못 읽고 맨 위 방도 안 열렸다 — **검색 결과가 아직 떠 있는 지금** 증거를
+        떠 둔다. 방 확인 건 안에서, 달라고 한 건만, 건마다 한 번. **키를 누르지 않고
+        던지지 않는다** — 증거를 못 떠도 판정은 그대로다."""
+        if (self._verify_marks is None or self._shot_budget <= 0
+                or getattr(self, "_last_search_state", "unread") != "unread"
+                or any(m in ("read", "opened") for m in self._verify_marks)):
+            return   # 이 건에서 줄이 읽혔으면 `못 찾음` 이 맞다 — 증거를 뜰 일이 아니다
+        self._shot_budget = 0
+        try:
+            self._blind_lines = tuple(self._main_child_lines(win))
+        except Exception as exc:  # noqa: BLE001
+            log.debug("메인 창 자식 창을 읽지 못했습니다: %s", exc)
+        try:
+            self._blind_shot = self._shot_window(win)
+        except Exception as exc:  # noqa: BLE001
+            log.debug("방 확인 화면을 찍지 못했습니다: %s", exc)
+
+    def _shot_window(self, win) -> Optional[str]:
+        """카톡 **메인 창 자리만** 찍어 base64 PNG 로. 자리를 모르면 화면 전체
+        (`_screenshot`). 못 찍으면 None — 키는 누르지 않는다."""
+        rect = self._hwnd_rect(_handle(win))
+        if rect and rect[2] > rect[0] and rect[3] > rect[1]:
+            try:
+                import io
+
+                from PIL import ImageGrab  # type: ignore
+
+                img = ImageGrab.grab(bbox=tuple(rect), include_layered_windows=True,
+                                     all_screens=True)
+                buf = io.BytesIO()
+                img.save(buf, format="PNG")
+                return base64.b64encode(buf.getvalue()).decode("ascii")
+            except Exception as exc:  # noqa: BLE001
+                log.info("메인 창만 찍지 못해 화면 전체를 찍습니다: %s", exc)
+        return self._screenshot("")
+
+    def _main_children(self, win) -> List[tuple]:
+        """메인 창 **속** 자식 창들 `[(제목, 클래스, 보이는가)]` — 숨은 것도 싣는다.
+        못 읽으면 빈 목록(= 모른다)."""
+        hwnd = _handle(win)
+        if not hwnd:
+            return []
+        try:
+            import win32gui  # type: ignore
+        except Exception:  # noqa: BLE001
+            return []
+        out: list = []
+
+        def _collect(child, _):
+            try:
+                out.append((win32gui.GetWindowText(child) or "",
+                            win32gui.GetClassName(child) or "",
+                            bool(win32gui.IsWindowVisible(child))))
+            except Exception:  # noqa: BLE001 — 그 사이 창이 사라졌다
+                pass
+            return True
+
+        try:
+            win32gui.EnumChildWindows(hwnd, _collect, None)
+        except Exception:  # noqa: BLE001
+            return []
+        return out
+
+    def _main_child_lines(self, win) -> List[str]:
+        """증거에 싣는 줄 — 메인 창 자식 창의 제목 · 클래스 · 보임 여부. 탭을 알아보는
+        이름(`selectors.yaml: chat_tab`)을 실기에서 정할 때 본다."""
+        children = self._main_children(win)
+        lines = [f"메인 창 자식 창 {len(children)}개 · 탭 판정 {self._last_tab_state}"]
+        for title, cls, visible in children[:BLIND_DUMP_MAX_LINES]:
+            lines.append(f"{'보임' if visible else '숨김'} class={cls!r} "
+                         f"title={_clip(title, 60)!r}")
+        if len(children) > BLIND_DUMP_MAX_LINES:
+            lines.append(f"… 외 {len(children) - BLIND_DUMP_MAX_LINES}개")
+        return lines
+
+    # ── 채팅 탭인가 (0.11.16) — `CHAT_TAB_DEFAULTS` 머리말 ───────────────────
+
+    @property
+    def chat_tab_conf(self) -> dict:
+        conf = dict(CHAT_TAB_DEFAULTS)
+        conf.update((self.sel or {}).get("chat_tab") or {})
+        return conf
+
+    def _tab_state(self, win, conf: dict) -> str:
+        """메인 창이 지금 무엇을 보이나 — **읽기만 한다.** 못 읽으면 `unknown`."""
+        try:
+            return tab_state_of(self._main_children(win), conf)
+        except Exception:  # noqa: BLE001
+            return "unknown"
+
+    def _chat_tab_ok(self, win) -> bool:
+        """검색 단축키를 눌러도 되나. **모르면 된다**(예전과 같다).
+
+        다른 탭으로 **확인됐고** `chat_tab.switch_keys` 가 적혀 있으면 그 키를 누르고
+        (메인 창이 앞일 때만) 다시 본다. 기본값은 빈 목록이라 아무 키도 안 누른다.
+        다른 탭 · 잠금모드로 확인돼도 `chat_tab.skip_search` 가 거짓이면(기본) 검색은
+        예전처럼 한다 — 판정이 틀렸을 때 잘 되던 PC 를 막지 않기 위해서다.
+        """
+        conf = self.chat_tab_conf
+        state = self._tab_state(win, conf)
+        if state == "other":
+            state = self._switch_to_chat_tab(win, conf)
+        if state != self._last_tab_state and state in ("other", "locked"):
+            log.warning("카톡 메인 창이 %s — 채팅방 검색이 안 될 수 있습니다",
+                        "잠금모드로 보입니다" if state == "locked"
+                        else "채팅 탭이 아닌 것으로 보입니다")
+        self._last_tab_state = state
+        return not (state in ("other", "locked") and conf.get("skip_search"))
+
+    def _switch_to_chat_tab(self, win, conf: dict) -> str:
+        """다른 탭으로 확인됐을 때만 온다. 누른 뒤의 상태를 돌려준다."""
+        chords = tab_switch_chords(conf)
+        if not chords:
+            return "other"
+        if not self._foreground_is_main(win):
+            log.info("채팅 탭으로 바꾸지 않았습니다 — 카톡 메인 창이 앞에 없습니다"
+                     "(키 입력 안 함)")
+            return "other"
+        for chord in chords:
+            self._pyautogui.hotkey(*chord)
+        time.sleep(self._t("after_tab_switch", 0.4))
+        state = self._tab_state(win, conf)
+        log.info("채팅 탭으로 바꾸는 키를 눌렀습니다(%s) — 지금 %s",
+                 ", ".join("+".join(c) for c in chords), state)
+        return state
 
     def _close_search(self) -> None:
         """검색창을 닫는다. 다음 검색이 직전 글자 위에 겹치지 않게.
@@ -655,6 +930,8 @@ class KakaoDesktopSender(Sender):
         main_title = self.sel.get("main_window_title_kw", "카카오톡")
         refocus_ok = True
         pressed = refocused = False
+        self._open_top_state = "skipped"
+        self._open_top_closed = False
         try:
             before = self._top_windows()
             if before is None:
@@ -680,8 +957,12 @@ class KakaoDesktopSender(Sender):
             if picked is None:
                 log.info("맨 위 방 열기: 새 채팅창이 뜨지 않았습니다 — 후보 0건 "
                          "query=%r", query)
+                self._open_top_state = "no_window"
+                # (0.11.16) 검색 결과가 **아직 떠 있다** — 닫기(Esc) 전에 증거를 뜬다.
+                self._note_blind(win)
                 return []
 
+            self._open_top_state = "opened"
             hwnd, title = picked
             try:
                 self._dump_chat_once(hwnd)
@@ -717,6 +998,7 @@ class KakaoDesktopSender(Sender):
             if refocus_ok:
                 self._close_search()
                 self._ensure_visible(win)
+                self._open_top_closed = True
             else:
                 log.warning("맨 위 방을 닫은 뒤 카톡 포커스를 못 잡아 검색창을 "
                             "닫지 않았습니다(키 입력 안 함)")
@@ -841,8 +1123,17 @@ class KakaoDesktopSender(Sender):
           · `"foreground_lost"` — 붙이기 전에 메인 창이 아닌 창이 앞에
                                  떴다(None). 붙이지 않았고, 검색창 Esc 도 맨 위
                                  방 열기도 하지 않는다(`_put_query`).
+          · `"not_ready"`      — 메인 창이 채팅 탭이 아니거나 잠금모드로 **확인돼**
+                                 검색을 걸지 않았다(None — `chat_tab.skip_search`
+                                 를 켰을 때만). 검색창을 열지 않았다.
         """
         self._last_search_state = "unread"
+        # 0) (0.11.16) 메인 창이 채팅 탭인지 **읽어 본다**. 다른 탭 · 잠금모드로
+        #    확인됐고 `chat_tab.skip_search` 가 켜져 있을 때만 검색을 접는다 — 그때는
+        #    검색창을 열지 않았으니 부르는 쪽도 Enter · Esc 를 누르지 않는다.
+        if not self._chat_tab_ok(win):
+            self._last_search_state = "not_ready"
+            return None
         # 1) 검색창 열기. ★ 여기서부터만 Esc 로 닫는다 — 열지도 않은 채 Esc 를
         #    누르면 그 키가 다른 앱으로 간다.
         self._pyautogui.hotkey(*self.sel.get("search_hotkey", ["ctrl", "f"]))
@@ -2426,6 +2717,80 @@ _CTRL_KEYS = {"ctrl", "control", "ctrlleft", "ctrlright"}
 def _is_forbidden_chord(keys: tuple) -> bool:
     low = {k.strip().lower() for k in keys}
     return "a" in low and bool(low & _CTRL_KEYS)
+
+
+def search_mark(state: str) -> str:
+    """못 읽은 검색 하나를 한 낱말로 — 줄을 못 읽은 것(`unread`)은 `blind`."""
+    return "blind" if state == "unread" else (state or "blind")
+
+
+def blind_reason(marks, tab: str = "unknown") -> str:
+    """방 확인 한 건의 검색들이 **하나도 읽히지 않았으면** 그 까닭, 아니면 빈 글자.
+
+    `marks` 는 그 건의 검색마다 한 낱말이다(`_mark`): 줄을 읽었으면 `read`, 맨 위
+    방이 열려 제목을 읽었으면 `opened`, 그 밖은 못 읽은 까닭. 하나라도 읽혔으면
+    그 건의 판정은 **찾아본 결과**다 — 빈 글자를 돌려준다. 검색을 한 번도 안 했어도
+    빈 글자다(모르면 예전과 같다).
+
+    까닭: 메인 창 상태가 **확인됐으면** `locked`(잠금모드) · `not_chat_tab`(다른 탭),
+    카톡 창을 앞에 못 둔 적이 있으면 `no_focus`, 그 밖은 `unreadable`.
+    """
+    marks = [m for m in (marks or []) if m]
+    if not marks or any(m in ("read", "opened") for m in marks):
+        return ""
+    if tab == "locked":
+        return "locked"
+    if tab == "other":
+        return "not_chat_tab"
+    if any(m in ("no_focus", "foreground_lost") for m in marks):
+        return "no_focus"
+    return "unreadable"
+
+
+def tab_state_of(children, conf: dict) -> str:
+    """메인 창 자식 창들로 본 상태 — `chat` · `other` · `locked` · `unknown`.
+
+    `children` 은 `[(제목, 클래스, 보이는가)]`, 이름은 `chat_tab` 설정의 **머리 글자**
+    로 견준다(카톡은 이름 뒤에 주소를 붙이기도 한다). **보이는** 창만 센다.
+
+    ★ 모르면 `unknown` 이다 — 이름이 비어 있거나, 아무것도 안 걸리거나, 채팅 탭과
+      다른 탭이 **둘 다** 보이면. 짐작으로 `other` · `locked` 를 답하지 않는다.
+    """
+    def seen(key: str) -> bool:
+        heads = [str(h) for h in (conf.get(key) or []) if str(h).strip()]
+        return any(visible and any((title or "").startswith(h) for h in heads)
+                   for title, _cls, visible in (children or []))
+
+    if seen("lock_view_titles") and not seen("main_view_titles"):
+        return "locked"
+    chat, other = seen("chat_view_titles"), seen("other_view_titles")
+    if chat and not other:
+        return "chat"
+    if other and not chat:
+        return "other"
+    return "unknown"
+
+
+def tab_switch_chords(conf: dict) -> List[tuple]:
+    """`chat_tab.switch_keys` 를 키 묶음 목록으로. 기본은 빈 목록 — 아무것도 안 누른다.
+
+    ⚠ 카톡 메인 창에서 **다른 일을 하는 공식 단축키**(`KAKAO_OTHER_CHORDS` — 친구
+      추가 · 잠금모드 · 로그아웃 · 종료 …)는 적혀 있어도 건너뛴다(경고 남김).
+    """
+    out: List[tuple] = []
+    for chord in conf.get("switch_keys") or []:
+        if isinstance(chord, str):
+            chord = [chord]
+        keys = tuple(str(k).strip() for k in chord if str(k).strip())
+        if not keys:
+            continue
+        low = {"ctrl" if k.lower() in _CTRL_KEYS else k.lower() for k in keys}
+        if low in KAKAO_OTHER_CHORDS:
+            log.warning("switch_keys 의 %r 는 누르지 않습니다 — 카톡에서 다른 일을 하는 "
+                        "단축키입니다", "+".join(keys))
+            continue
+        out.append(keys)
+    return out
 
 
 def clear_chords(conf: dict) -> List[tuple]:

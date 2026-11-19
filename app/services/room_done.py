@@ -17,6 +17,12 @@
     확인됨 · 찾음 · 여럿 · 못 찾음(`room_match.find_state` — 맞추기 화면과 같은 함수).
   · **딜 소싱 [방 후보 찾기]** — 그 화면의 알림과 같은 셈(`sourcing_rooms.search_summary`).
   · **투자사 [방 연결 확인]** — 진행 화면 숫자와 같은 말(확인됨 · 불일치).
+
+## 확인 못 함 (0.11.16)
+
+발송기가 그 PC 카톡의 **검색 결과를 못 읽은** 건(`services/room_unchecked.py`)은 어느
+갈래든 `못 찾음` · `불일치` 가 아니라 **확인 못 함**으로 적고 따로 센다 — 방이 없다는
+뜻이 아니고, 그 PC 카톡을 봐야 하는 건이다.
 """
 from __future__ import annotations
 
@@ -25,7 +31,7 @@ from typing import Dict, Optional
 from sqlalchemy.orm import Session
 
 from ..models import ROOM_SEARCH_TOPIC, SendItem, SendJob
-from . import room_match, sourcing_rooms
+from . import room_match, room_unchecked, sourcing_rooms
 
 #: 끝난 회차 — 화면이 따라가기를 멈추고 알림창을 띄운다.
 ENDED = ("done", "done_with_errors", "canceled")
@@ -42,10 +48,16 @@ def _row(job: SendJob, item: SendItem):
     return None
 
 
+def _unchecked(item: SendItem) -> bool:
+    """발송기가 검색 결과를 못 읽어 **확인을 못 한** 건인가."""
+    return item.status == "failed" and room_unchecked.is_note(item.error)
+
+
 def item_results(db: Session, job: SendJob) -> Dict[int, str]:
     """`{건 id: 결과 말}` — 진행 화면의 상태 칸이 `확인됨` · `불일치` 대신 적는 말.
 
     회사명으로 찾는 줄 중 발송기가 **본** 건만(대기 · 찾는 중 · 취소는 그대로 둔다).
+    확인을 못 한 건(`room_unchecked`)은 어느 갈래든 `확인 못 함` 으로 적는다.
     """
     from ..routers.agent_api import VERIFY_KIND
 
@@ -54,6 +66,9 @@ def item_results(db: Session, job: SendJob) -> Dict[int, str]:
     known = None
     out: Dict[int, str] = {}
     for item in job.items:
+        if _unchecked(item):
+            out[item.id] = room_unchecked.LABEL
+            continue
         row = _row(job, item)
         if row is None or item.status not in _SEEN:
             continue
@@ -81,14 +96,25 @@ def summary(db: Session, job: SendJob) -> Optional[dict]:
     if job is None or job.kind != VERIFY_KIND or job.status not in ENDED:
         return None
     stopped = job.status == "canceled"
+    # 확인을 못 한 건은 `못 찾음` · `불일치` · `오류` 에서 빼고 따로 센다(모듈 머리말).
+    unchecked = sum(1 for i in job.items if _unchecked(i))
+    # 무엇을 볼지 한 줄 — 건마다의 사유 글과 같은 말이다.
+    tail = ("\n확인 못 함: 보내는 PC 카톡이 채팅 탭에 있는지, 잠금모드가 아닌지 보고 다시 "
+            "확인해 주세요") if unchecked else ""
     sourcing = sourcing_rooms.search_summary(db, job)
     if sourcing is not None:
+        # 그 셈은 딜 소싱 줄만 센다 — 확인 못 함도 그 줄 것만 `오류` 에서 덜어 적는다.
+        blind = sum(1 for i in job.items
+                    if i.sourcing_contact_id is not None and _unchecked(i))
+        errors = max(0, sourcing["failed"] - blind)
         parts = [f"확정 {sourcing['confirmed']}", f"후보 고르기 {sourcing['picks']}",
                  f"못 찾음 {sourcing['not_found']}"]
-        if sourcing["failed"]:
-            parts.append(f"오류 {sourcing['failed']}")
+        if errors:
+            parts.append(f"오류 {errors}")
+        if blind:
+            parts.append(f"확인 못 함 {blind}")
         head = "딜 소싱 카톡방 찾기를 중단했습니다" if stopped else "딜 소싱 카톡방 찾기가 끝났습니다"
-        return {"sentence": f"{head} — {' · '.join(parts)}", "pick": False}
+        return {"sentence": f"{head} — {' · '.join(parts)}{tail}", "pick": False}
 
     companies = [(i, _row(job, i)) for i in job.items]
     companies = [(i, r) for i, r in companies if r is not None]
@@ -97,7 +123,7 @@ def summary(db: Session, job: SendJob) -> Optional[dict]:
         known = room_match.investor_rooms(db)
         got = {k: 0 for k in room_match.FIND_LABELS}
         for item, row in companies:
-            if item.status in _SEEN:
+            if item.status in _SEEN and not _unchecked(item):
                 got[room_match.find_state(row, known)] += 1
         parts = [f"찾음 {got['found']}", f"여럿 {got['many']}", f"못 찾음 {got['none']}"]
         if got["verified"]:
@@ -107,9 +133,11 @@ def summary(db: Session, job: SendJob) -> Optional[dict]:
     else:
         sent = sum(1 for i in job.items if i.status == "sent")
         failed = sum(1 for i in job.items if i.status == "failed")
-        parts = [f"확인 완료 {sent}", f"불일치 {failed}"]
+        parts = [f"확인 완료 {sent}", f"불일치 {failed - unchecked}"]
         head = "카톡방 연결 확인을 중단했습니다" if stopped else "카톡방 연결 확인이 끝났습니다"
         pick = False
+    if unchecked:
+        parts.append(f"확인 못 함 {unchecked}")
     if canceled:
         parts.append(f"취소 {canceled}")
-    return {"sentence": f"{head} — {' · '.join(parts)}", "pick": pick}
+    return {"sentence": f"{head} — {' · '.join(parts)}{tail}", "pick": pick}

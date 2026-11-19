@@ -65,17 +65,21 @@ from sqlalchemy.orm import Session
 from .. import clock
 from ..models import (SENDER_ROOM_TOPIC, SendItem, SendJob, SenderRoom,
                       SourcingContact, User, VcContact)
-from . import edit_log, sheet_owner
+from . import edit_log, room_unchecked, sheet_owner
 
 #: 줄의 상태 — 화면이 이 말을 그대로 적는다.
 CONFIRMED = "confirmed"
 PICKS = "picks"
 NOT_FOUND = "not_found"
+#: (0.11.16) 지난 확인에서 그 PC 카톡의 검색 결과를 **못 읽었다** — 방이 없다는 뜻이
+#: 아니다(`services/room_unchecked.py`). 까닭 없이 못 찾은 줄은 예전처럼 `not_found`.
+UNCHECKED = "unchecked"
 NEVER = "never"
 STATE_LABELS = {
     CONFIRMED: "확인 완료",
     PICKS: "후보 {n}개 — 골라 주세요",
     NOT_FOUND: "못 찾음",
+    UNCHECKED: room_unchecked.LABEL,
     NEVER: "아직 안 찾아봄",
 }
 
@@ -127,6 +131,21 @@ def candidates(row: Optional[SenderRoom]) -> List[str]:
     except ValueError:
         return []
     return [str(v) for v in value if str(v).strip()] if isinstance(value, list) else []
+
+
+def unchecked_note(row: Optional[SenderRoom]) -> str:
+    """지난 확인이 **확인 못 함**으로 끝난 줄이면 그 말, 아니면 빈 글자 (0.11.16).
+
+    후보 칸에 목록 대신 `{"unchecked": 말}` 로 담는다(`apply_result`) — 칸을 늘리지
+    않는다. 목록이 아니라서 `candidates` 는 빈 목록으로 읽는다(고를 후보는 없다).
+    """
+    if row is None or not row.candidates:
+        return ""
+    try:
+        value = json.loads(row.candidates)
+    except ValueError:
+        return ""
+    return str(value.get("unchecked") or "") if isinstance(value, dict) else ""
 
 
 def room_for(db: Session, sender_id: int, contact: VcContact) -> str:
@@ -343,6 +362,9 @@ def apply_result(db: Session, item: SendItem, body, verdict: str) -> None:
       막혀 아래로 간다. 확정해 둔 제목이 이번에 안 걸리고 다른 하나가 걸려도 그
       하나로 바꾼다 — 예전에도 확정해 둔 제목이 안 걸리면 확정을 거뒀다.
     - 그 밖(제목이 다르다 · 같은 제목이 여럿) → 후보만, 사람이 고른다.
+    - (0.11.16) 하나도 못 찾았고 발송기가 **검색 결과를 못 읽었다**고 알려 왔으면
+      (`room_unchecked.note`) `못 찾음` 이 아니라 **확인 못 함**으로 적는다 — 사유 글과
+      줄의 상태 말만 다르다. 확인 표시를 거두는 것은 예전과 같다(모르면 미확인).
     """
     person = item.sourcing_contact
     contact = item.contact or person
@@ -391,9 +413,14 @@ def apply_result(db: Session, item: SendItem, body, verdict: str) -> None:
     row.room_name = None
     item.status = "failed"
     item.sent_at = None
+    unchecked = "" if rooms else room_unchecked.note(body)
     if rooms:
         item.error = (f"보내는 계정 카톡의 제목이 다릅니다 — 후보 {len(rooms)}개, "
                       "팀 현황 → 보내는 계정 방 제목에서 고르세요")
+    elif unchecked:
+        # 방이 없다고 확인된 것이 아니다 — 줄에도 그렇게 적어 화면이 가른다(`state_of`).
+        row.candidates = json.dumps({"unchecked": unchecked}, ensure_ascii=False)
+        item.error = unchecked
     else:
         item.error = "보내는 계정 카톡에서 이 카톡방을 찾지 못했습니다"
 
@@ -460,7 +487,9 @@ def state_of(row: Optional[SenderRoom]) -> str:
         return CONFIRMED if (row and row.verified) else NEVER
     if row.verified and row.room_name:
         return CONFIRMED
-    return PICKS if candidates(row) else NOT_FOUND
+    if candidates(row):
+        return PICKS
+    return UNCHECKED if unchecked_note(row) else NOT_FOUND
 
 
 def _view(row: Optional[SenderRoom], sourcing: bool) -> dict:
@@ -484,6 +513,8 @@ def _view(row: Optional[SenderRoom], sourcing: bool) -> dict:
                    "current": bool(row and row.verified and row.room_name == p)}
                   for p in dict.fromkeys(picks)],
         "checked_at": (row.checked_at or "")[:16].replace("T", " ") if row else "",
+        # 확인 못 함인 줄에 세우는 안내(무엇을 볼지) — 그 밖에는 빈 글자.
+        "note": unchecked_note(row) if state == UNCHECKED else "",
     }
 
 
@@ -527,9 +558,9 @@ def board(db: Session, sender: User) -> dict:
             "own_room": (contact.kakao_room_name or "").strip(),
             **_view(row, sourcing=kind == "sourcing"),
         })
-    order = {PICKS: 0, NOT_FOUND: 1, NEVER: 2, CONFIRMED: 3}
+    order = {PICKS: 0, UNCHECKED: 1, NOT_FOUND: 2, NEVER: 3, CONFIRMED: 4}
     out.sort(key=lambda r: (order[r["state"]], r["owner"], r["name"]))
     counts = {key: sum(1 for r in out if r["state"] == key)
-              for key in (CONFIRMED, PICKS, NOT_FOUND, NEVER)}
+              for key in (CONFIRMED, PICKS, NOT_FOUND, UNCHECKED, NEVER)}
     return {"rows": out, "total": len(out), "counts": counts,
             "sender": sender.name, "sender_id": sender.id}

@@ -37,6 +37,7 @@ timings:
   open_top_wait: 1.5        # 맨 위 방을 연 뒤 새 채팅창이 뜨기를 기다리는 시간
   after_close_chat: 0.3     # 그 채팅창을 닫은 뒤
   after_close_search: 0.3   # 메인 창 검색창을 Esc 로 닫은 뒤 — 메인 창이 숨었는지 보기 전에 (0.11.10)
+  after_tab_switch: 0.4     # chat_tab.switch_keys 를 누른 뒤 (0.11.16 — 기본은 누르는 키가 없다)
 
 # TODO(win, 1.10): 채팅창 제목 라벨 경로를 실기에서 파악해 아래에 추가하고
 # kakao_windows.py의 정확 일치 검증에 연결.
@@ -104,6 +105,51 @@ room_search:
   open_top_fallback: true
   #   ★ Enter 가 첫 줄을 안 열면 ["down", "enter"] 로 바꾼다.
   open_top_keys: ["enter"]
+  #   (0.11.16) 위 키를 눌렀는데 새 채팅창이 안 뜨면 검색창을 닫고 **한 번만** 더
+  #   찾는다 — 보낼 때의 다시 찾기와 같은 차례다(다른 글자로 찾는다). 검색칸에 남의
+  #   글자가 있었거나 카톡 창이 앞에 없었으면 다시 찾지 않는다. 끄려면 false.
+  open_top_retry: true
+
+# ══════════════════════════════════════════════════════════════════════════
+#  채팅 탭인가 (0.11.16) — 방을 찾기 전에 메인 창이 무엇을 보이는지 **읽어만 본다.**
+#
+#  방 찾기는 메인 창에 검색 단축키(위 search_hotkey)를 누르고 방 이름을 넣는다. 메인
+#  창이 채팅 탭이 아니거나 잠금모드면 채팅방이 안 잡힐 수 있다.
+#
+#  ⚠ Windows 카톡에는 **탭을 바꾸는 공식 단축키가 없다.**
+#    카카오 고객센터 "Windows 버전 단축키가 궁금해요."
+#    (https://cs.kakao.com/helps_html/1073209659?locale=ko) 에 탭 전환 키가 없다
+#    (Mac 에만 ⌘+1 · ⌘+2 · ⌘+3 이 있다 — https://cs.kakao.com/helps_html/1073209668).
+#    그래서 **기본은 아무 키도 누르지 않는다.** 0.11.3 이 확인 없이 누른 Ctrl+A 가
+#    `친구 추가` 여서 검색이 통째로 죽었다(docs/WINDOWS_TEST.md "0.11.4").
+#
+#  알아보는 법: 메인 창 속 자식 창의 **제목 머리 글자**(보이는 창만).
+#    · OnlineMainView · LockModeView 는 오래 관리돼 온 공개 도구(KakaoTalkAdBlock —
+#      https://github.com/blurfx/KakaoTalkAdBlock/blob/main/internal/app.go)가 메인 창을
+#      가리는 데 쓰는 이름이다. 잠금모드는 이것으로 알아본다.
+#    · 채팅 탭 · 다른 탭의 이름은 **실기 확인 전이라 비워 둔다**(= 모른다 = 예전처럼
+#      검색한다). 옛 자료에는 ChatRoomListView(채팅) · ContactListView(친구)로 나오지만
+#      지금 판에서 본 사람이 없다. 방 확인이 `확인 못 함` 으로 끝나면 진단 기록
+#      (kind=verify_unreadable)의 ui_dump 에 이 PC 의 자식 창 이름이 실린다 — 그것을
+#      보고 아래를 채운다.
+#
+#  확인 절차는 docs/WINDOWS_TEST.md 의 "0.11.16" 에 있다.
+# ══════════════════════════════════════════════════════════════════════════
+chat_tab:
+  main_view_titles: ["OnlineMainView"]
+  lock_view_titles: ["LockModeView"]
+  # 실기에서 이름을 확인한 뒤에만 적는다. 예) ["ChatRoomListView"]
+  chat_view_titles: []
+  # 실기에서 이름을 확인한 뒤에만 적는다. 예) ["ContactListView"]
+  other_view_titles: []
+  # 다른 탭으로 **확인됐을 때만** 누를 키 묶음들(모양은 room_search.clear_keys 와 같다).
+  # ⚠ 공식 단축키가 없으니 **그 PC 에서 손으로 눌러 채팅 탭으로 가는 것을 본 키만**
+  #   적는다. 친구 추가(Ctrl+A) · 잠금모드(Ctrl+L) · 로그아웃(Alt+N) · 종료(Alt+X) 같은
+  #   공식 단축키는 적어도 누르지 않는다.
+  switch_keys: []
+  # true 면 다른 탭 · 잠금모드로 **확인됐을 때** 검색을 걸지 않는다(키 입력 없음,
+  # 화면에는 `확인 못 함` 으로 선다). 위 이름을 실기에서 확인하기 전에는 false 로 둔다.
+  skip_search: false
 
 # ══════════════════════════════════════════════════════════════════════════
 #  파일 첨부 — Windows 실기 화면(10/20)을 본떴다.
