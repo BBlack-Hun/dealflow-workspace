@@ -703,7 +703,7 @@ def parse_sheet_a(rows: Sequence[Sequence[str]], year: int) -> SheetAParse:
         # 명단 시트(150 / 98 / 30명)는 투자사를 '회사' 로 적는다.
         col_firm = find_column(header, ["회사"])
     if col_name is None or col_firm is None:
-        raise ValueError("'이름' 또는 '투자사명'(또는 '회사') 컬럼을 찾지 못했습니다")
+        raise ValueError("'이름' 또는 '투자사명'(또는 '회사') 열을 찾지 못했습니다")
 
     cols = {
         "name": col_name,
@@ -937,7 +937,7 @@ def parse_sheet_b(rows: Sequence[Sequence[str]], year: int) -> SheetBParse:
         "contact_email": find_column(header, ["이메일"]),
     }
     if cols["name"] is None:
-        raise ValueError("'기업명' 컬럼을 찾지 못했습니다")
+        raise ValueError("'기업명' 열을 찾지 못했습니다")
 
     for offset, row in enumerate(rows[header_idx + 1:], start=header_idx + 2):
         row_no = offset
@@ -1529,16 +1529,16 @@ def _apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
             "(라운드 사이즈 원문은 그대로 둡니다)"
         )
     if sourcing_done:
-        report.notes.append(f"딜 소싱 칸으로 갈래를 넣거나 뺀 줄 {sourcing_done}행 "
+        report.notes.append(f"딜 소싱 열로 갈래를 넣거나 뺀 줄 {sourcing_done}행 "
                             "(새로 넣은 분은 `딜 소싱 참여 제안 대기중`)")
     if report.overlaps:
         # **누구를 어떻게 했는지 이름으로 적는다** — 수만 보고는 원래 주인에게
         # 물어볼 수가 없다. 길어지면 앞의 몇 명만.
         shown = ", ".join(f"{n}({f}·{h or '?'})" for n, f, h in report.overlaps[:10])
         more = f" 외 {len(report.overlaps) - 10}명" if len(report.overlaps) > 10 else ""
-        how = ("이 담당자 몫으로 **따로 만듦** — 원래 팀원의 줄은 그대로"
+        how = ("시트에 적힌 팀원 몫으로 **따로 만듦** — 원래 팀원의 줄은 그대로"
                if keep_other_owner else
-               "이 담당자에게 **옮김** — 원래 팀원 명단에서 빠집니다")
+               "시트에 적힌 팀원에게 **옮김** — 원래 팀원 명단에서 빠집니다")
         report.notes.insert(0, (
             f"다른 팀원 명단과 겹침 {len(report.overlaps)}명 → {how}: "
             f"{shown}{more}"))
@@ -1569,7 +1569,7 @@ def _apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
     if report.activities_stale:
         report.notes.insert(0, (
             f"시트에서 없어진 활동 줄 {report.activities_stale}건 — "
-            f"**지우지 않습니다.** 이 표에는 손으로 적은 줄과 발송이 만든 "
+            f"**지우지 않습니다.** 이 표에는 직접 기록한 줄과 발송이 만든 "
             f"줄이 함께 삽니다(지우려면 `scripts/drop_shifted_activities.py`)."))
 
     if dry_run:
@@ -1716,7 +1716,7 @@ def apply_company_financials(db, rows, *, dry_run: bool = False) -> ImportReport
         "sector": find_column(header, ["사업분야"]),
     }
     if cols["name"] is None:
-        raise ValueError("'기업명' 컬럼을 찾지 못했습니다")
+        raise ValueError("'기업명' 열을 찾지 못했습니다")
 
     # 이름 → 기업 (정규화해서 '(주)' 유무 차이를 흡수)
     index = {}

@@ -164,7 +164,7 @@ def test_참여여부를_X_로_바꾸면_확인됨이_풀리고_응답이_두_�
     assert body["room_verified"] == "unverified"
     assert body["kakao_joined"] == "X"
     assert body["send_state"] == "unverified"
-    assert body["send_label"] == "미확인"
+    assert body["send_label"] == "확인 전"
     assert _fresh(db, row.id).room_verified == "unverified"
 
 

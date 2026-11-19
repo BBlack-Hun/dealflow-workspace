@@ -64,7 +64,7 @@ def _company_names(db: Session) -> list:
 def _owned_contact(db: Session, contact_id: int, user: User) -> VcContact:
     contact = db.get(VcContact, contact_id)
     if contact is None or contact.user_id != user.id:
-        raise HTTPException(status_code=404, detail="담당자를 찾을 수 없습니다")
+        raise HTTPException(status_code=404, detail="심사역을 찾을 수 없습니다")
     return contact
 
 
@@ -393,7 +393,7 @@ def export_no_meeting(request: Request, db: Session = Depends(get_db),
     got = _no_meeting(request, db, user, view, days, sent, src, drop, member)
     planned, suspect = got["view"] == "scheduled", got["view"] == "drop"
     heads = (["기업명", "투자사", "심사역", "첫 요청일", "최근 요청일", "요청 상태", "전달일",
-              "경과일", "담당", "요청 건수", "출처", "비고"] + (["미팅 예정일"] if planned else [])
+              "경과일", "담당 팀원", "요청 건수", "출처", "비고"] + (["미팅 예정일"] if planned else [])
              + (["전달 후 경과일"] if suspect else []))
     rows = [[r["company"], r["firm"], f"{r['contact_name']} {r['contact_title']}".strip(),
              r["first_at"], r["last_at"], r["status_label"], r["delivered_at"], r["days"],
@@ -675,7 +675,7 @@ def _flag_contact(db: Session, contact_id: int, user: User) -> VcContact:
     """표시·메모를 고칠 사람. 고칠 수 없는 계정에는 **없는 사람**으로 답한다."""
     contact = db.get(VcContact, contact_id)
     if contact is None or not call_flags.may_edit(db, user, contact):
-        raise HTTPException(status_code=404, detail="담당자를 찾을 수 없습니다")
+        raise HTTPException(status_code=404, detail="심사역을 찾을 수 없습니다")
     return contact
 
 
@@ -854,7 +854,7 @@ def mark_followup(meeting_id: int, outcome: str = Form(""),
     if back == "forecast":
         # 매출예상리스트의 재접촉 시기(#68)에서 적었으면 그 화면으로 돌아간다.
         return RedirectResponse("/report/forecast#recontact", status_code=303)
-    return RedirectResponse("/ir?msg=결과 문의를 기록했습니다#reviews", status_code=303)
+    return RedirectResponse("/ir?msg=미팅 결과 확인을 기록했습니다#reviews", status_code=303)
 
 
 class MeetingNoteIn(BaseModel):

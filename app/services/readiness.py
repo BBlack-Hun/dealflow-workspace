@@ -96,9 +96,9 @@ def _test_room_check(rehearsal: bool) -> dict:
     if rehearsal:
         if room:
             return _check(OK, "시험방",
-                          f"'{room}' — 리허설 담당자가 이 방으로 받습니다", "")
+                          f"'{room}' — 리허설 심사역이 이 카톡방으로 받습니다", "")
         return _check(BLOCK, "시험방", "정해져 있지 않습니다",
-                      "리허설 담당자를 만들 수 없습니다 — `.env` 에 넣고 다시 띄우세요")
+                      "리허설 심사역을 만들 수 없습니다 — `.env` 에 넣고 다시 띄우세요")
     if room and config.IS_PRODUCTION:
         # 운영에서는 시험 자리가 늘 닫힌다(`routers/setup.test_tools_on`).
         return _check(OK, "시험방",
@@ -107,8 +107,8 @@ def _test_room_check(rehearsal: bool) -> dict:
                       "", "/setup")
     if room:
         return _check(OK, "시험방",
-                      f"'{room}' — {SETUP_SCREEN} 화면의 시험 단추만 이 방으로 갑니다",
-                      "딜 소개·IR 전달·리마인드는 각 담당자 방으로 나갑니다", "/setup")
+                      f"'{room}' — {SETUP_SCREEN} 화면의 시험 단추만 이 카톡방으로 갑니다",
+                      "딜 소개·IR 전달·리마인드는 각 심사역 카톡방으로 나갑니다", "/setup")
     return _check(OK, "시험방",
                   f"정해져 있지 않습니다 — {SETUP_SCREEN} 화면의 시험 발송은 쓸 수 없습니다",
                   "", "/setup")
@@ -134,19 +134,19 @@ def _targets_check(db: Session, user: User) -> List[dict]:
 
     out = []
     if sendable == 0:
-        out.append(_check(BLOCK, "발송 대상", "보낼 수 있는 담당자가 없습니다",
+        out.append(_check(BLOCK, "발송 대상", "보낼 수 있는 심사역이 없습니다",
                           "카톡방을 연결하세요", "/contacts"))
     else:
         out.append(_check(OK, "발송 대상",
                           f"{sendable}명 · 딜소개 명단 {len(contacts)}명 중", "", "/contacts"))
     if failed or missing:
-        out.append(_check(WARN, "카톡방을 찾지 못한 담당자",
+        out.append(_check(WARN, "카톡방을 찾지 못한 심사역",
                           f"{failed + missing}명 — 이 사람들에게는 발송되지 않습니다",
-                          "[방 연결 확인]을 실행하거나 카톡방 제목을 고쳐 주세요", "/contacts"))
+                          "[카톡방 연결 확인]을 실행하거나 카톡방 제목을 고쳐 주세요", "/contacts"))
     if unverified:
         out.append(_check(WARN, "카톡방 제목 확인 전",
                           f"{unverified}명은 실제 카톡방 제목과 아직 맞춰 보지 않았습니다",
-                          "[방 연결 확인]을 실행하면 맞춰집니다", "/contacts"))
+                          "[카톡방 연결 확인]을 실행하면 맞춰집니다", "/contacts"))
     return out
 
 

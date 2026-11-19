@@ -160,14 +160,14 @@ def test_the_search_box_says_what_it_searches():
     assert placeholder, "자리표시 글자가 없다"
     # 표의 글 칸이 전부 걸린다(#152) — 칸을 하나씩 늘어놓으면(#99 의 `한줄 소개`)
     # 칸 밖으로 넘치고, 안 적힌 칸은 "안 된다" 로 읽힌다. 그래서 `모든 칸` 이라고 말한다.
-    assert "모든 칸" in placeholder.group(1), "모든 칸이 걸리는데 자리표시가 그렇게 말하지 않는다"
+    assert "모든 열" in placeholder.group(1), "모든 열이 걸리는데 자리표시가 그렇게 말하지 않는다"
 
     # 자리표시에 다 못 적는 것(칸 이름 · 번호 모양)은 `title` 이 받는다. `대표자` 는
     # 2026-09 에 `대표자명` 이 됐다(칸은 `contact_name` 그대로) — 실제로 적힌 말로 잰다.
     title = re.search(r'title="([^"]*)"', attrs)
     assert title and "뒷자리" in title.group(1), (
         "번호를 어떻게 쳐도 되는지 어디에도 안 적혀 있다")
-    for word in ("기업명", "대표자명", "연락처", "이메일", "한줄 소개", "메모", "추가 칸"):
+    for word in ("기업명", "대표자명", "연락처", "이메일", "한줄 소개", "메모", "추가 열"):
         assert word in title.group(1), f"검색되는데 설명에 {word} 가 없다"
 
 

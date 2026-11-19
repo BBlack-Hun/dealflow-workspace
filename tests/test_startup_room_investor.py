@@ -163,7 +163,7 @@ def test_이미_담긴_투자사_방은_화면에서_감춘다(db, short, client
 
     assert STARTUP_ROOM in body
     assert INVESTOR_ROOM not in body
-    assert "투자사 방 1개는 후보에서 뺐습니다" in body
+    assert "투자사 카톡방 1개는 후보에서 뺐습니다" in body
 
     row = next(r for r in room_match.rows(db)["rows"]
                if r["company"].id == short["short"].id)

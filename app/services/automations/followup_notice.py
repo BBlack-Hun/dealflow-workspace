@@ -78,7 +78,7 @@ def collect(db: Session, row: Automation, sender: User,
     """오늘 물어볼 미팅이 있는 팀원마다 한 통 — 그 팀원 카톡방으로."""
     day = plan_.at.date()
     link = link_url()
-    batch = runner.Batch(note="오늘 결과 문의를 알릴 팀원이 없습니다")
+    batch = runner.Batch(note="오늘 미팅 결과 확인을 알릴 팀원이 없습니다")
     users = db.execute(select(User).where(User.is_active == 1).order_by(User.id)).scalars()
     for user in users:
         rows = due_rows(db, user, day)
@@ -86,7 +86,7 @@ def collect(db: Session, row: Automation, sender: User,
             continue
         room = (user.kakao_room_name or "").strip()
         if not room:
-            batch.skipped.append(f"{user.name} 님 결과 문의 {len(rows)}건 — 카톡방 이름이 "
+            batch.skipped.append(f"{user.name} 님 미팅 결과 확인 {len(rows)}건 — 카톡방 이름이 "
                                  f"비어 있습니다(팀 현황 › 자동화)")
             continue
         batch.outs.append(automation.Out(room=room, message=compose(rows, link),
@@ -102,13 +102,13 @@ def still_ok(db: Session, rec: AutomationSend) -> str:
         return ""
     if user is None or not user.is_active:
         return "계정이 없거나 꺼져 있습니다"
-    return "" if due_rows(db, user, clock.today()) else "물어볼 결과 문의가 남아 있지 않습니다"
+    return "" if due_rows(db, user, clock.today()) else "확인할 미팅 결과가 남아 있지 않습니다"
 
 
 def summary(values: dict) -> str:
     """판 첫 칸 — 저장된 시각으로."""
     return (f"평일 {values['time']} — 오늘 결과를 물어볼 미팅이 있는 팀원의 카톡방에 "
-            "'[결과 문의] ○○님(투자사) 외 N건' + 결과 문의 화면 링크 한 통")
+            "'[결과 문의] ○○님(투자사) 외 N건' + 미팅 결과 확인 화면 링크 한 통")
 
 
 runner.register(runner.Spec(

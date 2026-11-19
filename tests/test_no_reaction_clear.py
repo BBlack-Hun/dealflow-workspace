@@ -124,7 +124,7 @@ def test_뺀_분은_반응_없음_한_벌에서_빠지고_되돌릴_자리에_�
 def test_빼면_딜제안관리_딱지_단추_수와_대시보드_수가_함께_준다(logged_in, db, people):
     def counts():
         deals = logged_in.get("/deals").text
-        button = re.search(r'id="select-noreact"[^>]*>반응 없는 담당자만 · (\d+)명<', deals)
+        button = re.search(r'id="select-noreact"[^>]*>반응 없는 심사역만 · (\d+)명<', deals)
         dash = logged_in.get("/dashboard").text
         link = re.search(r'<a[^>]*href="/deals\?noreact=1"[^>]*>.*?<b>(\d+)</b>', dash, re.S)
         return (int(button.group(1)), deals.count('data-noreact="1"'),

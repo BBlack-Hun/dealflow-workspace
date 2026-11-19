@@ -72,8 +72,8 @@
       e.preventDefault();
       var room = confirmBtn.getAttribute("data-room") || "";
       if (!room) return;
-      if (!window.confirm("이 방으로 확정합니다.\n\n" + room + "\n\n" +
-          "확정하면 이 방이 '확인됨' 이 되고 안내 카톡이 이 방으로 나갑니다.")) return;
+      if (!window.confirm("이 카톡방으로 확정합니다.\n\n" + room + "\n\n" +
+          "확정하면 이 방이 '확인 완료' 가 되고 안내 카톡이 이 방으로 나갑니다.")) return;
       setError("");
       confirmBtn.disabled = true;
       send("POST", "/api/startup-rooms/" + confirmBtn.getAttribute("data-id") + "/confirm",
@@ -83,9 +83,9 @@
           if (!res.d.room_ready) {
             // `방 나감` · `참여 안 함` 으로 적힌 줄 — 방 이름은 들어갔지만 확인은
             // 안 달린다(`room_joined`). 조용히 넘어가면 확정된 줄 안다.
-            window.alert("방 이름은 넣었지만 '확인됨' 이 되지 않았습니다 — 이 줄의 연결 " +
+            window.alert("카톡방 이름은 넣었지만 '확인 완료' 가 되지 않았습니다 — 이 줄의 연결 " +
                          "단계가 '방 나감' 또는 '참여 안 함' 입니다. 스타트업 화면에서 " +
-                         "연결 단계를 고친 뒤 [방 연결 확인] 을 눌러 주세요.");
+                         "연결 단계를 고친 뒤 [카톡방 찾기·확인] 을 눌러 주세요.");
           }
           window.location.reload();
         })
@@ -102,10 +102,10 @@
       send("PATCH", "/api/contacts/" + saveBtn.getAttribute("data-id"),
            { kakao_room_name: input.value })
         .then(function (res) {
-          if (!res.ok) { setError(res.d.detail || "방 제목 저장 실패"); return; }
+          if (!res.ok) { setError(res.d.detail || "카톡방 제목 저장 실패"); return; }
           window.location.reload();
         })
-        .catch(function () { setError("방 제목 저장 오류"); });
+        .catch(function () { setError("카톡방 제목 저장 오류"); });
     }
   });
 })();

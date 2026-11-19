@@ -266,9 +266,9 @@ def test_폰에서는_가로_고정만_풀고_머리행은_남긴다():
 
 FOLDED = [
     "이름 저장",          # 명단 이름 바꾸기
-    "칸 추가",            # 달 칸 세우기
-    "칸 숨기기",
-    "칸 삭제",
+    "열 추가",            # 달 칸 세우기
+    "열 숨기기",
+    "열 삭제",
 ]
 
 
@@ -311,11 +311,11 @@ def test_접힌_채로도_무엇이_들어_있는지_보인다(sheets):  # noqa:
     """
     body = sheets.get(_url(LIST)).text
     summary = re.search(r"<summary>(.*?)</summary>", body, re.S).group(1)
-    assert "명단" in summary and "칸" in summary, summary
+    assert "명단" in summary and "열" in summary, summary
     more = re.search(r'<details class="sheet-fold sheet-fold-more">\s*<summary>(.*?)</summary>',
                      body, re.S)
     assert more, "안쪽 설정 상자가 없습니다"
-    assert "달 칸" in more.group(1), \
+    assert "달 열" in more.group(1), \
         f"달 칸이 몇 개인지 접힌 줄에 안 적혀 있습니다: {more.group(1)}"
 
 

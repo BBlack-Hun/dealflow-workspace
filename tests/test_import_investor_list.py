@@ -274,7 +274,7 @@ def test_방도_번호도_없으면_방_미등록으로_보인다(monkeypatch, d
     run_book(monkeypatch, sample, LIST, owners["a"], "--apply")
     states = {c.name: _room_state(c) for c in rows_in(db, LIST)}
     assert set(states.values()) == {"missing"}, states
-    assert ROOM_LABELS["missing"][0] == "방 미등록"
+    assert ROOM_LABELS["missing"][0] == "카톡방 미등록"
 
 
 def test_방_이름을_지어내지_않는다(monkeypatch, db, owners, sample):

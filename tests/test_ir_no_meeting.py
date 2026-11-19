@@ -270,7 +270,7 @@ def test_filters(client, db, users):
     html = c.get("/ir/no-meeting").text
     rows = _rows(html)
     assert len(rows) == 7 and not any("보류기업" in r for r in rows)
-    assert "보내지 않음·드랍 보기" in html
+    assert "보내지 않음·중단 보기" in html
     assert ir_no_meeting.NOTE_OVERDUE in next(r for r in rows if "보기팜" in r)
     assert ir_no_meeting.NOTE_COLLEAGUE in next(r for r in rows if "임꺽정" in r)
     assert len(_rows(c.get("/ir/no-meeting?days=30").text)) == 4      # 10·22·25일 빠짐

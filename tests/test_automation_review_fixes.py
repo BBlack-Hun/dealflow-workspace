@@ -399,7 +399,7 @@ def test_06_a_review_sent_by_hand_after_the_meeting_suppresses_it(db, users):
                     test_room=TEST_ROOM)
     result = runner.run_once(db, "meeting_review", _aware(WED_9AM))
     assert result["status"] == "empty"
-    assert any("손으로" in line for line in result["skipped"])
+    assert any("직접" in line for line in result["skipped"])
 
 
 # ── 8. 풀기 직전 확인이 넘어져도 ─────────────────────────────────────────────

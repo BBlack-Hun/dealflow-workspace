@@ -21,7 +21,7 @@ import pytest
 
 from .conftest import DEMO_PASSWORD, DEMO_TOKEN
 
-BLOCKED = "팀원 화면으로 보는 중에는 방 찾기·딜 소개·IR 자료 전달 발송 말고는 발송·예약을 할 수 없습니다"
+BLOCKED = "팀원 화면으로 보는 중에는 카톡방 찾기·딜 소개·IR 자료 전달 발송 말고는 발송·예약을 할 수 없습니다"
 
 # 발송 회차를 세우거나 · 예약을 걸고 풀거나 · 발송기에 방 확인을 시키는 길 전부.
 # 하나가 늘면 여기와 라우터(`dependencies=[Depends(no_send_as_member)]`)를 같이 고친다.
@@ -804,12 +804,12 @@ def test_confirm_note_names_the_pc_and_waits_when_off(client, db, users, admin):
 
     _viewing(client, users)
     page = client.get("/deals").text
-    assert ('data-view-as-send="강민준 계정 PC 카톡으로 나갑니다 — 지금 그 PC 의 발송 '
+    assert ('data-view-as-send="강민준 PC 카톡으로 나갑니다 — 지금 그 PC 의 발송 '
             '프로그램이 연결되어 있지 않습니다.') in page
     device = db.query(AgentDevice).filter_by(user_id=users["u1"].id).one()
     device.last_poll_at = clock.now_iso()
     db.commit()
-    assert 'data-view-as-send="강민준 계정 PC 카톡으로 나갑니다."' in client.get("/deals").text
+    assert 'data-view-as-send="강민준 PC 카톡으로 나갑니다."' in client.get("/deals").text
 
 
 @pytest.mark.skipif(shutil.which("node") is None,
@@ -831,7 +831,7 @@ def test_send_buttons_are_marked_on_the_member_screen(client, users, admin):
     assert "js/view_as.js" in page
     # 딜 소개 탭의 [발송] 은 열린다 — 확인창 첫 줄이 어느 PC 인지 말한다.
     assert 'id="send-btn" class="primary-btn" disabled data-send="proxy"' in page
-    assert 'data-view-as-send="강민준 계정 PC 카톡으로 나갑니다' in page
+    assert 'data-view-as-send="강민준 PC 카톡으로 나갑니다' in page
     # 손으로 보낸 것 기록은 그대로 막힌다.
     assert 'id="manual-btn" disabled data-send>' in page
 

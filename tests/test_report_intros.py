@@ -47,7 +47,7 @@ def test_year_counts_every_source_but_not_failed_sends(db, users):
     assert (agg["times"], agg["investors"], agg["first"], agg["last"]) == \
         (3, 3, "2026-08-10", "2026-09-01")
     assert [d["day"] for d in agg["rows"]] == ["2026-09-01", "2026-08-15", "2026-08-10"]
-    assert [d["source"] for d in agg["rows"]] == ["앱 발송", "손으로 적음", "시트"]
+    assert [d["source"] for d in agg["rows"]] == ["앱 발송", "직접 기록", "시트"]
     assert got["details"] == 3
 
 
@@ -146,7 +146,7 @@ def test_excel_gets_two_intro_sheets(logged, db, users):
     detail = _grid(wb["2026 소개 상세"])
     assert ["날짜", "기업", "투자사 회사", "투자사 이름", "출처"] in detail
     lines = [row for row in detail if row[1] == "샘플애그"]
-    assert sorted(row[4] for row in lines) == ["손으로 적음", "시트", "앱 발송"]
+    assert sorted(row[4] for row in lines) == ["시트", "앱 발송", "직접 기록"]
 
     month = openpyxl.load_workbook(io.BytesIO(
         logged.get("/api/export/report.xlsx?month=2026-10").content))

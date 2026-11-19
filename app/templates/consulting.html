@@ -64,7 +64,7 @@
      누가 보는지는 `deps.may_view_consulting` 그대로 — 계정마다 팀 현황 [투자현황] 칸으로 켠다. #}
   <p class="muted">
     기존 시트를 옮겨 온 표입니다. 칸을 눌러 바로 고치고, 칸 밖을 누르면 저장됩니다.
-    <b>대표자 연락처가 들어 있어 관리자가 팀 현황의 [투자현황] 칸에서 켜 준 계정만 볼 수 있습니다.</b>
+    <b>대표자 연락처가 들어 있어 관리자가 팀 현황의 [투자현황] 열에서 켜 준 팀원만 볼 수 있습니다.</b>
   </p>
 </header>
 
@@ -88,7 +88,7 @@
 #}
 {% if can_pick_owner and owner_tabs %}
 <div class="filter-line owner-line">
-  <span class="filter-label">담당</span>
+  <span class="filter-label">팀원</span>
   <a class="chip {% if not selected_owner %}active{% endif %}"
      href="/consulting?sheet={{ selected_sheet|urlencode }}&owner=0">전체</a>
   {% for o in owner_tabs %}
@@ -423,7 +423,7 @@
         {% if is_startup_sheet and startup_targets %}
         {# 빈 머리글이면 칸 안의 `있음` 이 무엇인지 안 읽힌다 — 이름과 풍선말을 단다. #}
         <th class="stick stick-lead" style="width:{{ stick_lead }}px"
-            title="{{ startup_label }} 명단으로 보낼 기업을 고르는 칸 — '있음'은 이미 {{ startup_label }} 명단에 있는 기업입니다">선택</th>
+            title="{{ startup_label }} 명단으로 보낼 기업을 고르는 열 — '있음'은 이미 {{ startup_label }} 명단에 있는 기업입니다">선택</th>
         {% endif %}
         <th class="num stick stick-a" style="width:{{ no_w }}px">NO</th>
         {# **누구의 줄인가.** 여러 사람의 표를 한 화면에서 보는 자리라, 줄만
@@ -437,7 +437,7 @@
            따라오게 한다 — 머리글 필터는 브라우저에서 줄만 감추므로 위 숫자와
            갈린다. #}
         {% if can_pick_owner %}
-        <th style="width:88px">담당자</th>
+        <th style="width:88px">담당 팀원</th>
         {% endif %}
         {#
           머리글 필터는 **고를 만한 값이 몇 가지로 모이는 칸**에만 세운다
@@ -672,8 +672,8 @@
            고를 수 있어야** 한다(filters.js 가 빈 값을 `(비어 있음)` 으로 세워
            준다). 아직 연결 안 된 곳을 찾는 길이 그것뿐이다.
 
-           필터 키는 `joined` 다 — `내 투자사` 화면의 `카톡방 참여여부` 가
-           같은 이름의 칸에 같은 키를 쓴다(`contacts.html`). **두 화면의
+           필터 키는 `joined` 다 — IR 기업 현황의 `카톡 연결 여부` 가
+           같은 이름의 칸에 같은 키를 쓴다(`companies.html`). **두 화면의
            값이 이어져 있다는 뜻은 아니다**(`models.ConsultingCompany.
            kakao_joined` 주석 참고) — 필터 키는 표 안에서만 쓰인다.
 
@@ -721,7 +721,7 @@
              읽힌다(월 칸을 새로 세운 뒤 남의 줄을 눌러 본 사람이 그랬다).
              누구 줄인지는 서버가 안다 — 브라우저가 이름을 다시 찾지 않는다.
              말은 표 아래 안내와 같은 결이다(`맡지 않은 담당자`). #}
-          data-readonly-why="{% if r.owner_id %}{{ r.owner_name }} 담당 줄은 볼 수만 있습니다 — 고칠 일이 있으면 담당자나 관리자에게 요청하세요.{% else %}담당이 정해지지 않은 줄은 볼 수만 있습니다 — 관리자가 담당을 정하면 고칠 수 있습니다.{% endif %}"{% endif %}
+          data-readonly-why="{% if r.owner_id %}{{ r.owner_name }} 담당 줄은 볼 수만 있습니다 — 고칠 일이 있으면 담당 팀원이나 관리자에게 요청하세요.{% else %}담당이 정해지지 않은 줄은 볼 수만 있습니다 — 관리자가 담당을 정하면 고칠 수 있습니다.{% endif %}"{% endif %}
           data-search="{{ r.search }}"
           data-contacted="{{ 1 if r.contacted else 0 }}"
           {# 접어 둔 달에 기록이 있는 줄. 칸을 고치면 consulting.js 가
@@ -815,8 +815,8 @@
             data-choices="{{ contract_tab_choices }}">{{ r.management }}</td>
         {# `O` / `X` 를 **골라서** 넣는다. 그냥 타이핑하게 두면 같은 뜻이
            `O`·`o`·`ㅇ`·`○` 로 갈려 필터 목록에 네 줄로 서는데, 두 가지뿐인
-           칸에서 그건 곧 필터가 못 쓰게 된다는 뜻이다. 내 투자사 화면의
-           `카톡방 참여여부` 가 같은 이유로 `data-choices="O,X"` 를 쓴다.
+           칸에서 그건 곧 필터가 못 쓰게 된다는 뜻이다. IR 기업 현황의
+           `카톡 연결 여부` 가 같은 이유로 `data-choices="O,X"` 를 쓴다.
            빈칸(아직 안 정함)으로 되돌리는 길도 편집창에 있다.
 
            칸 이름(`contract_received`)과 필터 키(`received`)가 다르다 —
@@ -1039,7 +1039,7 @@
      누른 칸 옆에도 같은 말이 뜬다(consulting.js 의 `explainReadonly`). #}
   {% if rows|rejectattr('editable')|list %}
   <p class="hint">
-    <b>맡지 않은 담당자의 줄은 볼 수만 있습니다</b> — 고칠 일이 있으면 담당자나 관리자에게 요청하세요.
+    <b>내가 맡지 않은 줄은 볼 수만 있습니다</b> — 고칠 일이 있으면 담당 팀원이나 관리자에게 요청하세요.
   </p>
   {% endif %}
   {# **보고 있는 탭에 세운다**(`selected_sheet`). 안 실어 보내면 어느 탭에서

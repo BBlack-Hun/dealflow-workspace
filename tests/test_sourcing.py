@@ -186,7 +186,7 @@ def test_a_row_without_a_bucket_is_refused(seeded, db):
 
     r = seeded.post("/api/sourcing", json={"name": "김서연"})
     assert r.status_code == 400
-    assert "갈래" in r.json()["detail"]
+    assert "탭" in r.json()["detail"]
 
     # 공백만 적은 것도 갈래가 아니다
     r = seeded.post("/api/sourcing", params={"bucket": "   "}, json={"name": "김서연"})
@@ -365,7 +365,7 @@ def test_preview_uses_the_bucket_script(seeded, db):
     assert "2개사" in by_name["김철수"]
     # 시리즈 A 이상 갈래는 찾는 범위를 문구에 적는다
     assert "프리 IPO" in by_name["김철수"]
-    assert "M&A , 후속투자" not in by_name["김철수"]
+    assert "M&A, 후속투자" not in by_name["김철수"]
 
 
 def test_a_missing_title_falls_back_to_the_bucket(seeded, db):

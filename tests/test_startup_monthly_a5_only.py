@@ -432,7 +432,7 @@ def test_a_missed_month_warns_every_day_until_the_month_ends(db, users):
         [line] = _lines(db, users["u1"], day, needle)
         assert line["level"] == "urgent"
         assert "10/28" in line["detail"] and "0곳" in line["detail"]
-        assert "손으로" in line["detail"]
+        assert "직접" in line["detail"]
     assert _lines(db, users["u1"], date(2026, 10, 27), needle) == []   # 날짜 전
     assert _lines(db, users["u2"], date(2026, 10, 30), needle) == []   # 남의 일
     users["u2"].role = "admin"
@@ -491,7 +491,7 @@ def test_a5_off_reminds_ten_days_before_the_slot(db, users):
 def test_a5_off_reminds_after_the_slot_passed_without_a_job(db, users):
     _turn_on(db, user_id=1)
     [line] = _lines(db, users["u1"], date(2026, 10, 30), OFF_NEEDLE)
-    assert line["level"] == "urgent" and "손으로" in line["detail"]
+    assert line["level"] == "urgent" and "직접" in line["detail"]
     # 날짜가 지난 달에도 어디서 켜는지는 남는다(제목에서 설명 줄로 옮겼다).
     assert "팀 현황 › 자동화에서 켜세요" in line["detail"]
 
@@ -586,7 +586,7 @@ def test_after_the_slot_time_it_says_send_by_hand(db, users, client, seeded, mon
     note = _switch_menu(client, db, users, monkeypatch, slot["at"] + timedelta(minutes=30))
     [job] = _jobs(db)
     assert job.status == "canceled"
-    assert "손으로 보내세요" in note, note
+    assert "직접 보내세요" in note, note
 
 
 def test_a_released_job_is_never_rebuilt(db, users, client, seeded, monkeypatch):
@@ -601,4 +601,4 @@ def test_a_released_job_is_never_rebuilt(db, users, client, seeded, monkeypatch)
     db.commit()
     note = _switch_menu(client, db, users, monkeypatch, slot["at"] - timedelta(minutes=90))
     assert [j.status for j in _jobs(db)] == ["canceled"]
-    assert "손으로 보내세요" in note, note
+    assert "직접 보내세요" in note, note

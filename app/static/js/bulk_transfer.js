@@ -79,7 +79,7 @@
     var chosen = picked();
     if (!chosen.length) return;
     var label = target.value;
-    if (!label) { alert("받을 담당자를 고르세요."); return; }
+    if (!label) { alert("받을 팀원을 고르세요."); return; }
     var opt = target.options[target.selectedIndex];
     var owner = (opt && opt.getAttribute("data-owner")) || "";
     // 줄 하나 넘기기와 같은 말을 함께 적는다 — 월별 기록 이야기를 빼면
@@ -87,7 +87,7 @@
     if (!confirm(chosen.length + "명을 " + owner + " 님에게 이관합니다 (명단 '" + label + "').\n" +
                  names(chosen) + "\n\n" +
                  "· 지금 명단에서 빠지고 " + owner + " 님의 대시보드와 딜 소개 발송 대상으로 옮겨 갑니다.\n" +
-                 "· 월별 기록은 명단마다 칸이 따로라 새 명단의 수정창에 보이지 않습니다. " +
+                 "· 월별 기록은 명단마다 열이 따로라 새 명단의 수정창에 보이지 않습니다. " +
                  "지워지지는 않고, 도로 넘기면 다시 보입니다.")) return;
 
     button.disabled = true;

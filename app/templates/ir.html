@@ -19,7 +19,7 @@
 #}
 {% macro contact_pick(pick_id) %}
       <div class="field inline-field contact-pick">
-        <span>담당자</span>
+        <span>심사역</span>
         {# 133명짜리 목록은 이름을 알아도 훑어 내려가야 한다. 검색칸은 고르는
            칸 **위**에 선다 — 딜 제안 관리와 같은 자리다. #}
         {# 꼬리표가 붙은 사람이 있을 때만 `상태` 를 안내한다 — 아무도 안
@@ -27,8 +27,8 @@
            안 나오는 막다른 길이 된다. #}
         <input type="search" class="pick-filter" data-contact-pick="{{ pick_id }}"
                placeholder="이름 · 투자사{% if pick_notes %} · 상태{% endif %} 검색 ({{ contacts|length }}명)"
-               autocomplete="off" aria-label="담당자 검색">
-        <select id="{{ pick_id }}" name="contact_id" required aria-label="담당자">
+               autocomplete="off" aria-label="심사역 검색">
+        <select id="{{ pick_id }}" name="contact_id" required aria-label="심사역">
           {#
             **빈 보기가 맨 앞에 선다.** 이 칸은 `required` 였는데, 첫 보기가
             곧 어떤 사람이라 아무것도 안 고르고 [기록] 을 눌러도 그대로
@@ -39,7 +39,7 @@
             리마인드 구역에서 이름을 눌러 넘어왔으면 그 사람이 이미 골라져
             있다 — 그때는 빈 보기가 골라지지 않는다.
           #}
-          <option value="" {% if not preselect_contact %}selected{% endif %}>담당자를 고르세요</option>
+          <option value="" {% if not preselect_contact %}selected{% endif %}>심사역을 고르세요</option>
           {% for c in contacts %}
           {#
             **왜 이 사람이 여기 있는지**를 줄에 함께 적는다 — `[방 나감]` ·
@@ -104,7 +104,7 @@
     <span class="kpi-value {% if counts.overdue %}bad{% endif %}">{{ counts.overdue }}</span></div>
   <div class="kpi-card static"><span class="kpi-label">오늘 미팅</span>
     <span class="kpi-value">{{ counts.today }}</span></div>
-  <div class="kpi-card static"><span class="kpi-label">결과 문의할 때</span>
+  <div class="kpi-card static"><span class="kpi-label">미팅 결과 확인</span>
     <span class="kpi-value {% if counts.followup %}warn{% endif %}">{{ counts.followup }}</span></div>
 </div>
 
@@ -143,14 +143,14 @@
       <button class="primary-btn inline" type="submit">기록</button>
     </form>
     <p class="hint">
-      투자사는 <b>"기업4, 기업6 주세요"</b> 라고 답합니다. 담당자를 고르면 그 사람에게
+      투자사는 <b>"기업4, 기업6 주세요"</b> 라고 답합니다. 심사역을 고르면 그 사람에게
       마지막으로 보낸 회차의 번호가 뜨니 눌러서 기록하세요 —
       <b>번호를 직접 적어도 됩니다</b>(<code>[기업2]</code> · <code>기업2</code> ·
       <code>2</code>). 지난 회차의 번호로 읽습니다.<br>
       기업명을 치면 <b>그 줄에만</b> 후보가 뜹니다(↑↓·Enter 로 고르기 · Esc 로 닫기).
       <b>Series A 이상 딜 소싱</b> 기업도 <code>Series A</code> 딱지를 달고 함께 뜹니다.
       번호만 친 줄에는 안 뜹니다 — 그 줄은 번호로 읽는 줄입니다.<br>
-      요청이 왔다는 것은 답이 왔다는 뜻이라, 그 담당자의 <b>리마인드는 자동으로 멈춥니다.</b>
+      요청이 왔다는 것은 답이 왔다는 뜻이라, 그 심사역의 <b>리마인드는 자동으로 멈춥니다.</b>
     </p>
     {# 후보 이름은 **서버가 한 번에 실어 준다** — 타이핑마다 물으면 이름 한
        줄을 적는 동안 질의가 열 번 넘게 나간다. 목록을 만드는 자리는 한
@@ -220,7 +220,7 @@
       <p class="hint">
         Series A 이상 딜 소싱 기업: {{ g.series_a|join(', ') }} — IR 자료 파일명이 없어
         [자료 보내기] 에는 안 실립니다. 자료를 직접 보내고 [{{ labels.delivered }}] 를 눌러 주세요.
-        (<a href="/companies?tab=series-a">Series A 이상 딜 소싱</a> 탭의 <b>IR 자료 수신</b> 칸 윗줄에 파일명을 적으면 함께 보낼 수 있습니다.)
+        (<a href="/companies?tab=series-a">Series A 이상 딜 소싱</a> 탭의 <b>IR 자료 수신</b> 열 윗줄에 파일명을 적으면 함께 보낼 수 있습니다.)
       </p>
       {% endif %}
     </div>
@@ -283,7 +283,7 @@
      **뜻은 하나도 안 지운다**(옮기기만). #}
   {% if ir_auto_attach %}
   <p class="hint">
-    <b>[자료 보내기]</b>를 누르면 담당자와 기업이 <b>선택된 채로</b> 딜 제안 관리가 열립니다.<br>
+    <b>[자료 보내기]</b>를 누르면 심사역과 기업이 <b>선택된 채로</b> 딜 제안 관리가 열립니다.<br>
     발송에 성공하면 이 목록에서 <b>자동으로 빠집니다</b>.<br>
     자료 파일은 <b>발송 프로그램이 붙여 보냅니다</b> — 위 표의 파일이 자료 폴더에 있는지만 확인해 주세요.
   </p>
@@ -319,7 +319,7 @@
   <details class="hint">
     <summary>자세히</summary>
     딜 제안 관리로 넘어가지 않습니다. 앱이 보낸 것은 돌아와서 [{{ labels.delivered }}] 단추를 누를 필요가 없습니다.
-    문구를 복사해 손으로 보내셨다면 <b>[{{ labels.delivered }}]</b> 단추를 눌러 주세요 —
+    문구를 복사해 직접 보내셨다면 <b>[{{ labels.delivered }}]</b> 단추를 눌러 주세요 —
     앱이 보내지 않은 것은 앱이 알 수 없습니다.<br>
     자료 파일명이 없는 기업은 <b>이번엔 빼고</b>
     보내고, 글 끝에 "추후 보내 드리겠습니다" 한 줄이 붙습니다 — 그 요청은 이 목록에 남습니다.
@@ -723,7 +723,7 @@
           {% set next_meeting = r.reviewed or r.meeting_asked %}
           <td><a class="req-link"
                  href="/deals?mode={{ 'meeting' if next_meeting else 'ir_review' }}&contacts={{ r.contact_id }}"
-                 title="이 투자사에 {{ '미팅 요청' if next_meeting else 'IR 자료 검토 요청' }} 문구 보내기 — 담당자가 골라진 채로 열립니다"
+                 title="이 투자사에 {{ '미팅 요청' if next_meeting else 'IR 자료 검토 요청' }} 문구 보내기 — 심사역이 골라진 채로 열립니다"
                 >{{ r.name }} <span class="muted">{{ r.firm }}</span></a></td>
           <td>{{ r.company_name }}{% if r.series_a %} {{ series_a_tag(r.series_a) }}{% endif %}</td>
           <td class="num">{{ r.raise_target }}</td>
@@ -761,7 +761,7 @@
                     data-name="{{ r.name }}">{{ labels.book }}</button>
             {# 미팅 요청 문구는 **줄에 따로** 연다(#79) — 투자사명은 검토 요청으로 간다. #}
             <a class="linkbtn" href="/deals?mode=meeting&contacts={{ r.contact_id }}"
-               title="이 투자사에 미팅 요청 문구 보내기 — 담당자가 골라진 채로 열립니다">{{ labels.meeting_ask }}</a>
+               title="이 투자사에 미팅 요청 문구 보내기 — 심사역이 골라진 채로 열립니다">{{ labels.meeting_ask }}</a>
             {# 카톡으로 **사람이 직접** 보낸 건은 앱이 모른다. 적을 자리가
                없으면 「안 보냄」이 영영 떠 있고, 거짓으로 뜨는 숫자는 곧
                아무도 안 본다.
@@ -776,7 +776,7 @@
                  상태 칸이 `IR 자료 검토 요청 완료` 로 바뀐다. 미팅 요청을 손으로
                  보낸 것은 바로 아래 [미팅 요청 보냄] 이 적는다. #}
               <button class="linkbtn" type="submit"
-                      title="카톡으로 이미 보냈다면 눌러 두세요 — 이 담당자에게 적히고 상태가 '{{ labels.reviewed }}' 로 바뀝니다"
+                      title="카톡으로 이미 보냈다면 눌러 두세요 — 이 심사역에게 적히고 상태가 '{{ labels.reviewed }}' 로 바뀝니다"
                       >{{ labels.mark_asked }}</button>
             </form>
             {% endif %}
@@ -973,7 +973,7 @@
           #}
           {% if m.gcal_url %}
           <a class="linkbtn" href="{{ m.gcal_url }}" target="_blank" rel="noopener"
-             title="구글 캘린더 '일정 추가' 화면이 새 탭에 열립니다. 저장은 직접 누르세요.{% if m.gcal_count > 1 %} 이 날 같은 담당자 미팅 {{ m.gcal_count }}건이 한 일정으로 담깁니다.{% endif %} 알림과 담을 캘린더는 저장 화면에서 고르세요.">구글 캘린더에 추가{% if m.gcal_count > 1 %} <span class="muted">{{ m.gcal_count }}건</span>{% endif %}</a>
+             title="구글 캘린더 '일정 추가' 화면이 새 탭에 열립니다. 저장은 직접 누르세요.{% if m.gcal_count > 1 %} 이 날 같은 심사역 미팅 {{ m.gcal_count }}건이 한 일정으로 담깁니다.{% endif %} 알림과 담을 캘린더는 저장 화면에서 고르세요.">구글 캘린더에 추가{% if m.gcal_count > 1 %} <span class="muted">{{ m.gcal_count }}건</span>{% endif %}</a>
           {% endif %}
           <form method="post" action="/ir/meetings/{{ m.id }}/cancel">
             <button class="linkbtn danger" type="submit">취소</button>
@@ -993,7 +993,7 @@
   {# 미팅 후기 — 끝난 미팅에 결과를 물었는지 보는 자리. 탭이 여기로 온다. #}
   <section class="panel wide" id="reviews">
     <h2 class="panel-title">미팅 후기
-      <span class="hint">끝난 미팅 {{ finished|length }}건 · {{ followup_days }}일 뒤 결과를 묻습니다</span>
+      <span class="hint">끝난 미팅 {{ finished|length }}건 · {{ followup_days }}일 뒤 미팅 결과를 확인합니다</span>
     </h2>
     {% if finished %}
     {# 결과가 한 칸(진행/보류/거절)뿐이면 **왜** 그런지가 남지 않는다 —
@@ -1014,7 +1014,7 @@
         <th class="num" style="width:104px">투자유치희망금액</th>
         <th style="width:72px">결과</th>
         <th style="width:220px">미팅 후기</th>
-        <th style="width:284px">결과 문의</th><th style="width:96px">처리</th>
+        <th style="width:284px">결과 확인</th><th style="width:96px">처리</th>
       </tr></thead>
       <tbody>
         {% for m in finished[:20] %}
@@ -1048,7 +1048,7 @@
           #}
           <td>{% if m.status != 'canceled' %}<a class="req-link"
                  href="/deals?mode=review&contacts={{ m.contact_id }}"
-                 title="이 투자사에 미팅 후기를 묻는 카톡 보내기 — 담당자가 골라진 채로 열립니다"
+                 title="이 투자사에 미팅 후기를 묻는 카톡 보내기 — 심사역이 골라진 채로 열립니다"
                 >{{ m.name }} <span class="muted">{{ m.firm }}</span></a>
             {% else %}{{ m.name }} <span class="muted">{{ m.firm }}</span>{% endif %}</td>
           {# [2차 미팅 잡기] 는 새 2차 줄을 만든다 — 그 줄이 생기면 1차 줄에 이어진 것을 단다(#77). #}
@@ -1089,7 +1089,7 @@
             {% if m.status == 'canceled' %}취소
             {% elif m.followup_done %}<span class="ok">완료</span>
             {# 거절로 끝났거나 다음 미팅을 잡았으면 물어볼 것이 없다. #}
-            {% elif not m.needs_followup %}문의 불필요
+            {% elif not m.needs_followup %}확인 불필요
             {# 자동화(A7)가 이미 물었다 — 묻지 말고 들은 답만 적는다(#31). #}
             {% elif m.auto_asked %}<span class="ok">자동 문의함{% if m.auto_asked_on %} {{ m.auto_asked_on }}{% endif %}</span>
             {% elif m.followup_due_now %}<span class="bad">{{ m.followup_due }} 지남</span>
@@ -1111,7 +1111,7 @@
               <input type="text" name="note" placeholder="투자사 답변 내용"
                      maxlength="500" autocomplete="off">
               <button class="linkbtn" type="submit">
-                {% if m.followup_done %}다시 기록{% elif m.auto_asked %}답 적기{% else %}물어봤음{% endif %}
+                {% if m.followup_done %}다시 기록{% elif m.auto_asked %}답 적기{% else %}결과 확인함{% endif %}
               </button>
             </form>
             {% endif %}

@@ -73,7 +73,7 @@ PICKS = "picks"
 NOT_FOUND = "not_found"
 NEVER = "never"
 STATE_LABELS = {
-    CONFIRMED: "확인됨",
+    CONFIRMED: "확인 완료",
     PICKS: "후보 {n}개 — 골라 주세요",
     NOT_FOUND: "못 찾음",
     NEVER: "아직 안 찾아봄",
@@ -349,7 +349,7 @@ def apply_result(db: Session, item: SendItem, body, verdict: str) -> None:
     job = item.job
     if contact is None or job is None:
         item.status = "failed"
-        item.error = "담당자를 찾을 수 없습니다"
+        item.error = "심사역을 찾을 수 없습니다"
         return
     sourcing = person is not None and item.contact is None
     own = (contact.kakao_room_name or "").strip()
@@ -395,7 +395,7 @@ def apply_result(db: Session, item: SendItem, body, verdict: str) -> None:
         item.error = (f"보내는 계정 카톡의 제목이 다릅니다 — 후보 {len(rooms)}개, "
                       "팀 현황 → 보내는 계정 방 제목에서 고르세요")
     else:
-        item.error = "보내는 계정 카톡에서 이 방을 찾지 못했습니다"
+        item.error = "보내는 계정 카톡에서 이 카톡방을 찾지 못했습니다"
 
 
 def _confirm_single(db: Session, item: SendItem, person: SourcingContact,
@@ -434,7 +434,7 @@ def confirm(db: Session, sender_id: int, contact_id: int, title: str,
     if row is None or not text or text not in picks:
         raise NotPickable("카톡에서 찾은 후보가 아닙니다 — 화면을 새로 열어 보세요")
     if picks.count(text) > 1:
-        raise NotPickable("같은 제목의 방이 여럿입니다 — 카톡에서 방 이름을 고유하게 "
+        raise NotPickable("같은 제목의 카톡방이 여럿입니다 — 카톡에서 방 이름을 고유하게 "
                           "바꾼 뒤 다시 확인하세요")
     row.room_name = text
     row.verified = 1
@@ -473,7 +473,7 @@ def _view(row: Optional[SenderRoom], sourcing: bool) -> dict:
     choose = not sourcing or len(set(picks)) > 1
     label = STATE_LABELS[state].format(n=len(picks))
     if state == PICKS and not choose:
-        label = ("같은 제목의 방이 여럿 — 확정 불가" if len(picks) > 1
+        label = ("같은 제목의 카톡방이 여럿 — 확정 불가" if len(picks) > 1
                  else "후보 1개 — 다시 확인하면 확정됩니다")
     return {
         "room": (row.room_name or "") if row else "",

@@ -95,7 +95,7 @@ def test_반응_없는_분만_성함_전화번호_회사명으로_나간다(logg
     # 차례는 화면 카드와 같다(그룹 → 이름).
     assert [r[0] for r in rows[1:]] == ["무반응", "번호없음", "회사번호"]
     name = unquote(resp.headers["content-disposition"])
-    assert f"반응 없는 담당자_{today}.xlsx" in name
+    assert f"반응 없는 심사역_{today}.xlsx" in name
 
 
 def test_딜제안관리에_엑셀_단추가_서고_반응_없는_분이_없으면_안_선다(client, db, users, people):
@@ -103,7 +103,7 @@ def test_딜제안관리에_엑셀_단추가_서고_반응_없는_분이_없으�
 
     _login(client, "01000000001")
     assert re.search(r'<a class="linkbtn" id="noreact-export" href="/api/export/no-reaction.xlsx"'
-                     r' download\s+title="반응 없는 담당자 3명', client.get("/deals").text)
+                     r' download\s+title="반응 없는 심사역 3명', client.get("/deals").text)
 
     _login(client, "01000000002")
     assert 'id="noreact-export"' in client.get("/deals").text

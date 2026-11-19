@@ -206,7 +206,7 @@ def test_page_and_check_button_for_admin(client, db, users, team):
     _login(client, "01000000002")
     page = client.get("/team/sender-rooms")
     assert page.status_code == 200
-    assert "PC로 전체 방 확인 (1명)" in page.text
+    assert "PC로 전체 카톡방 확인 (1명)" in page.text
     answer = client.post("/team/sender-rooms/check",
                          data={"sender_id": users["u2"].id}, follow_redirects=False)
     assert answer.status_code == 303
@@ -344,7 +344,7 @@ def test_page_lists_sourcing_people_and_confirms_by_kind(client, db, users, team
     db.commit()
     _login(client, "01000000002")
     page = client.get("/team/sender-rooms")
-    assert "PC로 전체 방 확인 (3명)" in page.text
+    assert "PC로 전체 카톡방 확인 (3명)" in page.text
     assert f"딜 소싱 · {GROUP}" in page.text
     assert 'data-kind="sourcing"' in page.text
     client.post(f"/team/sender-rooms/{person.id}/confirm",
@@ -565,7 +565,7 @@ def test_sender_sees_its_own_titles_on_the_sourcing_page(client, db, users, send
     assert 'data-testid="sourcing-sender-room"' in done and 'data-state="confirmed"' in done
     assert f"{me} 전용" in done and "💬 보내는 계정 홍소싱 방" in done
     assert f'action="/sourcing/{sender_view["room"].id}/room-clear"' in done
-    assert ">톡방 연결 끊기</button>" in done and "확정 거두기" not in done
+    assert ">카톡방 연결 끊기</button>" in done and "확정 거두기" not in done
     assert "명단 이름:" in done and SRC_OWN in done       # 명단의 방 이름은 아래 참고로
     assert "data-no-room" not in done.split(">", 1)[0]     # 이 계정 제목이 있다 — 안 찾는다
     assert "room-confirm" not in done

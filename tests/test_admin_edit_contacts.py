@@ -153,7 +153,7 @@ def test_member_cannot_open_someone_elses_contact(portal, board):
     """존재 여부도 흘리지 않는다 — 403(있지만 권한 없음)이 아니라 404 다."""
     r = portal["member"].get(f"/api/contacts/{board['u1_row']}")
     assert r.status_code == 404
-    assert r.json()["detail"] == "담당자를 찾을 수 없습니다"
+    assert r.json()["detail"] == "심사역을 찾을 수 없습니다"
 
 
 def test_member_cannot_edit_someone_elses_contact(portal, board, db):

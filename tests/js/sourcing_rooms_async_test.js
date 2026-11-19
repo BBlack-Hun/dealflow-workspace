@@ -49,7 +49,7 @@ function row(id, name, rooms) {
   kids.push(el("div", { class: "cell-sub sourcing-room", "data-testid": "sourcing-no-room" }, [
     el("form", { class: "inline-form js-room-search", method: "post",
                  action: "/sourcing/rooms/search" },
-       [hidden("tab", "all"), hidden("ids", String(id)), button("방 후보 찾기")])]));
+       [hidden("tab", "all"), hidden("ids", String(id)), button("카톡방 후보 찾기")])]));
   if (rooms && rooms.length) {
     kids.push(el("div", { class: "cell-sub sourcing-room", "data-testid": "sourcing-room-picks" },
       rooms.map(function (r) {
@@ -262,7 +262,7 @@ async function main() {
       cb.checked = true;
       cb.fire("change");
     });
-    assert.strictEqual(t.toolBtn.textContent, "방 후보 찾기 (선택 2명)");
+    assert.strictEqual(t.toolBtn.textContent, "카톡방 후보 찾기 (선택 2명)");
 
     t.answer = false;                                    // 확인창 취소
     t.submit(t.tool);
@@ -285,7 +285,7 @@ async function main() {
     t.submit(a.querySelector(".js-room-confirm"));
     reply(t.calls[1], 200, { ok: true, msg: "확정", room: "홍길동 딜소싱" });
     await flush();
-    assert.strictEqual(t.toolBtn.textContent, "방 후보 찾기 (선택 1명)");
+    assert.strictEqual(t.toolBtn.textContent, "카톡방 후보 찾기 (선택 1명)");
   }
 
   // 아무도 안 골랐으면 화면 스크립트가 막는다 — 여기서도 안 보낸다.
@@ -303,7 +303,7 @@ async function main() {
                                "data-testid": "sourcing-sender-room" }, [
       el("form", { class: "inline-form js-room-search", method: "post",
                    action: "/sourcing/rooms/search" },
-         [hidden("tab", "all"), hidden("ids", "21"), button("방 후보 찾기")])]);
+         [hidden("tab", "all"), hidden("ids", "21"), button("카톡방 후보 찾기")])]);
     const picks = el("div", { class: "cell-sub sourcing-room js-sender-room",
                               "data-testid": "sourcing-sender-room-picks" },
       ["가 방", "나 방"].map(function (r) {
@@ -356,7 +356,7 @@ async function main() {
                      reason: "", hint: "" } });
     await flush();
     assert.deepStrictEqual(t.alerts, [
-      "딜 소싱 방 찾기가 끝났습니다 — 확정 1 · 후보 고르기 2 · 못 찾음 1\n" +
+      "딜 소싱 카톡방 찾기가 끝났습니다 — 확정 1 · 후보 고르기 2 · 못 찾음 1\n" +
       "새로고침하면 칸에 결과가 보입니다"]);
     // 끝난 뒤에는 더 묻지 않는다 — 다시 안 뜬다.
     assert.strictEqual(tick(t), 0, "끝난 회차를 또 묻는다");
@@ -380,7 +380,7 @@ async function main() {
                      hint: "카톡 창을 열어 두고 다시 돌려 주세요" } });
     await flush();
     assert.deepStrictEqual(t.alerts, [
-      "딜 소싱 방 찾기가 끝났습니다 — 확정 0 · 후보 고르기 0 · 못 찾음 0 · 오류 44\n" +
+      "딜 소싱 카톡방 찾기가 끝났습니다 — 확정 0 · 후보 고르기 0 · 못 찾음 0 · 오류 44\n" +
       "오류 44건 모두: 카카오톡 메인 창을 앞으로 가져오지 못했습니다.\n" +
       "카톡 창을 열어 두고 다시 돌려 주세요"]);
   }
@@ -398,7 +398,7 @@ async function main() {
                      reason: "", hint: "" } });
     await flush();
     assert.deepStrictEqual(t.alerts, [
-      "딜 소싱 방 찾기 취소됨 — 확정 0 · 후보 고르기 0 · 못 찾음 1 · 오류 2 · 취소 3"]);
+      "딜 소싱 카톡방 찾기 취소됨 — 확정 0 · 후보 고르기 0 · 못 찾음 1 · 오류 2 · 취소 3"]);
 
     t.submit(a.querySelector(".js-room-search"));
     reply(t.calls[t.calls.length - 1], 200, { ok: true, job_id: 6, ids: [11] });

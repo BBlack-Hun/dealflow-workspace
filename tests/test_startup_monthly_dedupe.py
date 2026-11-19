@@ -116,7 +116,7 @@ def test_이번_달_보낸_기업은_꺼진_채로_서고_전체_선택_표시�
     assert "checked" in _box(page, two.id)
     assert "data-sent-this-month" not in _box(page, two.id)
     assert "이미 보냄 <b>1곳</b>" in page
-    assert "1곳 대기 목록 만들기" in page                         # 처음부터 켜진 수
+    assert "1곳 대기 회차 만들기" in page                         # 처음부터 켜진 수
     # A5 · 딜 제안 관리 링크가 읽는 대상은 그대로다(막지 않는다).
     assert set(startup_send.sendable_ids(db, month)) == {ok, two.id}
 

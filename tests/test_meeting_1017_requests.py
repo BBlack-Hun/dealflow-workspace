@@ -503,7 +503,7 @@ def test_연간_합계는_그대로_남는다(db, users, logged):
     body = logged.get("/report?span=year&year=2026").text
     # 맨 위 카드는 **한 해 합계**다(월간과 같은 다섯 칸).
     first_kpi = body[body.index("kpi-row"):body.index('id="m-1"')]
-    assert re.search(r'kpi-label">잡은 미팅</span>\s*<span class="kpi-value">2<', first_kpi)
+    assert re.search(r'kpi-label">미팅 예약</span>\s*<span class="kpi-value">2<', first_kpi)
     # 맨 아래 연간 합계표(항목 × 달 + 합계).
     total = body[body.index('id="year-total"'):]
     assert "2026년 합계표" in total and "year-report" in total and ">합계<" in total

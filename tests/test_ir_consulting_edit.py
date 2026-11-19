@@ -125,7 +125,7 @@ def test_남의_줄은_못_고치고_읽기만_한다(logged_in, db, users, setu
     status, meeting = _cells(logged_in.get("/companies").text, setup["ir"].id)
     assert "data-save-url" not in status + meeting
     assert 'class="muted"' in status and ">관리 중</td>" in status
-    assert "고칠 수 있는 계정만" in status
+    assert "고칠 수 있는 팀원만" in status
     # 저장 길도 그 화면의 판정 그대로 막는다(없는 번호와 같은 404).
     r = logged_in.patch(f"/api/consulting/{row.id}", json={"management": "드랍"})
     assert r.status_code == 404

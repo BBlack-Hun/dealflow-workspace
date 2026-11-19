@@ -261,8 +261,8 @@ def test_카톡방_참여여부는_연결_상태_바로_아래에_선다(panel):
     가르는 것은 `연결 상태`(`connect_stage`)다 — `sheet_owner.can_send_to` 가
     읽는다. 이 칸은 **스위치가 아니라 시트에서 온 기록**이고 그 기록은 `연결
     상태` 를 만드는 재료다. 이름에 `(시트 원문)` 을 붙이는 대신 자리를 옮겼다
-    — 이 칸은 표에도 서서 이름이 표 머리글과 한 글자도 달라지면 안 된다
-    (`tests/test_ui_layout.py`).
+    — 시트 · 엑셀의 칸 이름 그대로라 한 글자도 달라지면 안 된다(이 칸은 이제
+    표에는 안 선다 — 손으로 고치는 자리가 이 창 하나다).
     """
     at_stage = panel.index('id="f-connect_stage"')
     at_joined = panel.index('id="f-kakao_joined"')
@@ -350,9 +350,13 @@ def test_필터_키는_하나도_안_바뀐다(head):
         m = re.search(r'data-filters="([^"]*)"', attrs)
         if m:
             keys |= {spec.split(":", 1)[0] for spec in m.group(1).split("|")}
-    for key in ("assignee", "interest", "joined", "round", "sector",
+    for key in ("assignee", "interest", "round", "sector",
                 "firm", "group", "channel", "room", "connect", "dealstage"):
         assert key in keys, f"필터 키 `{key}` 가 사라졌습니다"
+    # `joined` 는 **일부러 뺐다** — `카톡방 참여여부` 칸을 이 표에서 뺀 요청이다
+    # (`tests/test_contacts_drop_joined_column.py`). 대시보드에서 이 키로 들어오는
+    # 링크는 없고, 저장해 둔 `?joined=…` 주소는 걸러지지 않은 전체로 열린다.
+    assert "joined" not in keys, "뺀 필터 키 `joined` 가 다시 섰습니다"
 
 
 def test_발송을_가르는_두_스위치의_이름은_안_건드린다(panel):

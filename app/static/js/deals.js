@@ -622,8 +622,8 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
           (q ? " (검색: " + box.value.trim() + ")" : "") +
           (groupFilter ? " (그룹: " + groupFilter + ")" : "") +
           (noreactOn ? " (반응 없음만)" : "") +
-          (bucketFilter ? " (갈래: " + bucketLabel(bucketFilter) + ")" : "") +
-          (assigneeFilter ? " (담당: " + assigneeFilter + ")" : "") +
+          (bucketFilter ? " (탭: " + bucketLabel(bucketFilter) + ")" : "") +
+          (assigneeFilter ? " (팀원: " + assigneeFilter + ")" : "") +
           // 조건 밖인데 이미 고른 사람은 그대로 발송에 들어간다 — 숫자만
           // 줄어든 줄 알고 보내면 안 되므로 몇 명인지 말해 준다.
           (outside ? " · 조건 밖에서 고른 " + outside + "명이 함께 있습니다" : "");
@@ -670,7 +670,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     var b = document.getElementById("select-noreact");
     if (!b) return;
     var on = noreactOnly && mode !== "sourcing";
-    b.textContent = "반응 없는 담당자만 · " + count + "명";
+    b.textContent = "반응 없는 심사역만 · " + count + "명";
     b.classList.toggle("active", on);
     b.setAttribute("aria-pressed", on ? "true" : "false");
     b.title = on ? "다시 누르면 거르기와 고른 것이 함께 풀립니다"
@@ -1126,8 +1126,8 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     // 모르고 섞으면 미리보기에서 다른 문구를 보고 놀란다.
     note.hidden = names.length < 2;
     if (!note.hidden) {
-      note.textContent = "갈래 " + names.length + "개가 섞여 있습니다 — " +
-        "갈래마다 다른 문구가 나갑니다 (" + names.map(bucketLabel).join(" · ") + ")";
+      note.textContent = "탭 " + names.length + "개가 섞여 있습니다 — " +
+        "탭마다 다른 문구가 나갑니다 (" + names.map(bucketLabel).join(" · ") + ")";
     }
   }
 
@@ -1202,7 +1202,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   var CLOSING_DEFAULT = {
     deal: "기본 안내문", remind: "기본 안내문", meeting: "기본 안내문",
     review: "기본 문구", ask: "기본 문구", ir: "기본 문구", ir_review: "기본 문구",
-    sourcing: "갈래별 기본 문구"
+    sourcing: "탭별 기본 문구"
   };
 
   function renderTemplates() {
@@ -1522,7 +1522,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     var missBox = document.getElementById("blocked-contacts");
     if (missBox) missBox.hidden = sourcingMode;
     var contactHead = document.getElementById("contact-head");
-    if (contactHead) contactHead.textContent = sourcingMode ? "② 딜 소싱 대상" : "② 대상 담당자";
+    if (contactHead) contactHead.textContent = sourcingMode ? "② 딜 소싱 대상" : "② 대상 심사역";
     var noReactBtn = document.getElementById("select-noreact");
     // 소싱 명단에는 '반응' 이라는 개념이 없다 — 아직 보낸 적이 없다.
     if (noReactBtn) noReactBtn.hidden = sourcingMode;
@@ -1566,9 +1566,9 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       mode === "ir"
         ? "요청받은 기업을 고르세요 — 자료 파일은 PC 카톡에서 직접 첨부하고, 안내 문구만 여기서 보냅니다"
         : (sourcingMode
-            ? "딜 소싱 명단에서 대상을 고르면, 갈래(시리즈 A 이상 · 투자사 대표 · 개인 참여 …)에 맞는 문구가 나갑니다"
+            ? "딜 소싱 명단에서 대상을 고르면, 탭(시리즈 A 이상 · 투자사 대표 · 개인 참여 …)에 맞는 문구가 나갑니다"
             : (askMode ? FOLLOW_UP[mode] + " — 기업 목록 없이 문구만 보냅니다 (기업 선택 불필요)"
-                       : "기업 1~10개 선택 → 대상 담당자 체크 → 담당자별 미리보기 → 발송"));
+                       : "기업 1~10개 선택 → 대상 심사역 체크 → 심사역별 미리보기 → 발송"));
     var companyHint = document.getElementById("company-hint");
     if (companyHint) companyHint.hidden = mode === "ir";
     renderIrLinks();
@@ -1650,7 +1650,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     }).join(" · ");
     return '<div class="sa-plan" data-testid="sa-plan">' +
       '<div><b>보내는 기업</b> ' +
-      (send || '<span class="sa-drop own">없음 — 이번 목록에서 빠집니다</span>') + "</div>" +
+      (send || '<span class="sa-drop own">없음 — 이번 회차에서 빠집니다</span>') + "</div>" +
       (dropped ? '<div><b>뺀 기업</b> ' + dropped + "</div>" : "") + "</div>";
   }
 
@@ -1665,7 +1665,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     });
     var roomLine = p.room_name
       ? ("💬 " + p.room_name + (p.room_from ? " (" + p.room_from + ")" : ""))
-      : ("⚠ " + (p.room_warning || "방 미등록"));
+      : ("⚠ " + (p.room_warning || "카톡방 미등록"));
     // 기본 문구는 아직 아무에게도 가지 않는다 — 진짜 사람에게 갈 문구로
     // 읽히면 확인만 하려다 그대로 보내게 된다.
     var meta = p.sample
@@ -1950,7 +1950,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
                          : cids.length + "개 기업 딜소개"));
     var lastCheck = currentChannel() === "email"
       ? "\n받는 주소를 최종 확인하셨나요?"
-      : "\n방 이름을 최종 확인하셨나요?";
+      : "\n카톡방 이름을 최종 확인하셨나요?";
     // **언제 보낼까.** 비어 있으면 지금까지와 똑같이 바로 나간다.
     var at = scheduledAt();
     if (at === null) return;  // 고른 시각이 창 밖이다 — 이미 말했다
@@ -1959,7 +1959,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     var when = at ? ("\n" + at.replace("T", " ") + " 에 나갑니다 (지금은 나가지 않습니다).") : "";
     // 카톡방을 나간 분은 서버가 빼고 만든다 — 확인창에서도 먼저 말한다.
     var leftNote = (leftRoomCount && currentChannel() !== "email")
-      ? "\n(방 나감 " + leftRoomCount + "명은 빼고 보냅니다)" : "";
+      ? "\n(카톡방 나감 " + leftRoomCount + "명은 빼고 보냅니다)" : "";
     if (!confirm(what + "\n" + via + "대상 " + tids.length + "명에게 발송합니다." + leftNote
                  + when + editNote + lastCheck)) return;
     sendBtn.disabled = true;
@@ -1976,7 +1976,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     })
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
       .then(function (res) {
-        if (!res.ok) { alert("발송 목록 생성 실패: " + (res.d.detail || "")); sendBtn.disabled = false; return; }
+        if (!res.ok) { alert("발송 회차 생성 실패: " + (res.d.detail || "")); sendBtn.disabled = false; return; }
         tellSkipped(res.d.skipped);
         window.location.href = "/jobs/" + res.d.job_id;
       })
@@ -1987,7 +1987,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   // 나갔는지 사람이 알아야 한다(이유는 서버가 짓는다: `services/twin_send`).
   function tellSkipped(list) {
     if (!list || !list.length) return;
-    alert("목록에서 뺀 분 " + list.length + "명:\n" + list.map(function (x) {
+    alert("이번 회차에서 뺀 분 " + list.length + "명:\n" + list.map(function (x) {
       return "· " + x.name + " — " + x.reason;
     }).join("\n"));
   }
@@ -2101,7 +2101,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       updateCounts();
       applyContactFilter();
     } else if (!noReactOn()) {
-      alert("반응이 없는 담당자가 없습니다.");
+      alert("반응이 없는 심사역이 없습니다.");
     }
   });
 
@@ -2247,7 +2247,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     if (askedSourcing && keptSourcing < askedSourcing) {
       warns.push("딜 소싱 대상 " + (askedSourcing - keptSourcing) + "명은 고르지 " +
         "않았습니다 — 불참여이거나 명단에서 빠졌거나" +
-        (isShare() ? ", 이 글을 받는 갈래(" + SHARE_BUCKET + ")가 아닌 분입니다."
+        (isShare() ? ", 이 글을 받는 탭(" + SHARE_BUCKET + ")이 아닌 분입니다."
                    : " 지금 고를 수 없는 분입니다."));
     }
     if (askedSeries && gotSeries < askedSeries) {
@@ -2267,9 +2267,9 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       .map(function (v) { return v.trim(); }).filter(Boolean)
       .filter(function (v, i, a) { return a.indexOf(v) === i; }).length;
     if (askedWho && gotWho < askedWho && wanted !== "sourcing") {
-      warns.push("담당자 " + (askedWho - gotWho) + "명을 대상 목록에서 찾지 " +
+      warns.push("심사역 " + (askedWho - gotWho) + "명을 대상 목록에서 찾지 " +
         "못했습니다 — 내 담당이 아니거나, 딜 소개 명단·카톡방 연결이 아직 " +
-        "끝나지 않은 담당자입니다.");
+        "끝나지 않은 심사역입니다.");
     }
     // 받은 기업이 목록에 없으면(소개 불가로 빠졌거나 지워졌으면) 알려 준다.
     var asked = (params.get("companies") || "").split(",").filter(Boolean).length;
@@ -2280,7 +2280,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     // 대시보드의 `반응 없는 분 N명` 에서 넘어오면(#213) [반응 없는 담당자만] 을 누른 것과
     // 같은 상태로 연다. 그 사이 반응이 와서 아무도 안 남았으면 그렇다고 말한다.
     if (params.get("noreact") === "1" && mode !== "sourcing" && !noreactOnly && !noReactOn()) {
-      warns.push("반응 없는 담당자가 지금 대상 목록에 없습니다.");
+      warns.push("반응 없는 심사역이 지금 대상 목록에 없습니다.");
     }
     incomingWarns = warns;
     showWarnings([]);

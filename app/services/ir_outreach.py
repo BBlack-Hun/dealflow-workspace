@@ -118,7 +118,7 @@ NO_SENDER = (f"{startup_send.LABEL}의 보내는 계정이 정해지지 않았�
 PLACEHOLDERS = [
     (startup_outreach.CEO, "기업의 대표자명 (비어 있으면 그 자리를 빼고 '대표님' 으로 읽힙니다)"),
     (startup_outreach.COMPANY, "기업명 (대괄호 메모는 뺍니다)"),
-    (startup_outreach.SENDER, "목록을 세우는 사람(나)의 계정 이름"),
+    (startup_outreach.SENDER, "회차를 세우는 사람(나)의 계정 이름"),
 ]
 
 
@@ -282,7 +282,7 @@ def _verdict(company: IrCompany, paused: Dict[int, str], known: room_match.Inves
     #   이미 붙은 확인 값은 여기서 막는다).
     why = room_match.investor_reason(company.kakao_room_name, company.name, known)
     if why:
-        return startup_outreach.NO_ROOM, f"투자사 방으로 보임({why})"
+        return startup_outreach.NO_ROOM, f"투자사 카톡방으로 보임({why})"
     return "", ""
 
 
@@ -311,7 +311,7 @@ def recheck(db: Session, item: SendItem) -> str:
     if why:
         return why
     if not room_name.same_title(row.kakao_room_name, item.room_name):
-        return "목록을 세운 뒤 방 이름이 바뀜"
+        return "회차를 세운 뒤 카톡방 이름이 바뀜"
     return ""
 
 

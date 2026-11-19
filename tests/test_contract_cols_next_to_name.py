@@ -68,7 +68,7 @@ def test_ir_tab_four_contract_columns_right_of_name(logged_in, world):
         assert names.count(name) == 1, (name, names)
     # 빠진 자리의 앞뒤는 이어 붙는다 — 나머지 차례는 그대로.
     seam = names.index("미팅제공일자")
-    assert names[seam - 1:seam + 3] == ["담당별 소개", "미팅제공일자", "계약년월",
+    assert names[seam - 1:seam + 3] == ["팀원별 소개", "미팅제공일자", "계약년월",
                                        "카톡 연결 여부"], names
 
     fields = _td_fields(_first_row(html))

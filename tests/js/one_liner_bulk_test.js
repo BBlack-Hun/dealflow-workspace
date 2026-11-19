@@ -199,7 +199,7 @@ const tick = () => new Promise((r) => setImmediate(r));
     // 되돌리지 **않은** 줄이 있으면 반드시 말한다.
     const said = t.alerted().join("\n");
     assert.ok(said.indexOf("1곳을 되돌렸습니다") >= 0, said);
-    assert.ok(said.indexOf("1곳은 그 뒤에 손으로 고쳐서 그대로 두었습니다") >= 0,
+    assert.ok(said.indexOf("1곳은 그 뒤에 직접 고쳐서 그대로 두었습니다") >= 0,
       "조용히 넘어가면 '되돌렸다' 는 말과 화면이 어긋난다: " + said);
     console.log("  · 되돌리기 · 표 복구 · 안 되돌린 줄 알림 OK");
   }
