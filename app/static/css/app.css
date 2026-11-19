@@ -748,7 +748,9 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
 /* (4,024 → 3,916 : #167 — 값이 짧은데 이름 단추 때문에 넓던 넷을 줄였다. `담당자` 112 → 96 ·
     `관심도` 100 → 92 · `카톡방 참여여부` 144 → 100(단추를 두 줄로) · `TIPS 운영사` 120 → 80.
     준 만큼만 내린다. contacts.html 의 그 머리글 주석) */
-#contacts-table { min-width: 3916px; }
+/* (3,916 → 3,816 : `카톡방 참여여부` 칸(100px)을 표에서 뺐다 — 뺀 만큼만 내린다.
+    contacts.html 의 그 자리 주석) */
+#contacts-table { min-width: 3816px; }
 /* `딜 소싱` 칸의 갈래 딱지 — 참여(초록) · 아직 동의 전(주황 — 딜 소싱 표의
    `part-pending` 과 같은 색) · 불참여(흐리게, 줄을 그어 빠진 것을 보인다).
    칸이 좁아 딱지가 넘치면 다음 줄로 접는다. */

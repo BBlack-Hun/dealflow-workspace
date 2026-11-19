@@ -839,15 +839,11 @@
            석 자라 남는 자리는 옆의 긴 칸들이 쓴다. (100 → 92px · #167 — 칸 여백이 6px 씩이 되어
            단추가 85px 에 선다.) #}
         <th style="width:92px" data-filters="interest:관심도">관심도<div class="th-filters"></div></th>
-        {# 이 칸도 필터가 하나뿐이라 이름 대신 `카톡방 참여여부 ▾` 단추가 선다.
-           이름은 114px 에 들어가지만 단추는 ` ▾` 와 자기 padding·테두리만큼
-           넓어 119px 이 필요했다 — 헤드리스 크롬으로 재 보니 실제로 `카톡방
-           참여여부` / `▾` 두 줄이었다. 128px 로 넓혀도 이 표는 적어 둔 폭 합
-           (2,728px)이 `#contacts-table` 의 min-width(2,804px)보다 작아
-           표 전체 폭은 그대로다.
-           **144 → 100px(#167)** — 값이 `O`/`X` 라 한 줄 폭이 쓸모없다. IR 기업 현황의
-           `카톡 연결 여부`(i132)처럼 단추를 두 줄로 접는다: `카톡방` / `참여여부 (1) ▾`. #}
-        <th style="width:100px" data-filters="joined:카톡방 참여여부">카톡방 참여여부<div class="th-filters"></div></th>
+        {# `카톡방 참여여부` 칸은 **이 표에서 뺐다**(요청 — 머리글 · 칸 · 필터 `joined`).
+           값(`kakao_joined`)은 그대로 산다 — 시트 업로드 · 엑셀 · 방 확인과 맞추는 규칙
+           (`services/room_joined`) · 수정 이력이 계속 읽고 적는다. 손으로 고치는 자리는
+           수정창의 `카톡방 참여여부` 다(`f-kakao_joined`). `?joined=…` 로 저장해 둔 주소는
+           선언이 없는 키라 `filters.js` 가 읽지 않는다 — 걸러지지 않고 전체가 뜬다. #}
         <th style="width:276px"
             title="통화내용 / 카톡내용 / 카톡답신내용">메모</th>
         <th style="width:180px">딜 소싱 참여 투자사</th>
@@ -1021,7 +1017,6 @@
           data-f-channel="{{ r.channel_label }}"
           data-f-room="{{ r.send_label }}"
           data-f-interest="{{ r.interest_level }}"
-          data-f-joined="{{ r.kakao_joined }}"
           data-f-sourcing="{{ r.sourcing_filter }}"
           data-f-sourcing_date="{{ r.sourcing_requested_at }}"
           data-s-sourcing_date="{{ r.sourcing_requested_sort }}"
@@ -1077,8 +1072,6 @@
         #}
         <td class="cell" data-field="interest_level" data-type="pick"
             data-choices="높음,중간,낮음" data-filter-key="interest">{{ r.interest_level }}</td>
-        <td class="cell" data-field="kakao_joined" data-type="pick"
-            data-choices="O,X" data-filter-key="joined">{{ r.kakao_joined }}</td>
         <td title="{{ r.memo }}">
           <div class="cell clamp2" data-field="memo" data-type="long" data-memo-date>{{ r.memo }}</div>
         </td>
@@ -1172,9 +1165,10 @@
            고칠 수 있는 칸이 아니다 — 방 상태는 [방 연결 확인]이 정하는 결과라
            손으로 적을 값이 아니다(방 이름은 [수정] 창에서 고친다).
 
-           `room-cell` — 옆 `카톡방 참여여부` 를 `X` 로 고치면 `확인됨` 이 풀린다
-           (`services/room_joined`). 그 응답으로 이 칸을 **그 자리에서** 고쳐
-           그리는 손잡이다(`contacts.js` 의 `syncRoomCells`). #}
+           `room-cell` — 저장 응답의 방 상태(`send_*`)로 이 칸을 **그 자리에서**
+           고쳐 그리는 손잡이다(`contacts.js` 의 `syncRoomCells`). `카톡방 참여여부`
+           를 `X` 로 고치면 `확인됨` 이 풀리는 규칙(`services/room_joined`)은 그대로다
+           — 그 칸을 표에서 뺀 뒤로는 [수정] 창에서 고치고, 저장하면 화면을 다시 읽는다. #}
         <td class="ellipsis room-cell" title="{{ r.send_label }}">
           <span class="room-badge {{ r.send_class }}">{{ r.send_label }}</span></td>
         <td><button type="button" class="linkbtn js-detail">수정</button></td>
@@ -1634,20 +1628,23 @@
         11 · 카톡 채널 아님 5), **참여여부가 빈 7줄은 잘 나간다.**
 
         이름에 `(시트 원문)` 을 붙이는 길도 있었지만 **안 붙였다.** 이 칸은
-        표에도 서는 칸이라 이름이 표 머리글과 한 글자만 달라도 "같은 칸인가"
-        를 따지게 되고(`tests/test_ui_layout.py` 가 그 짝을 잰다), 이 창은
-        `(쉼표)` 같은 **이름 뒤 꼬리표는 이름이 아니라고** 이미 정해 두었다
-        (위 첫 주석). 자리를 옮기면 **이름을 하나도 건드리지 않고** 관계가
-        읽힌다 — 위가 앱이 발송에 쓰는 값, 아래가 그 값을 만든 재료.
+        시트 · 엑셀의 칸 이름 그대로라 한 글자만 달라도 "같은 칸인가" 를
+        따지게 되고, 이 창은 `(쉼표)` 같은 **이름 뒤 꼬리표는 이름이 아니라고**
+        이미 정해 두었다(위 첫 주석). 자리를 옮기면 **이름을 하나도 건드리지
+        않고** 관계가 읽힌다 — 위가 앱이 발송에 쓰는 값, 아래가 그 값을 만든 재료.
+
+        (투자사 표의 이 칸은 요청으로 뺐다 — 이 값을 손으로 고치는 자리는 이제
+         **이 창 하나**다. 여기서 빼면 틀린 값을 고칠 길이 없다.)
 
         스타트업 배치의 `카톡 연결 여부` 칸은 **이 모델 칸 자체**를 보여 준다
         (`contact_columns.STARTUP_LAYOUT`). 그쪽 이름은 그 화면의 것이라
         건드리지 않는다 — 화면이 다르면 이름도 그 화면에 맞는 것이 맞다.
       #}
       {# 보기를 `list=` 로 묶는 이유는 바로 위 `그룹`·아래 `관심도` 와 같다 —
-         표 칸은 `O`/`X` 중에서 고르는데(`data-choices="O,X"` — 위 표 줄) 이
-         창만 자유 글자 칸이면 같은 칸이 `O`·`o`·`완료` 로 갈린다.
-         보기 글자는 **표 칸의 `data-choices` 와 같은 말**이어야 한다
+         자유 글자 칸이면 같은 칸이 `O`·`o`·`완료` 로 갈린다. 투자사 표의 이
+         칸은 뺐지만 스타트업 배치의 표 칸(`카톡 연결 여부`)은 여전히 `O`/`X`
+         중에서 고른다(`contact_columns.STARTUP_LAYOUT` 의 `choices="O,X"`).
+         보기 글자는 **그 표 칸의 `choices` 와 같은 말**이어야 한다
          (`tests/test_group_choices.py` 가 그 짝을 잰다). #}
       <label class="field"><span>카톡방 참여여부</span>
         <input type="text" id="f-kakao_joined" list="opts-panel-kakao_joined"
