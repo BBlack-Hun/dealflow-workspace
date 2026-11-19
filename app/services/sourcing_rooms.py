@@ -434,3 +434,97 @@ def confirm(contact: SourcingContact, title: str) -> SourcingContact:
     contact.kakao_room_name = text
     contact.room_verified = "verified"
     return contact
+
+
+# ── 방 찾기 전용 화면(`/sourcing/rooms`) ─────────────────────────────────────
+
+#: 아직 도는 회차 — 화면이 진행 상황과 [중단]을 세운다.
+_ACTIVE = ("queued", "running")
+#: 카톡방 이름을 손으로 적어 둔 줄 — 찾을 줄이 아니고 확인된 것도 아니다.
+TYPED = "typed"
+
+
+def active_jobs(db: Session, user_id: int, topics: Iterable[str]) -> List[dict]:
+    """그 계정의 **아직 도는** 방 찾기 회차 — 진행 상황 · [중단] 이 서는 자리
+    (`_room_jobs.html`). `ids` 는 아직 안 돈 딜 소싱 줄이다(표가 `찾는 중` 으로 적는다)."""
+    from ..routers.agent_api import VERIFY_KIND   # 잡 종류는 그 라우터가 안다
+
+    jobs = db.execute(
+        select(SendJob).where(SendJob.user_id == user_id, SendJob.kind == VERIFY_KIND,
+                              SendJob.status.in_(_ACTIVE), SendJob.topic.in_(tuple(topics)))
+        .order_by(SendJob.id)).scalars().all()
+    return [{"id": j.id, "total": len(j.items),
+             "done": sum(1 for i in j.items if i.status in ("sent", "failed")),
+             "ids": {i.sourcing_contact_id for i in j.items
+                     if i.status in ("pending", "sending") and i.sourcing_contact_id}}
+            for j in jobs]
+
+
+def board(db: Session, user: User) -> dict:
+    """`/sourcing/rooms` 가 읽는 한 판 — **불참여가 아닌 분 전부**의 방 찾기 상태.
+
+    상태 · 찾을 줄은 딜 소싱 화면의 카톡방 칸과 **같은 함수**를 지난다: 팀원은 명단의
+    후보(`picks` · `needs_room`), 자동화를 보내는 계정은 그 계정 카톡 기준 제목
+    (`sender_rooms.sourcing_view` · `sourcing_needs`). `확인 못 함` 은 지난 찾기가 검색
+    결과를 못 읽고 끝난 줄이다(`room_unchecked` — 판정은 거기 그대로).
+
+    [중단]으로 안 돈 건은 줄에 아무것도 적지 않는다(`agent_api.item_result` 가 취소된
+    건의 늦은 결과도 버린다) — 그 줄은 찾기 전 상태 그대로 선다.
+    """
+    from . import sender_rooms   # 그쪽이 이 모듈을 부른다(`query_of`)
+
+    sender = sender_rooms.is_sender(db, user)
+    people = sender_rooms.sourcing_targets(db)
+    if sender:
+        mine = sender_rooms.sourcing_view(db, user.id)
+        never = sender_rooms._view(None, sourcing=True)
+        needs = {r.id for r in sender_rooms.sourcing_needs(db, user.id, people)}
+    else:
+        needs = {r.id for r in needs_room(db, people)}
+    jobs = active_jobs(db, user.id, (SOURCING_ROOM_TOPIC, SENDER_ROOM_TOPIC))
+    busy = set().union(*(j["ids"] for j in jobs)) if jobs else set()
+    out = []
+    for p in people:
+        if sender:
+            view = dict(mine.get(p.id) or never)
+        else:
+            got = picks(p)
+            state = {"picks": sender_rooms.PICKS, "no_picks": sender_rooms.NOT_FOUND,
+                     "never": sender_rooms.NEVER}.get(got["state"], got["state"])
+            note = ""
+            if state != sender_rooms.CONFIRMED and p.id not in needs:
+                state = TYPED
+            elif (state in (sender_rooms.NOT_FOUND, sender_rooms.NEVER)
+                  and room_unchecked.is_note(got["error"])):
+                state, note = sender_rooms.UNCHECKED, got["error"]
+            # 손으로 적은 줄의 옛 후보는 안 세운다 — 적은 이름이 먼저다.
+            rooms = [] if state == TYPED else got["rooms"]
+            view = {"state": state, "note": note, "picks": rooms,
+                    "choose": len(rooms) > 1,
+                    # 이 화면의 머리 셈과 같은 말로 — 나머지는 딜 소싱 화면의 말 그대로.
+                    "state_label": {sender_rooms.CONFIRMED: "확인 완료",
+                                    sender_rooms.UNCHECKED: room_unchecked.LABEL,
+                                    sender_rooms.NOT_FOUND: "못 찾음",
+                                    TYPED: "카톡방 이름 직접 적음 — 확인 전"}.get(
+                                        state, got["state_label"]),
+                    "checked_at": (got["at"] or "")[:16].replace("T", " "),
+                    # 발송기 오류로 끝난 지난 찾기 — 후보는 그 전 것 그대로다(`apply_result`).
+                    "error": "" if note else got["error"]}
+        out.append({"id": p.id, "bucket": p.bucket or "-", "name": p.name,
+                    "firm": p.firm or "", "own_room": (p.kakao_room_name or "").strip(),
+                    "busy": p.id in busy,
+                    "findable": p.id in needs and p.id not in busy, **view})
+    order = {sender_rooms.PICKS: 0, sender_rooms.UNCHECKED: 1, sender_rooms.NOT_FOUND: 2,
+             sender_rooms.NEVER: 3, TYPED: 4, sender_rooms.CONFIRMED: 5}
+    out.sort(key=lambda r: (order[r["state"]], r["bucket"], r["name"]))
+    counts = {key: sum(1 for r in out if r["state"] == key) for key in order}
+
+    def ids(*states):
+        return ",".join(str(r["id"]) for r in out
+                        if r["findable"] and r["state"] in states)
+
+    return {"rows": out, "total": len(out), "counts": counts, "jobs": jobs,
+            "sender": sender,
+            # 찾기 단추에 싣는 줄 번호 — 아직 안 찾은 분 · 다시 찾을 분.
+            "never_ids": ids(sender_rooms.NEVER),
+            "retry_ids": ids(sender_rooms.NOT_FOUND, sender_rooms.UNCHECKED)}
