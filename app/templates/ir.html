@@ -1221,7 +1221,8 @@
     <a class="linkbtn" id="ir-send-job" href="/jobs" hidden>발송 진행 보기</a>
     <span class="send-modal-gap"></span>
     <button type="button" class="secondary-btn" id="ir-send-close">닫기</button>
-    <button type="button" class="primary-btn" id="ir-send-go" disabled data-send>보내기</button>
+    {# 팀원 화면으로 보는 중에도 열린다(11/19) — 어느 PC 카톡인지 확인창을 거친다(`view_as.js`). #}
+    <button type="button" class="primary-btn" id="ir-send-go" disabled data-send="proxy">보내기</button>
   </div>
 </div>
 {% endif %}

@@ -158,7 +158,7 @@ def base_ctx(request: Request, db: Session, user: User, active: str) -> dict:
         "view_as": view_as,
         "view_as_targets": view_as_targets(db, me),
         "view_as_note": VIEW_AS_BLOCKED,
-        # 보는 중에도 열린 방 찾기 · 딜 소개 발송의 확인창 첫 줄(`view_as.js`).
+        # 보는 중에도 열린 방 찾기 · 딜 소개 · IR 자료 전달 발송의 확인창 첫 줄(`view_as.js`).
         "view_as_send_note": (view_as_send_note(db, view_as, agent["online"])
                               if view_as else ""),
         # 켜고 끈 뒤 **같은 주소**로 돌아온다 — `?view=year&y=2026` 같은 조건이
