@@ -239,7 +239,7 @@ def test_confirm_links_fills_blank_cells_and_shows_the_badge(board, db, users):
     assert body["vc_link"]["sheet"] == SHEET
     assert "?sheet=" in body["vc_link"]["href"]
     assert set(body["vc_link"]["diff"]) == {"휴대폰", "회사"}   # 다르게 적힌 값은 그대로
-    assert "두 화면이 같이 바뀌는 칸" in body["vc_link"]["title"]
+    assert "두 화면이 같이 바뀌는 열" in body["vc_link"]["title"]
     assert body["fields"]["email"] == "hong@example.com"       # 빈 칸만 채운다
     assert body["fields"]["firm"] == "가나다벤처스(주)"
 

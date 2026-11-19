@@ -204,10 +204,10 @@ def clamp_top(top: int) -> int:
 
 
 ROOM_LABELS = {
-    ROOM_CONFIRMED: ("확인됨", "ok"),
-    "unverified": ("미확인", "warn"),
-    "failed": ("방 없음 · 실패", "bad"),
-    "missing": ("방 미등록", "bad"),
+    ROOM_CONFIRMED: ("확인 완료", "ok"),
+    "unverified": ("확인 전", "warn"),
+    "failed": ("연결 실패", "bad"),
+    "missing": ("카톡방 미등록", "bad"),
     "email": ("메일 채널", "muted"),
     # '미지정' 은 아직 안 정한 것처럼 읽혀서, 채우면 보낼 수 있는 줄로 오해된다.
     # 카톡도 메일도 아닌 사람이라 **보낼 길이 없는** 줄이다.
@@ -689,7 +689,7 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None,
     if rooms["unverified"]:
         blockers.append({
             "count": rooms["unverified"], "label": "카톡방 확인이 안 된 투자사",
-            "hint": "제목이 실제와 다르면 그때 가서 빠집니다 — [방 연결 확인]을 돌리세요",
+            "hint": "제목이 실제와 다르면 그때 가서 빠집니다 — [카톡방 연결 확인]을 돌리세요",
             "href": room_href("unverified", sheet_scope), "level": "warn",
         })
     not_introducible = len(companies) - len(introducible)
@@ -738,7 +738,7 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None,
             # 두 수를 더해야 하고, 보고에 적는 수는 어차피 합계다).
             {"key": "sent", "label": "이번 주 보낸 건수", "value": sent_this_week,
              "sub": (f"{report.day_label(week_start.isoformat())}부터 · 도착 성공"
-                     + (f" · 손으로 적음 {len(manual)}" if manual else "")),
+                     + (f" · 직접 기록 {len(manual)}" if manual else "")),
              "href": ("/deals?contacts=" + ",".join(str(i) for i in sent_ids)
                       if sent_ids else "/deals")},
         ],
@@ -1344,7 +1344,7 @@ def _admin_warnings(rows: List[dict], unassigned: int) -> List[dict]:
     if no_agent:
         out.append({"level": "bad", "label": "발송 프로그램 미연결",
                     "detail": ", ".join(no_agent),
-                    "hint": "각 계정이 쓰는 PC에서 [발송 프로그램 설치]를 해야 발송이 나갑니다"})
+                    "hint": "각 팀원이 쓰는 PC에서 [발송 프로그램 설치]를 해야 발송이 나갑니다"})
     pending = [r["name"] for r in rows if r["password_pending"]]
     if pending:
         out.append({"level": "warn", "label": "초기 비밀번호 미변경",
@@ -1357,11 +1357,11 @@ def _admin_warnings(rows: List[dict], unassigned: int) -> List[dict]:
                     "hint": "괄호 속 인원에게는 발송되지 않습니다"})
     empty = [r["name"] for r in senders if r["contacts"] == 0 and r["role"] != "admin"]
     if empty:
-        out.append({"level": "muted", "label": "담당 투자사가 없는 계정",
+        out.append({"level": "muted", "label": "담당 투자사가 없는 팀원",
                     "detail": ", ".join(empty),
                     "hint": "현황 시트를 업로드하면 채워집니다"})
     if unassigned:
-        out.append({"level": "bad", "label": "주인이 없는 담당자",
+        out.append({"level": "bad", "label": "주인이 없는 심사역",
                     "detail": f"{unassigned}명",
-                    "hint": "계정이 지워졌는데 담당자가 남아 있습니다"})
+                    "hint": "계정이 지워졌는데 심사역이 남아 있습니다"})
     return out

@@ -268,7 +268,7 @@
           .concat((d.unknown_minors || []).map(function (u) {
             return "소분류 `" + esc(u[0]) + "` " + u[1] + "곳";
           })).join(" · ") +
-        "<br>목록에 더하거나(옛 이름이면 합치기) 손으로 고친 뒤 다시 미리보기를 여세요.</p>";
+        "<br>목록에 더하거나(옛 이름이면 합치기) 직접 고친 뒤 다시 미리보기를 여세요.</p>";
     }
     if ((d.no_suggestion || []).length) {
       html += '<details class="tx-sub"><summary>대분류가 비었는데 제안을 못 만든 기업 ' +

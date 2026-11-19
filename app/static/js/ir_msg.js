@@ -202,7 +202,7 @@
             sendBtn.disabled = ready.length === 0;
             // **몇 곳에 가는지 단추에 적는다** — 누른 뒤에 아는 것은 늦다.
             sendBtn.textContent = ready.length
-              ? ready.length + "곳 대기 목록 만들기"
+              ? ready.length + "곳 대기 회차 만들기"
               : (res.d.sample ? "기업을 고르세요" : "보낼 수 있는 곳이 없습니다");
           }
         })
@@ -215,7 +215,7 @@
     sendBtn.addEventListener("click", function () {
       if (!ready.length) return;
       setError("");
-      if (!window.confirm(ready.length + "곳짜리 대기 목록을 만듭니다.\n" +
+      if (!window.confirm(ready.length + "곳짜리 대기 회차를 만듭니다.\n" +
           (sender ? sender + " 계정 PC 의 카톡에서 나갑니다.\n" : "") +
           "아직 보내지 않습니다 — 진행 화면에서 [발송 시작] 을 눌러야(또는 고른 " +
           "시각이 되어야) 나갑니다.")) return;
@@ -226,10 +226,10 @@
         scheduled_at: whenBox ? whenBox.value : ""
       })
         .then(function (res) {
-          if (!res.ok) { setError(res.d.detail || "대기 목록을 만들지 못했습니다"); stale(); return; }
+          if (!res.ok) { setError(res.d.detail || "대기 회차를 만들지 못했습니다"); stale(); return; }
           window.location.href = res.d.href || ("/jobs/" + res.d.job_id);
         })
-        .catch(function () { setError("대기 목록 만들기 오류"); stale(); });
+        .catch(function () { setError("대기 회차 만들기 오류"); stale(); });
     });
   }
 
@@ -246,8 +246,8 @@
       setError("");
       if (!window.confirm(ids.length + "곳의 대표 카톡방을 " +
           (sender ? sender + " 계정 PC 의 " : "") + "카톡에서 찾고 확인합니다.\n" +
-          "· 방 이름이 적힌 곳 — 그 이름 그대로 확인\n" +
-          "· 방 이름이 없는 곳 — 회사명으로 찾아 후보만 모음(끝나면 [대표 카톡방 맞추기] 에서 골라 확정)\n" +
+          "· 카톡방 이름이 적힌 곳 — 그 이름 그대로 확인\n" +
+          "· 카톡방 이름이 없는 곳 — 회사명으로 찾아 후보만 모음(끝나면 [대표 카톡방 맞추기] 에서 골라 확정)\n" +
           "진행 화면에서 줄마다 결과를 보고, 끝나면 알려 드립니다.\n" +
           "그 PC 의 카카오톡이 켜져 있어야 합니다. (문구는 전송하지 않습니다)")) return;
       roomBtn.disabled = true;

@@ -125,7 +125,7 @@ DRAFT_WINDOW_DAYS = twin_send.WINDOW_DAYS
 SAMPLE_SLOT = "(고른 기업이 이 자리에 기업마다 한 덩어리씩 들어갑니다)"
 
 #: 받는 분이 이 갈래가 아닐 때 — 미리보기 경고 · 발송에서 뺀 이유.
-NOT_BUCKET_NOTE = f"{LABEL}는 '{SYNC_LABEL}' 갈래에만 보냅니다 — 뺐습니다"
+NOT_BUCKET_NOTE = f"{LABEL}는 '{SYNC_LABEL}' 탭에만 보냅니다 — 뺐습니다"
 #: 본인이 공유한 기업 · 이미 받은 기업을 빼고 나니 **보낼 기업이 하나도 없는** 분 —
 #: 미리보기 경고 · 발송에서 뺀 이유(`skipped`).
 NOTHING_LEFT_NOTE = "보낼 기업 없음 (본인 공유/이미 받음)"
@@ -143,7 +143,7 @@ GOT_REASON = "이미 받음"
 #: 받는 분이 실제로 있는데 보낼 기업이 없을 때 기업 자리에 서는 말(미리보기만 —
 #: 그 분은 발송 목록에서 빠진다). 기본 문구의 `SAMPLE_SLOT` 이 서면 무엇이 나갈지
 #: 아직 모르는 글처럼 읽힌다.
-NOTHING_SLOT = f"({NOTHING_LEFT_NOTE} — 이 분은 이번 목록에서 빠집니다)"
+NOTHING_SLOT = f"({NOTHING_LEFT_NOTE} — 이 분은 이번 회차에서 빠집니다)"
 
 # 글을 다 짓고 나서 기업 덩어리를 끼우는 표시. 인사말 · 문구가 지나는 치환
 # (`message_composer.render_template` — `{직함}` · 존칭 다듬기)을 **기업 글은
@@ -882,7 +882,7 @@ def plan_notes(p: Plan, per_person: int) -> List[str]:
     if p.resent:
         notes.append(resend_note(p.resent))
     if not p.send:
-        notes.append(NOTHING_LEFT_NOTE + " — 이번 목록에서 뺐습니다")
+        notes.append(NOTHING_LEFT_NOTE + " — 이번 회차에서 뺐습니다")
     elif len(p.send) < per_person and (own or got):
         notes.append(short_note(per_person, len(p.send)))
     return notes

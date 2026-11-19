@@ -171,7 +171,7 @@ def test_today_says_auto_asked_instead_of_ask(db, users, world):
 
     _asked(db, world["meetings"]["asked"])
     items = today.build(db, users["u1"])["items"]
-    ask = [i for i in items if i["title"] == "미팅 결과 문의"]
+    ask = [i for i in items if i["title"] == "미팅 결과 확인"]
     assert ask and ask[0]["count"] == 1 and "홍길동" not in ask[0]["detail"]
     [answer] = [i for i in items if "자동 문의" in i["title"]]
     assert "홍길동" in answer["detail"] and "10/14" in answer["detail"]
@@ -226,7 +226,7 @@ def _admin(db):
 def _backlog_lines(db, user):
     from app.services import today
 
-    return [i for i in today.build(db, user)["items"] if "밀린 결과 문의" in i["title"]]
+    return [i for i in today.build(db, user)["items"] if "밀린 미팅 결과 확인" in i["title"]]
 
 
 def test_the_switch_over_backlog_is_one_count_line(db, users, world):
@@ -243,7 +243,7 @@ def test_the_switch_over_backlog_is_one_count_line(db, users, world):
     db.commit()
     admin = _admin(db)
     [line] = _backlog_lines(db, admin)
-    assert line["title"] == "자동화 전환 전 밀린 결과 문의 1건 — 손으로 확인"
+    assert line["title"] == "자동화 전환 전 밀린 미팅 결과 확인 1건 — 직접 챙기기"
     assert line["count"] == 1 and users["u1"].name in line["detail"]
     # 보내는 계정(u2)에게도, 담당 팀원(u1)에게는 안 선다 — 그 사람에게는 '미팅 결과 문의' 가 선다.
     assert len(_backlog_lines(db, users["u2"])) == 1

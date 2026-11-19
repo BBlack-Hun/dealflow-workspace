@@ -75,8 +75,8 @@
     if (!onCount) countBox.value = "";
 
     button.textContent = people
-      ? "손으로 보낸 것으로 기록 (" + people + "명)"
-      : "손으로 보낸 것으로 기록";
+      ? "직접 보낸 것으로 기록 (" + people + "명)"
+      : "직접 보낸 것으로 기록";
     button.disabled = people === 0;
 
     // **날짜가 무엇을 뜻하는지 미리 말한다.** 적고 나서 알면 이미 늦다.
@@ -110,7 +110,7 @@
   // 서는지. 리마인드가 이 기능의 절반이라 여기서 말하지 않으면 사람은 소급
   // 입력에 왜 아무 일도 안 일어나는지 모른다.
   function planText(plan) {
-    var lines = [plan.kind_label + " — " + plan.day + " 에 손으로 보낸 것으로 적습니다.", ""];
+    var lines = [plan.kind_label + " — " + plan.day + " 에 직접 보낸 것으로 적습니다.", ""];
     lines.push("· 대상 " + plan.total + "명 중 " + plan.adding + "줄이 새로 들어갑니다.");
     if (plan.already) {
       lines.push("· " + plan.already + "줄은 같은 날 같은 묶음으로 이미 적혀 있어 건너뜁니다.");
@@ -186,7 +186,7 @@
 
   function renderBatches(rows) {
     if (!rows.length) {
-      batchList.innerHTML = '<p class="muted">손으로 적은 기록이 아직 없습니다.</p>';
+      batchList.innerHTML = '<p class="muted">직접 기록이 아직 없습니다.</p>';
       return;
     }
     batchList.innerHTML = "";

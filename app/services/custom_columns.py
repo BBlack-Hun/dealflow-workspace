@@ -42,16 +42,16 @@ from . import edit_log, revenue_years
 TARGETS = {
     "companies": {"label": "IR 기업 현황", "href": "/companies",
                   "tables": ("ir_companies", "series_a_companies"),
-                  "where": "IR 기업 현황 · Series A 이상 딜 소싱 — 두 탭이 같은 칸"},
+                  "where": "IR 기업 현황 · Series A 이상 딜 소싱 — 두 탭이 같은 열"},
     "startup": {"label": "스타트업", "href": "/startup",
                 "tables": ("vc_contacts",),
-                "where": "스타트업 명단 — 명단(탭)을 가리지 않고 같은 칸"},
+                "where": "스타트업 명단 — 탭을 가리지 않고 같은 열"},
     "consulting": {"label": "투자컨설턴트", "href": "/consulting",
                    "tables": ("consulting_companies",),
-                   "where": "투자컨설턴트 현황 — 탭을 가리지 않고 같은 칸 · [월 열 추가]와 따로"},
+                   "where": "투자컨설턴트 현황 — 탭을 가리지 않고 같은 열 · [월 열 추가]와 따로"},
     "sourcing": {"label": "딜 소싱", "href": "/sourcing",
                  "tables": ("sourcing_contacts",),
-                 "where": "딜 소싱 명단 — 갈래(탭)를 가리지 않고 같은 칸"},
+                 "where": "딜 소싱 명단 — 탭을 가리지 않고 같은 열"},
     # 탭 글자는 업무 보고 탭과 같게 띄어 쓴다(보이는 글자뿐 — 열쇠는 `forecast`,
     # 칸 붙는 자리 묶음 이름은 `anchor_groups` 의 `매출예상리스트` 그대로).
     "forecast": {"label": "매출 예상 리스트", "href": "/report/forecast",
@@ -94,7 +94,7 @@ _HAND_ANCHORS = {
             "기업 한줄 소개", "딜 소개 문구", "대분류", "소분류", _YEARS, _RECENT, _FORECAST,
             "누적투자금액", "투자유치희망금액", "Pre Value", "투자라운드",
             "특이사항 (장점)", "설립년도", "지역", "정책자금",
-            "총 소개 횟수", "담당별 소개", "미팅제공일자", "계약년월",
+            "총 소개 횟수", "팀원별 소개", "미팅제공일자", "계약년월",
             "카톡 연결 여부", "홍보메일삭제",
             "핵심/TOP Deal", "메모", IR_RECEIVED),
         "Series A 이상 딜 소싱": (
@@ -135,6 +135,8 @@ RENAMED = {
                   "수신 일자": "수신일",
                   # #165(11/06) — IR 기업 현황의 소개 횟수가 업무 보고와 같은 셈의 `총` 이 됐다.
                   "소개 횟수": "총 소개 횟수",
+                  # 용어 통일(11/16) — 사람을 가리키는 `담당` 은 `팀원` 으로.
+                  "담당별 소개": "팀원별 소개",
                   # i239(11/12) — `IR 자료` 와 추가 칸 `IR 자료 수신` 을 한 칸으로 합쳤다.
                   "IR 자료": IR_RECEIVED},
     # 이름 통일(10/22) — 기업 쪽은 IR 기업 현황 낱말, 투자사 쪽은 투자사 관리 현황 낱말.
@@ -152,7 +154,10 @@ RENAMED = {
                 "견적서 첨부여부": "견적서 첨부 여부", "계약서 수신여부": "계약서 수신 여부"},
     "forecast": {"투자사명": "회사", "심사역 성함": "심사역 이름", "전화번호": "심사역 휴대폰",
                  "대표자 성함": "대표자명", "프리밸류": "Pre Value",
-                 "희망 투자유치금액": "투자유치희망금액", "성공보수율(%)": "성공보수율",
+                 "희망 투자유치금액": "투자유치희망금액",
+                 # 용어 통일(11/16) — 성공보수 낱말을 하나로. 옛 `성공보수율(%)` 은 이제 새 이름
+                 # 그대로라 따로 잇지 않는다.
+                 "성공보수율": "성공보수율(%)", "예상 수수료(억)": "성공보수(수수료, 억)",
                  # #87(10/29) — `Pre Value` 와 짝 · `대표자명` 과 같은 말.
                  "포스트밸류": "Post Value", "대표이사 지분율": "대표자 지분율"},
 }
@@ -350,9 +355,9 @@ def arranger(headers: List[str], v: dict):
 def _clean_name(name: str) -> str:
     text = " ".join((name or "").split())
     if not text:
-        raise ColumnError("칸 이름을 입력하세요")
+        raise ColumnError("열 이름을 입력하세요")
     if len(text) > NAME_MAX:
-        raise ColumnError(f"칸 이름은 {NAME_MAX}자까지입니다")
+        raise ColumnError(f"열 이름은 {NAME_MAX}자까지입니다")
     return text
 
 
@@ -364,8 +369,8 @@ def _check_free(db: Session, target: str, name: str,
     """
     for col in columns(db, target, include_hidden=True):
         if col.id != except_id and col.name.casefold() == name.casefold():
-            raise ColumnError(f"'{name}' 칸이 이미 있습니다"
-                              + (" (숨긴 칸 — 다시 보이게 하세요)" if col.is_hidden else ""))
+            raise ColumnError(f"'{name}' 열이 이미 있습니다"
+                              + (" (숨긴 열 — 다시 보이게 하세요)" if col.is_hidden else ""))
 
 
 def add(db: Session, target: str, name: str, kind: str,
@@ -406,7 +411,7 @@ def place(col: CustomColumn, after: str) -> None:
     그 탭에서는 맨 끝에 선다(`custom_cols.js`)."""
     after = label_key(after)
     if after and after not in dict(anchors(col.target)):
-        raise ColumnError("그 화면에 없는 칸입니다")
+        raise ColumnError("그 화면에 없는 열입니다")
     col.after_key = after or None
 
 
@@ -451,9 +456,9 @@ def write(db: Session, row, col: CustomColumn, raw, user_id: Optional[int]) -> s
     """
     table = row.__tablename__
     if ROW_TARGET.get(table) != col.target:
-        raise ColumnError("이 표의 칸이 아닙니다")
+        raise ColumnError("이 표의 열이 아닙니다")
     if col.is_hidden:
-        raise ColumnError("숨긴 칸입니다 — 관리자 메뉴 `컬럼 관리` 에서 다시 보이게 한 뒤 적으세요")
+        raise ColumnError("숨긴 열입니다 — 관리자 메뉴 `컬럼 관리` 에서 다시 보이게 한 뒤 적으세요")
     value = clean_value(col, raw)
     cell = db.execute(select(CustomColumnValue).where(
         CustomColumnValue.column_id == col.id,

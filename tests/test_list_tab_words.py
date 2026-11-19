@@ -121,5 +121,5 @@ def test_investor_tabs_wear_word_tags(world):
         for picture in ("◇", "🚫", "✉"):
             assert picture not in tab, tab
     # 투자사 화면은 사람 단위, 탭 수는 `카톡방 확인` 까지.
-    assert re.search(r'담당자 <b data-unit="명" data-filter-count>\d+ / \d+명</b>', html)
-    assert re.search(r'<span data-testid="tab-counts">1명 / 카톡방 확인 0</span>', deal), deal
+    assert re.search(r'심사역 <b data-unit="명" data-filter-count>\d+ / \d+명</b>', html)
+    assert re.search(r'<span data-testid="tab-counts">1명 / 카톡방 확인 완료 0</span>', deal), deal

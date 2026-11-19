@@ -49,7 +49,7 @@
 
   function endedText(d) {
     var s = d.room_search;
-    var head = d.status === "canceled" ? "딜 소싱 방 찾기 취소됨" : "딜 소싱 방 찾기가 끝났습니다";
+    var head = d.status === "canceled" ? "딜 소싱 카톡방 찾기 취소됨" : "딜 소싱 카톡방 찾기가 끝났습니다";
     if (!s) return head;
     var parts = ["확정 " + s.confirmed, "후보 고르기 " + s.picks, "못 찾음 " + s.not_found];
     if (s.failed) parts.push("오류 " + s.failed);

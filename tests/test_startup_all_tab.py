@@ -146,7 +146,7 @@ def test_only_fixed_columns_plus_the_list_column(world):
     # 한 줄이 어느 명단인지 — 고쳐지는 칸이 아니다(`data-field` 없음).
     assert re.search(r'<td class="ellipsis muted" title="' + LIST_C + '">' + LIST_C + "</td>", html)
     # 왜 달 칸이 없는지 적는다.
-    assert "고정 칸만" in html
+    assert "고정 열만" in html
 
 
 def test_the_list_column_can_be_filtered_and_rows_carry_it(world):
@@ -208,7 +208,7 @@ def test_the_investor_all_tab_is_unchanged(world):
     # 팀원의 투자사 `전체` 는 #29 에서 `내 명단 N명 · 팀 전체 M명` 이 됐다 — 그
     # 밖(달 칸 · 명단 칸 · 내려받기)은 그대로다.
     assert re.search(r'class="sheet-tab active" href="/contacts\?sheet=all"[^>]*>\s*'
-                     r'전체 <span[^>]*>내 명단 1명 / 카톡방 확인 0 · 팀 전체 1명</span>', tabs), tabs
+                     r'전체 <span[^>]*>내 명단 1명 / 카톡방 확인 완료 0 · 팀 전체 1명</span>', tabs), tabs
     assert "list-view-line" not in html and "data-f-list_label" not in html
     assert "엑셀 내려받기" in html
     assert "샘플가기업" not in html

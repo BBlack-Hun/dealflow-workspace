@@ -967,7 +967,8 @@ def test_the_category_column_is_a_little_wider_in_both_tables(client, db, users)
 
     widths = {}
     for name, table in (("주간 업무", _task_table(body)), ("반복 업무", _routine_table(body))):
-        m = re.search(r'<th style="width:(\d+)px"[^>]*>항목</th>', table)
+        # 머리글 이름은 용어 통일(11/16)로 `항목` → `할 일`.
+        m = re.search(r'<th style="width:(\d+)px"[^>]*>할 일</th>', table)
         assert m, f"{name} 표의 항목 머리글을 못 찾았습니다"
         widths[name] = int(m.group(1))
 

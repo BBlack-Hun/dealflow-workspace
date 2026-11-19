@@ -111,5 +111,5 @@ def blocked(db: Session, contacts: Iterable[VcContact],
         out[contact.id] = (
             f"같은 분이 {getattr(owner, 'name', '') or '다른 팀원'} 님 명단에도 있고, "
             f"{(hits[0][1] or '')[:10]} 에 같은 기업({', '.join(names)})을 "
-            f"이미 보냈거나 보낼 예정입니다 — 두 번 나가지 않게 이번 목록에서 뺍니다")
+            f"이미 보냈거나 보낼 예정입니다 — 두 번 나가지 않게 이번 회차에서 뺍니다")
     return out

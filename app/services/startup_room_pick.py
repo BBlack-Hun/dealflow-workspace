@@ -326,10 +326,10 @@ def confirm(db: Session, contact: VcContact, title: str) -> VcContact:
     shown, _ = picks(contact, room_match.investor_rooms(db))
     if not text or text not in shown:
         raise NotPickable("카톡에서 찾은 후보가 아닙니다 — 화면을 새로 열어 보세요. "
-                          "직접 적은 이름은 [방 연결 확인] 으로 확인합니다")
+                          "직접 적은 이름은 [카톡방 찾기·확인] 으로 확인합니다")
     if text in room_match.candidates(contact)["same"]:
         raise NotPickable("카톡에 같은 제목의 방이 여럿입니다 — 카톡에서 방 이름을 "
-                          "고유하게 바꾼 뒤 직접 적고 [방 연결 확인] 을 눌러 주세요")
+                          "고유하게 바꾼 뒤 직접 적고 [카톡방 찾기·확인] 을 눌러 주세요")
     was = room_joined.before(contact)
     contact.kakao_room_name = text
     room_joined.after_edit(contact, was)

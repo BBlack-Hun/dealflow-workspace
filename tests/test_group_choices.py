@@ -251,13 +251,17 @@ def test_investor_monthly_layout_uses_the_same_list():
 
 # ── ④ `카톡방 참여여부` — 표의 `O,X` 와 창의 보기가 같은 말인가 ──────────────
 #
-# 짝이 안 맞는 칸(`data-field="kakao_joined"` ↔ 필터 키 `joined`)이라, 표와 창이
-# 갈리면 `O`·`o`·`완료` 가 한 칸에 섞인다 — 이 저장소가 이미 데인 자리다.
+# 투자사 표의 이 칸은 요청으로 뺐다 — 손으로 고치는 자리는 수정창 하나다. 같은
+# 모델 칸(`kakao_joined`)을 **표에서** 고르는 곳은 스타트업 배치의 `카톡 연결 여부`
+# 가 남았으니, 창의 보기는 그 칸의 `choices` 와 같은 말이어야 한다. 갈리면
+# `O`·`o`·`완료` 가 한 칸에 섞인다 — 이 저장소가 이미 데인 자리다.
 def test_panel_kakao_joined_matches_the_table(body, panel):
-    cell = _cell(body, "kakao_joined")
-    m = re.search(r'data-choices="([^"]*)"', cell)
-    assert m, "표의 `카톡방 참여여부` 칸에 보기가 없다"
-    table_choices = [v.strip() for v in m.group(1).split(",") if v.strip()]
+    assert 'data-field="kakao_joined"' not in body, (
+        "투자사 표에 `카톡방 참여여부` 칸이 다시 섰다 — 뺀 칸이다")
+    columns = {c.key: c for c in contact_columns.STARTUP_LAYOUT.tail}
+    table_choices = [v.strip() for v in columns["kakao_joined"].choices.split(",")
+                     if v.strip()]
+    assert table_choices, "스타트업 표의 `카톡 연결 여부` 칸에 보기가 없다"
 
     field = _field(panel, "f-kakao_joined")
     assert 'list="opts-panel-kakao_joined"' in field, (

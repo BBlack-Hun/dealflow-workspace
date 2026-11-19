@@ -188,7 +188,7 @@ def test_반응_없는_담당자만_단추에_수가_적힌다(logged_in, db, us
     html = logged_in.get("/deals").text
     button = re.search(r'<button[^>]*id="select-noreact"[^>]*>([^<]*)</button>', html)
     assert button, "[반응 없는 담당자만] 단추가 화면에 없다"
-    assert button.group(1).strip() == "반응 없는 담당자만 · 2명", button.group(1)
+    assert button.group(1).strip() == "반응 없는 심사역만 · 2명", button.group(1)
     assert html.count('data-noreact="1"') == 2
 
 
@@ -225,7 +225,7 @@ def test_대시보드_반응_없는_분_수는_딜제안관리와_같고_눌러_
     link = re.search(r'<a[^>]*href="/deals\?noreact=1"[^>]*>.*?<b>(\d+)</b>', dash, re.S)
     assert link, "대시보드에 딜 제안 관리 [반응 없는 담당자만] 으로 넘어가는 연결이 없다"
     deals = logged_in.get("/deals").text
-    button = re.search(r'id="select-noreact"[^>]*>반응 없는 담당자만 · (\d+)명<', deals)
+    button = re.search(r'id="select-noreact"[^>]*>반응 없는 심사역만 · (\d+)명<', deals)
     assert link.group(1) == button.group(1) == "2", (link.group(1), button.group(1))
     assert re.search(r'href="/deals\?noreact=1"', logged_in.get("/").text), (
         "첫 화면(`/`)도 같은 대시보드다 — 한쪽에만 연결이 서면 안 된다")

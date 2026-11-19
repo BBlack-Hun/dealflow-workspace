@@ -978,7 +978,7 @@ def test_every_tab_has_pick_boxes_and_a_locked_room_search_button(board, db, use
     assert re.search(r'<input type="hidden" name="ids" value="">', form.group(0))
     btn = re.search(r'<button [^>]*id="sourcing-room-btn"[^>]*>([^<]*)</button>',
                     form.group(0))
-    assert btn and btn.group(1).strip() == "방 후보 찾기 (선택 0명)", btn and btn.group(1)
+    assert btn and btn.group(1).strip() == "카톡방 후보 찾기 (선택 0명)", btn and btn.group(1)
     assert " disabled" in btn.group(0), "아무도 안 골랐는데 단추가 눌린다"
     assert re.search(r'id="sourcing-room-hint"[^>]*>찾을 분을 먼저 고르세요<', page)
 
@@ -1574,5 +1574,5 @@ def test_the_link_badge_names_every_shared_field(board, db, users):
     contact = vc(db, users)
     mark(board, contact.id, "O")
     body = board.get(f"/sourcing?tab={SYNC}").text
-    assert ("두 화면이 같이 바뀌는 칸: 이름 · 직함 · 회사 · 휴대폰 · 이메일 · "
+    assert ("두 화면이 같이 바뀌는 열: 이름 · 직함 · 회사 · 휴대폰 · 이메일 · "
             "선호 투자분야 · 라운드 사이즈(투자운영금액) (메모는 따로)") in body

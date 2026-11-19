@@ -76,9 +76,9 @@
            더 넓히지는 않는다: 이 표에서 길게 읽는 칸은 세부업무이고, 남는 폭은
            그쪽이 가져간다(아래 반복 업무 표도 같은 값). #}
         <tr>
-          <th style="width:140px" data-sort="category">항목</th>
-          <th>세부업무</th>
-          <th style="width:120px" data-sort="due">일시</th>
+          <th style="width:140px" data-sort="category">할 일</th>
+          <th>내용</th>
+          <th style="width:120px" data-sort="due">날짜</th>
           <th style="width:110px" data-sort="status">상태</th>
           <th style="width:56px" aria-label="삭제"></th>
         </tr>
@@ -139,14 +139,14 @@
        줄바꿈도 그대로 담기고(이주가 필요 없다), 서버는 세부업무와 **같은
        규칙**(앞뒤 공백만 털기, `routers/dashboard.py` 의 추가·고치기)으로
        받는다. 이미 한 줄로 적힌 항목은 손대지 않는다. #}
-    <label class="field inline-field"><span>항목</span>
+    <label class="field inline-field"><span>할 일</span>
       <textarea name="category" rows="2" cols="12" placeholder="예: 메일"></textarea></label>
     {# 위 표의 세부업무 칸은 **이미 여러 줄**이다(`td.cell.multi`) — 여기만 한
        줄이면 적을 때는 못 나누고 고칠 때만 나눌 수 있다. 아래 반복 업무 폼과
        같은 모양으로 둔다. #}
-    <label class="field inline-field" style="flex:1"><span>세부업무</span>
+    <label class="field inline-field" style="flex:1"><span>내용</span>
       <textarea name="title" rows="2" required placeholder="예: 홍보 메일 발송 - 60개"></textarea></label>
-    <label class="field inline-field"><span>일시</span>
+    <label class="field inline-field"><span>날짜</span>
       <input type="date" name="due_date" value="{{ today_iso }}"></label>
     <button class="secondary-btn" type="submit">추가</button>
   </form>
@@ -212,7 +212,7 @@
     <li><b>전날</b> — 위 점검에서 막힌 것이 없는지 확인합니다</li>
     <li><b>전날</b> — <a href="/setup">발송 프로그램 설치</a> 화면의 시험 단추로 한 통 보내 봅니다(시험방으로만 갑니다)</li>
     <li><b>당일</b> — 발송 프로그램을 켭니다</li>
-    <li><b>당일</b> — 기업을 고르고 대상 담당자를 확인한 뒤 발송합니다</li>
+    <li><b>당일</b> — 기업을 고르고 받을 심사역을 확인한 뒤 발송합니다</li>
     <li><b>발송 후</b> — <a href="/jobs">진행 화면</a>에서 실패 건을 재시도합니다</li>
     <li><b>이후</b> — <a href="/followups">딜 진행 관리</a>에 리마인드가 자동으로 잡힙니다</li>
   </ol>
@@ -228,7 +228,7 @@
   <table class="grid-table compact" data-inline-url="/api/todo/routines" id="routine-table">
     <thead><tr>
       {# 항목 칸 폭은 위 주간 업무 표와 같은 140px(그쪽 머리글 설명). #}
-      <th style="width:140px">항목</th><th>세부업무</th>
+      <th style="width:140px">할 일</th><th>내용</th>
       <th style="width:200px">주차 · 요일 · 시간대</th><th style="width:56px" aria-label="삭제"></th>
     </tr></thead>
     <tbody>
@@ -272,7 +272,7 @@
                    메모가 얹혀 있어서, 규칙 하나를 내렸다고 그 기록까지 걷어가면
                    안 된다. 다만 이제 그 줄을 위 표에서 **지울 수 있다**
                    (`services/weekly.py` 의 `fill_week`). #}
-                onsubmit="return confirm('이 반복 업무를 지울까요?\n이미 만들어진 이번 주 항목은 남습니다 — 필요 없으면 위 표에서 지우세요.')">
+                onsubmit="return confirm('이 반복 업무를 지울까요?\n이미 만들어진 이번 주 할 일은 남습니다 — 필요 없으면 위 표에서 지우세요.')">
             <input type="hidden" name="week" value="{{ week_start }}">
             <button class="linkbtn danger" type="submit">삭제</button>
           </form>
@@ -288,7 +288,7 @@
     <input type="hidden" name="week" value="{{ week_start }}">
     <input type="hidden" name="member" value="{{ member_id }}">
     {# 항목도 여러 줄 — 위 주간 업무 폼의 같은 칸과 같은 모양이다(그쪽 설명). #}
-    <label class="field inline-field"><span>항목</span>
+    <label class="field inline-field"><span>할 일</span>
       <textarea name="category" rows="2" cols="12" placeholder="예: 메일"></textarea></label>
     {# 세부업무는 **여러 줄**이다. 시트에 적던 반복 업무는 한 줄이 아니라
        "홍보 메일 발송 / 수신거부 정리 / 회신 확인" 처럼 갈래가 있어서, 한 줄
@@ -298,7 +298,7 @@
        **두 줄만 보인다(`rows="2"`).** 이 폼은 칸이 가로로 늘어선 한 줄이라
        더 키우면 그 줄이 통째로 커져 위 표가 아래로 밀린다. 더 적을 때는
        손으로 늘린다(`resize: vertical`). #}
-    <label class="field inline-field" style="flex:1"><span>세부업무</span>
+    <label class="field inline-field" style="flex:1"><span>내용</span>
       <textarea name="title" rows="2" required placeholder="예: 홍보 메일 발송"></textarea></label>
     {# 묶음은 `<label>` 이 아니라 이름 붙은 무리(`role="group"`)다. 바깥을 `<label>`
        로 감싸면 그 이름(`요일`)이 첫 체크상자 하나에 붙어 화면 읽기가 `요일 월 화 수 목

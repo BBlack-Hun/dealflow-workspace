@@ -266,7 +266,7 @@ class Layout:
     #: (아래 `required_label`) — 두 곳에 적어 두면 표는 `기업명`, 안내는
     #: `회사명` 이 되어 같은 칸인지 알아볼 수가 없다. 이 값은 머리글이 화면에
     #: 그대로 적혀 있어 목록에 없는 배치(투자사 명함)만 쓴다.
-    required_fallback: str = "담당자명"
+    required_fallback: str = "심사역 이름"
 
     @property
     def required_label(self) -> str:
@@ -875,10 +875,10 @@ STARTUP_LAYOUT = Layout(
         #
         # 그래서 이 칸은 **`VcContact.kakao_joined` 그 값 자체**다
         # (`source="field"` — 머리글만 이 명단 말로 `카톡 연결 여부`, 저장
-        # 자리는 모델 칸 그대로). 같은 값을 보는 자리가 이미 넷이다:
+        # 자리는 모델 칸 그대로). 같은 값을 보는 자리가 이미 여럿이다:
         #
-        #   · 투자사 표의 `카톡방 참여여부` 칸(`contacts.html` 의
-        #     `data-field="kakao_joined"` — 거기도 `O`/`X` 로 고친다)
+        #   · 투자사 수정창의 `카톡방 참여여부`(`contacts.html` 의 `f-kakao_joined`
+        #     — 거기도 `O`/`X` 로 고친다. 투자사 **표**의 그 칸은 요청으로 뺐다)
         #   · 두 배치의 수정창(`INVESTOR_MONTHLY_LAYOUT.extra` · 아래 `panel_columns`)
         #   · 시트를 가져올 때 **연결 단계를 정하는 재료**
         #     (`services/sheet_import.py` 의 `connect_stage` · `is_invited`)
@@ -904,9 +904,9 @@ STARTUP_LAYOUT = Layout(
         # 원문을 보존한다 — `models.VcContact`) 실제로 들어 있는 값은 `O` 뿐이다.
         # **달마다의 `N월 카톡 연결` 과 다른 칸이다** — 저쪽은 그 달에 무엇을
         # 했는지 적는 여러 줄 메모고, 이 칸은 지금 연결돼 있는가를 고르는
-        # 칸이다. 투자사 표가 이 칸에 이미 `O,X` 를 쓰고 있으므로 그것을
-        # 따른다 — 목록에 없는 옛 값은 `<datalist>`·`startPick` 이 그대로
-        # 살려 둔다.
+        # 칸이다. 투자사 쪽이 이 칸에 이미 `O,X` 를 쓰고 있으므로(지금은
+        # 수정창의 보기) 그것을 따른다 — 목록에 없는 옛 값은
+        # `<datalist>`·`startPick` 이 그대로 살려 둔다.
         #
         # 폭은 값이 아니라 **필터를 건 뒤의 머리글**에 맞춘다
         # (`카톡 연결 여부 (1) ▾` = 130px). 글자 모양이 `당사 협업 상태`
@@ -981,7 +981,7 @@ STARTUP_LAYOUT = Layout(
         #
         # 표에 안 세우는 이유는 옆 칸들과 같다 — 매달 보는 칸이 눌린다.
         Column("원본NO", "origin_no", 0, source="note", in_table=False,
-               hint="담당자 워크북의 원본 명단 번호"),
+               hint="팀원 워크북의 원본 명단 번호"),
         # **우리 팀 안에서 넘긴 이력**이다(`7/21 김담당 -> 8/19 이담당`).
         # 스타트업 쪽 담당자가 아니라서 `성함` 이 아니다 — 거기 넣으면 기업의
         # 연락 상대 자리에 우리 팀원 이름이 앉는다.

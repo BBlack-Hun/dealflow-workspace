@@ -24,7 +24,7 @@
   {# **여기서는 한 통도 나가지 않는다.** 이 말이 없으면 누른 사람이 보냈다고
      알고 창을 닫는다. #}
   <p class="hint">
-    ✋ 이 화면은 <b>대기 목록을 세우는 데까지</b>입니다 — 진행 화면에서
+    ✋ 이 화면은 <b>대기 회차를 세우는 데까지</b>입니다 — 진행 화면에서
     <b>[발송 시작]</b> 을 누르거나 <b>보낼 시각</b>을 골라야 나갑니다.
     발송 프로그램이 <b>{{ agent_needs }}</b> 이상이어야 이 회차를 집어갑니다
     (낡은 판이면 회차가 대기로 서서 기다립니다 — <a href="/setup">발송 프로그램 설치</a>에서 새로 받으세요).
@@ -44,7 +44,7 @@
     {% endfor %}
   </div>
   <label class="field wide msg-body-field">
-    <span>문구 — 여기서 고친 것은 <b>이번 대기 목록에만</b> 씁니다.
+    <span>문구 — 여기서 고친 것은 <b>이번 회차에만</b> 씁니다.
       늘 쓰는 글을 바꾸려면 <a href="/templates#{{ topic.key }}">딜 제안 문구</a>에서 고치세요.</span>
     <textarea id="msg-body" rows="9" data-topic="{{ topic.key }}">{{ body }}</textarea>
   </label>
@@ -62,7 +62,7 @@
   내 스타트업 <b>{{ total }}곳</b>
   · 보낼 수 있음 <b>{{ counts.ready }}곳</b>
   {% if counts.recent %}· 이 문구 최근 받음 <b>{{ counts.recent }}곳</b>{% endif %}
-  {% if counts.no_room %}· 방 확인 전 <b>{{ counts.no_room }}곳</b>{% endif %}
+  {% if counts.no_room %}· 카톡방 확인 전 <b>{{ counts.no_room }}곳</b>{% endif %}
   {% if counts.excluded %}· 제외 <b>{{ counts.excluded }}곳</b>{% endif %}
 </p>
 
@@ -85,8 +85,8 @@
     </select>
   </div>
   <div class="toolbar-right">
-    <input type="search" id="msg-search" placeholder="기업명 · 대표자명 · 방 검색"
-           autocomplete="off" aria-label="기업명 · 대표자명 · 방 검색">
+    <input type="search" id="msg-search" placeholder="기업명 · 대표자명 · 카톡방 검색"
+           autocomplete="off" aria-label="기업명 · 대표자명 · 카톡방 검색">
   </div>
 </div>
 
@@ -127,7 +127,7 @@
       </tr>
       {% endfor %}
       {% if not table %}
-      <tr><td colspan="6" class="muted">지금 보낼 수 있는 곳이 없습니다 — 아래 <b>방 확인 전</b> 줄을 보세요.</td></tr>
+      <tr><td colspan="6" class="muted">지금 보낼 수 있는 곳이 없습니다 — 아래 <b>카톡방 확인 전</b> 줄을 보세요.</td></tr>
       {% endif %}
     </tbody>
   </table>
@@ -153,7 +153,7 @@
   <button type="button" class="secondary-btn" id="msg-preview-btn">미리보기</button>
   {# **몇 곳에 가는지 단추에 적는다** — 누른 뒤에 숫자를 아는 것은 늦다. #}
   <button type="button" class="primary-btn inline" id="msg-send-btn" disabled data-send
-          data-days="{{ days }}">0곳 대기 목록 만들기</button>
+          data-days="{{ days }}">0곳 대기 회차 만들기</button>
 </div>
 <p class="hint">
   누르면 고른 곳짜리 회차가 <b>대기(draft)</b> 로 섭니다 — 진행 화면에서
@@ -180,13 +180,13 @@
   [방 매칭] 화면 한 곳이고, 줄마다 그 줄로 가는 링크를 단다.
 #}
 <details class="sheet-fold" id="msg-noroom"{% if not counts.ready and counts.no_room %} open{% endif %}>
-  <summary>방 확인 전 {{ counts.no_room }}곳 — 카톡에서 확인된 방에만 보냅니다</summary>
+  <summary>카톡방 확인 전 {{ counts.no_room }}곳 — 카톡에서 확인된 방에만 보냅니다</summary>
   <div class="sheet-fold-body">
     <p class="hint">
       <b>[카톡방 찾기·확인]</b> — 방 이름이 적힌 곳은 <b>그 이름 그대로</b> 카톡에서 확인하고,
       없는 곳은 발송 프로그램이 <b>회사명으로</b> 카톡을 뒤져 방 제목을 가져옵니다.
-      가져온 후보는 <a href="{{ rooms_href }}">방 매칭</a> 화면에서 맞는 방을 눌러
-      확정하면 <b>확인됨</b> 이 되어 위 표로 올라옵니다(후보가 없으면 거기서 직접 적기).
+      가져온 후보는 <a href="{{ rooms_href }}">카톡방 매칭</a> 화면에서 맞는 방을 눌러
+      확정하면 <b>확인 완료</b>가 되어 위 표로 올라옵니다(후보가 없으면 거기서 직접 적기).
       (문구는 보내지 않습니다)
     </p>
     {# 실을 곳 수는 **누르면 세우는 잡의 크기와 같은 함수**로 센다
@@ -208,7 +208,7 @@
               {% if r.room %}{{ r.room }}{% else %}<span class="muted">—</span>{% endif %}
               {# 고르는 자리는 [방 매칭] 한 곳 — 그 줄로 데려간다. #}
               <a class="linkbtn room-pick-link" href="{{ rooms_href }}#room-{{ r.id }}">
-                {%- if n_picks %}후보 {{ n_picks }}개 — 고르기{% else %}방 매칭에서 맞추기{% endif -%}
+                {%- if n_picks %}후보 {{ n_picks }}개 — 고르기{% else %}카톡방 매칭에서 맞추기{% endif -%}
               </a>
             </td>
             <td><span class="status-badge warn">{{ r.reason }}</span></td>

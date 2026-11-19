@@ -67,7 +67,7 @@ FIELDS = (
     runner.Field("time", "첫 번째 보낼 시각", "time", "14:00"),
     runner.Field("second_time", "두 번째 보낼 시각", "time", "14:00",
                  hint="첫 번째와 다른 시각이면 두 번째는 그 시각에 따로 선다"),
-    runner.Field("manual_days", "손 발송 뒤 쉬는 날(일)", "int", 7, low=0, high=60,
+    runner.Field("manual_days", "직접 발송 뒤 쉬는 날(일)", "int", 7, low=0, high=60,
                  hint="이 날수 안에 사람이 미팅 요청·후기를 보낸 분께는 안 묻는다(0 이면 안 본다)"),
 )
 
@@ -200,7 +200,7 @@ def undo_replied(db: Session, contact: VcContact) -> int:
 
 def _sendable(db: Session, contact: Optional[VcContact]) -> str:
     if contact is None:
-        return "담당자가 없습니다"
+        return "심사역이 없습니다"
     if contact.is_hidden or not sheet_owner.investors(db, [contact]):
         return "투자사 명단에 없는 줄입니다"
     if sheet_owner.is_paused(contact):
@@ -210,7 +210,7 @@ def _sendable(db: Session, contact: Optional[VcContact]) -> str:
     if not sheet_owner.is_connected(contact):
         return "카톡방 연결 전"
     if not (contact.kakao_room_name or "").strip():
-        return "방 이름 없음"
+        return "카톡방 이름 없음"
     return ""
 
 

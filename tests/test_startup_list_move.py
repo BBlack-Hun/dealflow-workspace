@@ -175,7 +175,7 @@ def test_명단_소유가_따라온다(lists, admin, db, users):
     남으면 담당을 옮기려고 없는 탭을 찾게 된다.
     """
     body = lists.get(_pages()["startup"] + f"?sheet={quote(STARTUP_LISTS[0])}").text
-    assert f"담당 {users['u1'].name}" in body, "탭에 담당이 안 적혀 있습니다"
+    assert f"담당 팀원 {users['u1'].name}" in body, "탭에 담당이 안 적혀 있습니다"
 
     page = admin.get(_pages()["startup"] + f"?sheet={quote(STARTUP_LISTS[0])}").text
     assert 'action="/api/contacts/sheets/assign"' in page, "담당 지정 자리가 없습니다"

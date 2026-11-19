@@ -113,7 +113,7 @@ def summary(db: Session, job: SendJob) -> Optional[dict]:
             parts.append(f"오류 {errors}")
         if blind:
             parts.append(f"확인 못 함 {blind}")
-        head = "딜 소싱 방 찾기를 중단했습니다" if stopped else "딜 소싱 방 찾기가 끝났습니다"
+        head = "딜 소싱 카톡방 찾기를 중단했습니다" if stopped else "딜 소싱 카톡방 찾기가 끝났습니다"
         return {"sentence": f"{head} — {' · '.join(parts)}{tail}", "pick": False}
 
     companies = [(i, _row(job, i)) for i in job.items]
@@ -127,14 +127,14 @@ def summary(db: Session, job: SendJob) -> Optional[dict]:
                 got[room_match.find_state(row, known)] += 1
         parts = [f"찾음 {got['found']}", f"여럿 {got['many']}", f"못 찾음 {got['none']}"]
         if got["verified"]:
-            parts.append(f"확인됨 {got['verified']}")
-        head = "방 찾기를 중단했습니다" if stopped else "방 찾기가 끝났습니다"
+            parts.append(f"확인 완료 {got['verified']}")
+        head = "카톡방 찾기를 중단했습니다" if stopped else "카톡방 찾기가 끝났습니다"
         pick = True
     else:
         sent = sum(1 for i in job.items if i.status == "sent")
         failed = sum(1 for i in job.items if i.status == "failed")
-        parts = [f"확인됨 {sent}", f"불일치 {failed - unchecked}"]
-        head = "방 연결 확인을 중단했습니다" if stopped else "방 연결 확인이 끝났습니다"
+        parts = [f"확인 완료 {sent}", f"불일치 {failed - unchecked}"]
+        head = "카톡방 연결 확인을 중단했습니다" if stopped else "카톡방 연결 확인이 끝났습니다"
         pick = False
     if unchecked:
         parts.append(f"확인 못 함 {unchecked}")

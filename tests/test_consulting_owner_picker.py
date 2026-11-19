@@ -316,11 +316,11 @@ def test_the_read_only_rule_is_written_where_the_rows_are(stage, sign_in):
     옛 문구는 맡은 줄이 하나라도 있으면 거짓말이 된다.
     """
     body = sign_in("member").get(f"/consulting?sheet={STARTUP}").text
-    assert "맡지 않은 담당자의 줄은 볼 수만 있습니다" in body
+    assert "내가 맡지 않은 줄은 볼 수만 있습니다" in body
     # 남의 줄이 하나도 없으면 그 안내도 없다 — 안 걸리는 규칙을 적어 두면 잡음이다.
     mine_only = sign_in("member").get(
         f"/consulting?sheet={STARTUP}&owner={stage['member'].id}").text
-    assert "맡지 않은 담당자의 줄은 볼 수만 있습니다" not in mine_only
+    assert "내가 맡지 않은 줄은 볼 수만 있습니다" not in mine_only
 
 
 def _row_tag(html: str, company: str) -> str:
@@ -343,7 +343,7 @@ def test_a_read_only_row_carries_why_it_does_not_open(stage, sign_in):
     theirs = _row_tag(body, "샘플라")
     assert 'data-readonly="1"' in theirs
     assert 'data-readonly-why="컨설갑 담당 줄은 볼 수만 있습니다' in theirs, theirs
-    assert "담당자나 관리자에게 요청하세요" in theirs
+    assert "담당 팀원이나 관리자에게 요청하세요" in theirs
     # 주인 없는 줄은 **누구에게 물을지**가 다르다 — 관리자가 담당을 정할 일이다.
     orphan = _row_tag(body, "샘플바")
     assert 'data-readonly-why="담당이 정해지지 않은 줄은 볼 수만 있습니다' in orphan, orphan
@@ -363,7 +363,7 @@ def test_the_read_only_hint_does_not_hang_on_the_owner_column(stage, sign_in):
 
     text = (Path(__file__).resolve().parents[1] / "app" / "templates"
             / "consulting.html").read_text(encoding="utf-8")
-    hint = text.split("맡지 않은 담당자의 줄은 볼 수만 있습니다", 1)[0]
+    hint = text.split("내가 맡지 않은 줄은 볼 수만 있습니다", 1)[0]
     cond = hint.rsplit("{% if", 1)[1].split("%}", 1)[0]
     assert "rejectattr('editable')" in cond, cond
     assert "can_pick_owner" not in cond, (
@@ -371,7 +371,7 @@ def test_the_read_only_hint_does_not_hang_on_the_owner_column(stage, sign_in):
         "안내가 없는 화면이 생긴다: " + cond)
     # 컨설턴트 화면(자기 줄만 본다)에는 고칠 수 없는 줄이 없어 안내도 없다.
     body = sign_in("first").get(f"/consulting?sheet={STARTUP}").text
-    assert "맡지 않은 담당자의 줄은 볼 수만 있습니다" not in body
+    assert "내가 맡지 않은 줄은 볼 수만 있습니다" not in body
     assert "data-readonly-why" not in body
 
 

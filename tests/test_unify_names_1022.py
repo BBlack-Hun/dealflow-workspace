@@ -101,7 +101,7 @@ def test_매출예상리스트_머리글():
     assert labels["ceo_name"] == "대표자명"
     assert labels["pre_value"] == "Pre Value"
     assert labels["raise_target"] == "투자유치희망금액"
-    assert labels["fee_rate"] == "성공보수율"
+    assert labels["fee_rate"] == "성공보수율(%)"   # 용어 통일(11/16)
 
 
 def test_Series_A_머리글():

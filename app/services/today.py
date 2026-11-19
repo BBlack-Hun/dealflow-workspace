@@ -90,7 +90,7 @@ def build(db: Session, user: User, today: Optional[date] = None) -> dict:
 
     if ir["due_followups"]:
         items.append(_item(
-            "meeting", "urgent", "미팅 결과 문의",
+            "meeting", "urgent", "미팅 결과 확인",
             ", ".join(m["name"] for m in ir["due_followups"][:3]),
             "/ir", len(ir["due_followups"])))
 
@@ -127,8 +127,8 @@ def build(db: Session, user: User, today: Optional[date] = None) -> dict:
             others.append(waiting)
             continue
         items.append(_item(
-            "meeting", "urgent", "옛 미팅 후기 자동 준비 목록이 남아 있습니다",
-            f"{waiting['count']}명 — 자동화 전환 전에 선 목록이라 저절로 나가지 "
+            "meeting", "urgent", "옛 미팅 후기 자동 준비 회차가 남아 있습니다",
+            f"{waiting['count']}명 — 자동화 전환 전에 선 회차라 저절로 나가지 "
             "않습니다. 확인하고 [발송 시작] 하거나 [취소] 하세요",
             f"/jobs/{waiting['job_id']}", waiting["count"]))
     if others:
@@ -139,7 +139,7 @@ def build(db: Session, user: User, today: Optional[date] = None) -> dict:
             if name not in names:
                 names.append(name)
         items.append(_item(
-            "meeting", "info", "옛 미팅 후기 자동 준비 목록 — 다른 팀원 계정",
+            "meeting", "info", "옛 미팅 후기 자동 준비 회차 — 다른 팀원 계정",
             f"{', '.join(names)} 님 계정에 {len(others)}개 — 저절로 나가지 않습니다. "
             "주인이 [발송 시작] 하거나 [취소] 합니다",
             f"/jobs/{others[0]['job_id']}", len(others)))

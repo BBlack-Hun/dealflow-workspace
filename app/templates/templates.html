@@ -10,7 +10,7 @@
   <div class="bubble-meta">
     실제로 나가는 문구 —
     {% if not s.with_opening %}
-      인사말 없이 본문만(이미 대화가 오간 방에 한 줄만 덧붙입니다)
+      인사말 없이 본문만(이미 대화가 오간 카톡방에 한 줄만 덧붙입니다)
     {% else %}
       인사말 + 본문 · <b>첫 연락 기준</b>
     {% endif %}
@@ -134,7 +134,7 @@
   {% if g.has_buckets and g.slots|length > 1 %}
   {# 딜 소싱은 갈래마다 호칭·전달 개수·찾는 범위가 다르다 — 갈래가 다르면
      아예 다른 문구라 한 덩어리로 묶으면 안 된다. #}
-  <h3 class="panel-title">{{ bucket_label(s.variant) or "갈래 없는 문구" }}</h3>
+  <h3 class="panel-title">{{ bucket_label(s.variant) or "탭을 정하지 않은 문구" }}</h3>
   {% endif %}
   {{ slot_block(g, s) }}
   </div>

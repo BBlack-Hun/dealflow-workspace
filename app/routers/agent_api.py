@@ -807,7 +807,7 @@ def _pick_screen(company) -> str:
     """후보를 고르는 화면 이름 — 진행 화면의 사유에 적는다."""
     from ..models import IrCompany
 
-    return "맞추기 화면" if isinstance(company, IrCompany) else "방 매칭 화면"
+    return "맞추기 화면" if isinstance(company, IrCompany) else "카톡방 매칭 화면"
 
 
 def _save_screenshot(item_id: int, b64: str) -> Optional[str]:

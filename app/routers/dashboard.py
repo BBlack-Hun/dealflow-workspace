@@ -365,7 +365,7 @@ def update_routine(routine_id: int, body: RoutineIn,
         # 주간 업무 쪽(`patch_task`)은 같은 경우에 400 을 낸다. 판정이 둘로
         # 갈려 있던 자리다.
         if not body.title.strip():
-            raise HTTPException(status_code=400, detail="세부업무를 비울 수 없습니다")
+            raise HTTPException(status_code=400, detail="내용을 비울 수 없습니다")
         row.title = body.title.strip()
     if body.time_of_day is not None:
         row.time_of_day = body.time_of_day if body.time_of_day in ("am", "pm") else None
@@ -979,7 +979,7 @@ def edit_member_profile(
         # 프로그램을 끊을 이유가 없다.
         _reissue_agent_token(db, member.id)
         note = ("+로그인+ID+를+바꿨습니다.+열린+세션을+끊고+발송+프로그램+"
-                "연결키를+새로+발급했습니다+—+새+담당자가+[발송+프로그램+설치]"
+                "연결키를+새로+발급했습니다+—+넘겨받는+팀원이+[발송+프로그램+설치]"
                 "에서+다시+받아야+발송됩니다")
     db.commit()
     if phone_changed:
@@ -1627,7 +1627,7 @@ async def save_automation(
     elif row.test_mode:
         note = f"{label} 자동화 켜짐 — 시험 모드: 모든 글이 '{row.test_room}' 으로 갑니다"
     else:
-        note = f"{label} 자동화 켜짐 — 실제 방으로 나갑니다"
+        note = f"{label} 자동화 켜짐 — 실제 카톡방으로 나갑니다"
     if stopped:
         note += f" · 서 있던 회차 {stopped}개를 거뒀습니다(나가지 않습니다)"
     return RedirectResponse(f"/team?msg={quote(note)}#automations", status_code=303)
@@ -1717,9 +1717,9 @@ def sender_rooms_check(sender_id: int = Form(0), db: Session = Depends(get_db),
     member = _room_sender_or_404(db, sender_id)
     job = sender_rooms.queue_check(db, member)
     if job is None:
-        note = "확인할 담당자가 없습니다"
+        note = "확인할 심사역이 없습니다"
     else:
-        note = (f"{member.name} 님 PC 로 방 {job.total}곳 확인을 걸었습니다 "
+        note = (f"{member.name} 님 PC 로 카톡방 {job.total}곳 확인을 걸었습니다 "
                 f"(회차 #{job.id}) — 그 PC 의 발송 프로그램이 켜져 있어야 합니다")
     return RedirectResponse(f"/team/sender-rooms?sender={member.id}&msg={quote(note)}",
                             status_code=303)
@@ -1762,7 +1762,7 @@ def sender_rooms_clear(contact_id: int, sender_id: int = Form(0),
     member = _room_sender_or_404(db, sender_id)
     sender_rooms.clear(db, member.id, contact_id, kind == "sourcing")
     return RedirectResponse(
-        f"/team/sender-rooms?sender={member.id}&msg={quote('톡방 연결을 끊었습니다')}",
+        f"/team/sender-rooms?sender={member.id}&msg={quote('카톡방 연결을 끊었습니다')}",
         status_code=303)
 
 

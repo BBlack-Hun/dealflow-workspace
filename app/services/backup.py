@@ -542,14 +542,14 @@ def diff(point: Point) -> list:
 # 읽어 낼 수 없다 — 되돌릴지 말지를 이 숫자로 판단하므로 읽혀야 한다.
 TABLE_LABELS = {
     "users": "계정",
-    "vc_contacts": "투자사 담당자",
+    "vc_contacts": "투자사 심사역",
     "ir_companies": "IR 기업",
     "series_a_companies": "Series A 이상 딜 소싱(받은 딜)",
     "sourcing_contacts": "딜 소싱 명단",
     "message_templates": "딜 제안 문구",
     "send_jobs": "발송 회차",
     "send_items": "발송 건",
-    "contact_activities": "담당자 활동 기록",
+    "contact_activities": "심사역 활동 기록",
     "ir_requests": "IR 요청",
     "meetings": "미팅",
     "consulting_companies": "투자컨설턴트 기업",

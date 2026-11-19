@@ -129,10 +129,10 @@ def test_고르는_칸이_서면_그_폭만큼_자리가_밀린다(admin_picking
     _row(db, users, tabs["startup"], company_name="샘플고정")
     html = _open(admin_picking, tabs["startup"])
     assert 'id="cs-startup-bar"' in html, "고르는 칸이 서는 무대가 아닙니다"
-    assert ">담당자</th>" in html
+    assert ">담당 팀원</th>" in html
     _check_sticky(html, lead=46)
     # `담당자` 는 `NO` 와 `기업명` 사이에 서지만 고정하지 않는다.
-    owner = re.search(r'<th([^>]*)>담당자</th>', html).group(1)
+    owner = re.search(r'<th([^>]*)>담당 팀원</th>', html).group(1)
     assert "stick" not in owner
     assert 'class="owner-cell muted"' in _first_row(html)
 

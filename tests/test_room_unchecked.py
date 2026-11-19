@@ -35,7 +35,7 @@ from tests.test_vc_room_search import _row as _vc_row
 from tests.test_vc_room_search import _run_agent as _run_old_agent
 
 PREFIX = "확인 못 함 — "
-OLD_SENDER_TEXT = "보내는 계정 카톡에서 이 방을 찾지 못했습니다"
+OLD_SENDER_TEXT = "보내는 계정 카톡에서 이 카톡방을 찾지 못했습니다"
 OLD_SEARCH_TEXT = "카톡에서 이 분의 방을 찾지 못했습니다 (이름+직급 → 이름으로 찾음)"
 TAIL = ("\n확인 못 함: 보내는 PC 카톡이 채팅 탭에 있는지, 잠금모드가 아닌지 보고 다시 "
         "확인해 주세요")
@@ -71,7 +71,7 @@ def _sender_row(db, users, team):
 # ══════════════════════════════════════════════════════════════════════════
 
 @pytest.mark.parametrize("reason, words", [
-    ("unreadable", ["검색 결과를 읽지 못했습니다", "방이 없다는 뜻은 아닙니다",
+    ("unreadable", ["검색 결과를 읽지 못했습니다", "카톡방이 없다는 뜻은 아닙니다",
                     "채팅 탭", "잠금모드", "방 이름"]),
     ("not_chat_tab", ["채팅 탭이 아닌 것으로 보입니다", "채팅 탭으로 바꾼 뒤"]),
     ("locked", ["잠금모드로 보입니다", "잠금을 풀고"]),
@@ -276,7 +276,7 @@ def test_the_progress_page_counts_unchecked_apart(client, db, users, team):
     _login(client, "01000000002")
     got = client.get(f"/api/jobs/{job.id}").json()
     assert got["room_done"] == {
-        "sentence": "방 연결 확인이 끝났습니다 — 확인됨 0 · 불일치 1 · 확인 못 함 1" + TAIL,
+        "sentence": "카톡방 연결 확인이 끝났습니다 — 확인 완료 0 · 불일치 1 · 확인 못 함 1" + TAIL,
         "pick": False}
     result = {i["id"]: i["result"] for i in got["items"]}
     assert result[item[team["ok"].id]] == "확인 못 함"
@@ -324,7 +324,7 @@ def test_a_finished_sender_search_tells_why_nothing_was_checked(
         # 무엇을 볼지는 까닭 글에 이미 있다 — 카톡 안내를 겹쳐 적지 않는다.
         "hint": ""}
     assert got["room_done"] == {
-        "sentence": "딜 소싱 방 찾기가 끝났습니다 — 확정 0 · 후보 고르기 0 · 못 찾음 0 · "
+        "sentence": "딜 소싱 카톡방 찾기가 끝났습니다 — 확정 0 · 후보 고르기 0 · 못 찾음 0 · "
                     "확인 못 함 2" + TAIL,
         "pick": False}
     assert {i["result"] for i in got["items"]} == {"확인 못 함"}
@@ -354,7 +354,7 @@ def test_a_member_search_keeps_its_candidates_and_tells_why(client, db, users, t
         "confirmed": 0, "picks": 0, "not_found": 1, "failed": 1, "canceled": 0,
         "reason": room_unchecked.MESSAGES["unreadable"], "hint": ""}
     assert got["room_done"]["sentence"] == (
-        "딜 소싱 방 찾기가 끝났습니다 — 확정 0 · 후보 고르기 0 · 못 찾음 1 · 확인 못 함 1"
+        "딜 소싱 카톡방 찾기가 끝났습니다 — 확정 0 · 후보 고르기 0 · 못 찾음 1 · 확인 못 함 1"
         + TAIL)
 
 
@@ -402,7 +402,7 @@ def test_unread_both_times_ends_as_unchecked(logged_in, db, users):
 
     done = logged_in.get(f"/api/jobs/{job_id}").json()
     assert done["room_done"] == {
-        "sentence": "방 연결 확인이 끝났습니다 — 확인됨 0 · 불일치 0 · 확인 못 함 1" + TAIL,
+        "sentence": "카톡방 연결 확인이 끝났습니다 — 확인 완료 0 · 불일치 0 · 확인 못 함 1" + TAIL,
         "pick": False}
     assert done["items"][0]["result"] == "확인 못 함"
     assert done["items"][0]["room_pick"] is None
@@ -423,7 +423,7 @@ def test_a_room_found_on_the_second_round_is_not_called_unchecked(logged_in, db,
     assert item.error.startswith("카톡에서 적어 둔 방 이름과 같은 제목을 찾지 못했습니다")
     _end_round(logged_in, job_id)
     done = logged_in.get(f"/api/jobs/{job_id}").json()
-    assert done["room_done"]["sentence"] == "방 연결 확인이 끝났습니다 — 확인됨 0 · 불일치 1"
+    assert done["room_done"]["sentence"] == "카톡방 연결 확인이 끝났습니다 — 확인 완료 0 · 불일치 1"
     assert done["items"][0]["result"] is None
 
 
@@ -472,7 +472,7 @@ def test_a_name_search_that_read_nothing_leaves_the_row_alone(logged_in, db, use
     _end_round(logged_in, job_id)
     done = logged_in.get(f"/api/jobs/{job_id}").json()
     assert done["room_done"]["sentence"] == (
-        "방 연결 확인이 끝났습니다 — 확인됨 0 · 불일치 0 · 확인 못 함 1" + TAIL)
+        "카톡방 연결 확인이 끝났습니다 — 확인 완료 0 · 불일치 0 · 확인 못 함 1" + TAIL)
 
 
 def test_a_name_search_without_a_reason_is_the_old_not_found(logged_in, db, users):
@@ -530,9 +530,9 @@ def _company_job(db):
 
 @pytest.mark.parametrize("reason, sentence, result", [
     ("unreadable",
-     "방 찾기가 끝났습니다 — 찾음 0 · 여럿 0 · 못 찾음 0 · 확인 못 함 1" + TAIL,
+     "카톡방 찾기가 끝났습니다 — 찾음 0 · 여럿 0 · 못 찾음 0 · 확인 못 함 1" + TAIL,
      "확인 못 함"),
-    (None, "방 찾기가 끝났습니다 — 찾음 0 · 여럿 0 · 못 찾음 1", "못 찾음"),
+    (None, "카톡방 찾기가 끝났습니다 — 찾음 0 · 여럿 0 · 못 찾음 1", "못 찾음"),
 ])
 def test_a_company_search_counts_unchecked_apart(logged_in, db, users, reason,
                                                  sentence, result):
@@ -679,7 +679,7 @@ def test_the_old_agent_loop_still_ends_with_the_old_words(logged_in, db, users):
     assert item.error == OLD_SEARCH_TEXT
     done = logged_in.get(f"/api/jobs/{job_id}").json()
     assert done["room_done"] == {
-        "sentence": "방 연결 확인이 끝났습니다 — 확인됨 0 · 불일치 1", "pick": False}
+        "sentence": "카톡방 연결 확인이 끝났습니다 — 확인 완료 0 · 불일치 1", "pick": False}
 
 
 def test_no_sender_room_row_keeps_a_mark_from_another_shape(db, users, team):

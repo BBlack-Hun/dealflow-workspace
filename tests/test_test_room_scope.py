@@ -425,7 +425,7 @@ def test_띠가_일반_발송은_제_갈_곳으로_간다고_적는다(stage, te
     """★ 예전 띠는 '모든 발송이 그 방으로만' 이라고 적었다 — 지금은 거짓말이다."""
     html = stage["client"].get("/deals").text
 
-    assert "각 담당자 방으로 그대로 나갑니다" in html
+    assert "각 심사역·기업 카톡방으로 그대로 나갑니다" in html
     assert "모든 발송이" not in html
 
 

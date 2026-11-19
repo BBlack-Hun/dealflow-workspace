@@ -457,7 +457,7 @@ def test_real_meeting_review_skips_a_meeting_message_sent_by_hand(db, users):
                     test_room=TEST_ROOM)
     result = runner.run_once(db, "meeting_review", _aware(WED_9AM))
     assert result["status"] == "empty"
-    assert any("손으로" in line for line in result["skipped"])
+    assert any("직접" in line for line in result["skipped"])
 
     # 쉬는 날을 0 으로 두면 안 본다.
     runner.save_params(db, "meeting_review", {"manual_days": "0"})
