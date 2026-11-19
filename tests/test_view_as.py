@@ -7,7 +7,8 @@
    딜 진행 관리 · 주간업무). 관리자 권한은 그대로다(팀 현황이 열린다).
 3. 켜져 있는 동안 발송·예약 길은 403 — 끄면 다시 된다. 10/30 부터 **방 찾기 ·
    딜 소개 발송만** 열린다(허용 목록 `OPEN_ROUTES`). 잡은 그 팀원 계정에 서서
-   그 팀원 발송기가 집어가고, 하루 상한도 그 팀원 것으로 센다.
+   그 팀원 발송기가 집어가고, 하루 상한도 그 팀원 것으로 센다. 11/19 부터 **IR 자료
+   전달**도 같은 길로 열린다 — 파일을 붙일지는 그 팀원 계정의 스위치 · 폴더가 정한다.
 4. 고친 것은 관리자 이름으로 남는다(수정 로그 · `누가` 칸).
 """
 from __future__ import annotations
@@ -20,7 +21,7 @@ import pytest
 
 from .conftest import DEMO_PASSWORD, DEMO_TOKEN
 
-BLOCKED = "팀원 화면으로 보는 중에는 카톡방 찾기·딜 소개 발송 말고는 발송·예약을 할 수 없습니다"
+BLOCKED = "팀원 화면으로 보는 중에는 카톡방 찾기·딜 소개·IR 자료 전달 발송 말고는 발송·예약을 할 수 없습니다"
 
 # 발송 회차를 세우거나 · 예약을 걸고 풀거나 · 발송기에 방 확인을 시키는 길 전부.
 # 하나가 늘면 여기와 라우터(`dependencies=[Depends(no_send_as_member)]`)를 같이 고친다.
@@ -59,8 +60,9 @@ SEND_ROUTES = {
     ("POST", "/team/startup-send"),
 }
 
-# 보는 중에도 길 자체는 열린 것(10/30). `/api/deals/send` 는 딜 소개 탭 · 카톡만,
-# 회차 단추(`/api/jobs/…`)는 딜 소개 · 방 확인 회차만 연다 — 아래 3-2 에서 본다.
+# 보는 중에도 길 자체는 열린 것(10/30). `/api/deals/send` 는 딜 소개 · IR 자료 전달
+# 탭 · 카톡만, 회차 단추(`/api/jobs/…`)는 그 두 탭의 회차 · 방 확인 회차만 연다 —
+# 아래 3-2 · 3-3 에서 본다.
 OPEN_ROUTES = {
     ("POST", "/api/contacts/verify-rooms"),
     ("POST", "/api/jobs/{job_id}/items/{item_id}/room-pick"),
@@ -529,10 +531,11 @@ def test_deal_queue_while_viewing_is_the_members_job(client, db, users, admin):
 
 
 @pytest.mark.parametrize("extra", [{"mode": "remind"}, {"mode": "ask"},
-                                   {"mode": "meeting"}, {"mode": "ir"},
-                                   {"mode": "ir_review"}, {"mode": "review"},
-                                   {"mode": "sourcing"}, {"mode": "startup"},
-                                   {"mode": "startup_msg"}, {"channel": "email"}])
+                                   {"mode": "meeting"}, {"mode": "ir_review"},
+                                   {"mode": "review"}, {"mode": "sourcing"},
+                                   {"mode": "startup"}, {"mode": "startup_msg"},
+                                   {"channel": "email"},
+                                   {"mode": "ir", "channel": "email"}])
 def test_other_sends_stay_blocked_while_viewing(client, db, users, admin, extra):
     from app.models import SendJob
 
@@ -544,9 +547,13 @@ def test_other_sends_stay_blocked_while_viewing(client, db, users, admin, extra)
     assert db.query(SendJob).count() == 0
 
 
-def test_job_buttons_open_only_for_deal_intro_while_viewing(client, db, users, admin):
-    """회차 단추는 딜 소개 · 방 확인 회차만 — IR 전달 · 리마인드 회차는 그대로 막힌다."""
-    from app.models import DealBatch, DealBatchCompany, IrCompany, SendItem, SendJob
+def test_job_buttons_open_only_for_proxy_jobs_while_viewing(client, db, users, admin):
+    """회차 단추는 딜 소개 · IR 자료 전달 · 방 확인 회차만 — 후속 문구 · 소싱 · 스타트업
+    회차와 메일이 섞인 회차는 그대로 막힌다."""
+    from app.deps import proxy_job
+    from app.models import (STARTUP_SEND_KIND, DealBatch, DealBatchCompany, IrCompany,
+                            SendItem, SendJob)
+    from app.services.pipeline import IR_REVIEW_KIND
 
     company = IrCompany(name="샘플애그", one_liner="소개", revenue_recent=10)
     db.add(company)
@@ -568,15 +575,148 @@ def test_job_buttons_open_only_for_deal_intro_while_viewing(client, db, users, a
         return job.id
 
     intro = draft("deal_intro", True)
-    remind = draft("deal_intro", False)            # 후속 문구 — 기업이 없다
     ir = draft("ir_delivery", True)
+    ir_series_a = draft("ir_delivery", False)      # Series A 기업만 — 기업 줄이 없다
+    remind = draft("deal_intro", False)            # 후속 문구 — 기업이 없다
     mail = draft("deal_intro", True, channel="email")
+    ir_mail = draft("ir_delivery", True, channel="email")
+    opened = (intro, ir, ir_series_a)
+    blocked = (remind, mail, ir_mail, draft(IR_REVIEW_KIND, False),
+               draft("sourcing_intro", False), draft(STARTUP_SEND_KIND, False))
+    assert all(proxy_job(db, db.get(SendJob, job_id)) for job_id in opened)
+    assert not any(proxy_job(db, db.get(SendJob, job_id)) for job_id in blocked)
+
     _viewing(client, users)
-    for job_id in (remind, ir, mail):
+    for job_id in blocked:
         r = client.post(f"/api/jobs/{job_id}/start")
         assert r.status_code == 403 and r.json()["detail"] == BLOCKED, job_id
         assert 'data-send="proxy"' not in client.get(f"/jobs/{job_id}").text
-    assert client.post(f"/api/jobs/{intro}/start").status_code == 200
+    for job_id in opened:
+        assert ('id="start-btn" class="primary-btn inline" hidden data-send="proxy"'
+                in client.get(f"/jobs/{job_id}").text), job_id
+        assert client.post(f"/api/jobs/{job_id}/start").status_code == 200, job_id
+
+
+# ── 3-3. IR 자료 전달도 열린다(11/19) — 딜 소개와 같은 길 ────────────────────
+# "딜 소개는 되는데 자료 첨부가 안 된다". 자료 파일은 그 팀원 PC 폴더에 있으므로
+# 붙일지 말지도 관리자가 아니라 **그 팀원 계정**의 스위치 · 폴더가 정한다.
+
+AGRI_FILE = "샘플애그_IR_2026.pdf"
+SA_FILE = "샘플에이랩 IR deck.pdf"
+IR_ROOT = "/Users/somebody/IR자료"
+
+
+def _member_ir(db, users, auto=True):
+    """그 팀원 담당자에게 보낼 자료 — IR 기업 하나 · Series A 이상 딜 소싱 기업 하나."""
+    from app.models import AgentDevice, IrCompany, SeriesACompany, VcContact
+
+    agri = IrCompany(name="샘플애그", ir_file_name=AGRI_FILE)
+    sa = SeriesACompany(name="샘플에이랩", received_at="2026-10-15", ir_file_name=SA_FILE)
+    mine = VcContact(user_id=users["u1"].id, name="팀원담당", firm="가나벤처스",
+                     kakao_room_name="팀원담당 방", room_verified="verified",
+                     connect_stage="connected")
+    db.add_all([agri, sa, mine])
+    if auto:
+        db.query(AgentDevice).filter_by(user_id=users["u1"].id).one().ir_root = IR_ROOT
+        users["u1"].can_auto_attach_ir = 1
+    db.commit()
+    return agri, sa, mine
+
+
+@pytest.mark.parametrize("auto", [True, False], ids=["auto-attach", "by-hand"])
+def test_ir_delivery_while_viewing_is_the_members_job(client, db, users, admin, auto):
+    """그 팀원 계정 회차로 서고, 파일은 **그 팀원 계정 설정대로** 붙는다."""
+    import json
+
+    from app.models import AgentDevice, DealBatch, SendJob
+
+    from .conftest import auth
+
+    agri, sa, mine = _member_ir(db, users, auto=auto)
+    if not auto:
+        # 관리자 본인은 자동 첨부 계정이어도 — 보는 팀원이 손으로 붙이면 안 싣는다.
+        db.add(AgentDevice(user_id=admin.id, token="agt_test_token_admin",
+                           hostname="admin-test", ir_root=IR_ROOT))
+        admin.can_auto_attach_ir = 1
+        db.commit()
+    _viewing(client, users)
+    r = client.post("/api/deals/send",
+                    json={"mode": "ir", "contact_ids": [mine.id],
+                          "company_ids": [agri.id], "series_a_ids": [sa.id]})
+    assert r.status_code == 200, r.text
+    db.expire_all()
+    job = db.get(SendJob, r.json()["job_id"])
+    assert (job.user_id, job.kind, job.status) == (users["u1"].id, "ir_delivery", "queued")
+    assert db.get(DealBatch, job.batch_id).user_id == users["u1"].id
+    [item] = job.items
+    assert (json.loads(item.files_json) if item.files_json else []) == (
+        [AGRI_FILE, SA_FILE] if auto else [])
+    # 그 팀원 발송기가 집어간다.
+    got = client.get("/api/agent/poll", params={"files": 1}, headers=auth(DEMO_TOKEN))
+    assert got.status_code == 200 and got.json()["job_id"] == job.id
+    assert got.json()["items"][0]["room_name"] == "팀원담당 방"
+
+
+def test_series_a_only_ir_delivery_while_viewing(client, db, users, admin):
+    """Series A 기업만 실으면 회차에 기업 줄(`DealBatchCompany`)이 없다 — 그래도
+    예약을 걸어 세우고 · 시각을 바꾸고 · [발송 시작] 까지 열린다(`deps.proxy_job`)."""
+    from datetime import timedelta
+
+    from app import clock
+    from app.models import DealBatchCompany, SendJob
+
+    _agri, sa, mine = _member_ir(db, users)
+    _viewing(client, users)
+    day = (clock.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+    r = client.post("/api/deals/send",
+                    json={"mode": "ir", "contact_ids": [mine.id], "company_ids": [],
+                          "series_a_ids": [sa.id], "scheduled_at": f"{day}T10:00"})
+    assert r.status_code == 200, r.text
+    job_id = r.json()["job_id"]
+    db.expire_all()
+    job = db.get(SendJob, job_id)
+    assert (job.user_id, job.kind) == (users["u1"].id, "ir_delivery")
+    assert db.query(DealBatchCompany).filter_by(batch_id=job.batch_id).count() == 0
+    page = client.get(f"/jobs/{job_id}").text
+    assert 'id="start-btn" class="primary-btn inline" hidden data-send="proxy"' in page
+    assert 'id="schedule-btn" class="secondary-btn inline" data-send="proxy"' in page
+
+    r = client.post(f"/api/jobs/{job_id}/schedule", json={"at": f"{day}T11:00"})
+    assert r.status_code == 200, r.text
+    r = client.post(f"/api/jobs/{job_id}/start")
+    assert r.status_code == 200, r.text
+    db.expire_all()
+    job = db.get(SendJob, job_id)
+    assert (job.user_id, job.status) == (users["u1"].id, "queued")
+
+
+def test_ir_send_window_is_open_on_the_member_screen(client, db, users, admin):
+    """IR 진행 관리의 [자료 보내기] 창 — [보내기] 가 막힌 단추로 흐려지지 않고
+    어느 PC 카톡인지 확인창을 거친다. 창이 서는지도 그 팀원 계정이 정한다."""
+    from app.models import AgentDevice
+
+    _viewing(client, users)
+    page = client.get("/ir").text
+    assert 'id="ir-send-go" disabled data-send="proxy"' in page
+    assert 'data-view-as-send="' in page and "js/view_as.js" in page
+
+    # 그 팀원이 자동 첨부 계정이면 창 없이 딜 제안 관리의 자료 전달 탭으로 간다
+    # (그 탭의 [발송] 은 `deals.js` 가 연다 — 아래 브라우저 검사).
+    db.query(AgentDevice).filter_by(user_id=users["u1"].id).one().ir_root = IR_ROOT
+    users["u1"].can_auto_attach_ir = 1
+    db.commit()
+    assert 'id="ir-send-go"' not in client.get("/ir").text
+
+
+@pytest.mark.skipif(shutil.which("node") is None,
+                    reason="node 미설치 — 브라우저 로직 테스트 생략")
+def test_send_button_follows_the_tab_in_the_browser():
+    """딜 제안 관리의 [발송] 이 딜 소개 · 자료 전달 탭에서만 열리는지 — `deals.js` 를
+    그대로 돌린다(tests/js/deals_view_as_tab_test.js)."""
+    script = Path(__file__).resolve().parent / "js" / "deals_view_as_tab_test.js"
+    out = subprocess.run([shutil.which("node"), str(script)],
+                         capture_output=True, text=True, timeout=60)
+    assert out.returncode == 0, out.stdout + out.stderr
 
 
 def test_room_check_while_viewing_is_the_members_job(client, db, users, admin):

@@ -7,7 +7,7 @@
  *   · `data-send` 단추를 누르면 페이지 스크립트까지 가지 않고 사유가 뜬다.
  *   · `data-send` 폼은 제출만 막고, 안의 칸을 누르는 것은 막지 않는다.
  *   · 보는 중이 아니면(띠 속성이 없으면) 아무것도 하지 않는다.
- *   · `data-send="proxy"`(방 찾기 · 딜 소개 발송)는 막지 않고 어느 PC 로 나가는지
+ *   · `data-send="proxy"`(방 찾기 · 딜 소개 · IR 자료 전달)는 막지 않고 어느 PC 로 나가는지
  *     확인창을 먼저 띄운다 — 취소하면 페이지 스크립트까지 가지 않는다. 값은 누르는
  *     순간 읽는다(딜 제안 관리가 탭마다 바꾼다).
  */
@@ -18,7 +18,7 @@ const vm = require("vm");
 
 const SRC = fs.readFileSync(
   path.join(__dirname, "..", "..", "app", "static", "js", "view_as.js"), "utf8");
-const NOTE = "팀원 화면으로 보는 중에는 카톡방 찾기·딜 소개 발송 말고는 발송·예약을 할 수 없습니다";
+const NOTE = "팀원 화면으로 보는 중에는 카톡방 찾기·딜 소개·IR 자료 전달 발송 말고는 발송·예약을 할 수 없습니다";
 const SEND = "강민준 PC 카톡으로 나갑니다.";
 
 function el(tag, attrs, parent) {
@@ -86,7 +86,7 @@ function run(note, marked, answer) {
   assert.ok(!other.prevented, "발송과 상관없는 단추까지 막았다");
 }
 
-// ── 방 찾기 · 딜 소개 발송: 확인창을 거쳐 연다 ─────────────────────────────────
+// ── 방 찾기 · 딜 소개 · IR 자료 전달: 확인창을 거쳐 연다 ───────────────────────
 {
   const button = el("BUTTON", { "data-send": "proxy" });
   const form = el("FORM", { "data-send": "proxy" });

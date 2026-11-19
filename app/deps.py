@@ -143,11 +143,12 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
 # 팀원 쪽으로 바뀌는 것은 **누구의 데이터인가** 하나다. 권한(`role`)은 진짜
 # 관리자 것 그대로라 관리자 메뉴·화면마다의 팀원 고르개가 그대로 서고, 없던
 # 권한이 생기지도 않는다. 팀 결정은 "관리자 대리는 보기·수정까지, 발송은 안 됨"
-# 이었다가 10/30 에 **방 찾기 · 딜 소개 발송만** 열었다 — 발송 쪽은
+# 이었다가 10/30 에 **방 찾기 · 딜 소개 발송만** 열었고, 11/19 에 IR 자료 전달을
+# 더했다(딜 소개는 되는데 그 자료를 못 보냈다) — 발송 쪽은
 # `no_send_as_member` 한 곳이 허용 목록으로 가른다. 고친 것은 수정 로그에 관리자
 # 이름으로 남는다(로그는 세션 쿠키를 읽는다 — `edit_log.actor_from_request`).
 VIEW_AS_COOKIE = "dealflow_view_as"
-VIEW_AS_BLOCKED = "팀원 화면으로 보는 중에는 카톡방 찾기·딜 소개 발송 말고는 발송·예약을 할 수 없습니다"
+VIEW_AS_BLOCKED = "팀원 화면으로 보는 중에는 카톡방 찾기·딜 소개·IR 자료 전달 발송 말고는 발송·예약을 할 수 없습니다"
 
 # 보는 중에도 **관리자 본인으로** 여는 자리. 팀원 쪽으로 가면 안 되는 것들이다:
 # 팀 현황의 "나 자신은 정지 못 함" 같은 판정 · 비밀번호 바꾸기 · 발송 프로그램
@@ -251,23 +252,31 @@ VIEW_AS_OPEN_PATHS = {
     "/api/deals/queue",                    # 딜 소개 예약 큐 — 늘 딜 소개
     "/api/deals/queue/{item_id}/start",
 }
-#: 탭이 여럿인 발송 목록 만들기 — 딜 소개 탭 · 카톡만(`_open_while_viewing`).
+#: 탭이 여럿인 발송 목록 만들기 — 아래 두 탭 · 카톡만(`_open_while_viewing`).
 VIEW_AS_SEND_PATH = "/api/deals/send"
+#: 딜 소개 · IR 자료 전달(11/19 — IR 진행 관리의 [자료 보내기] 창도 이 값으로 온다).
+#: 메일은 서버가 보내고 파일도 못 붙이므로 열지 않는다.
+VIEW_AS_SEND_MODES = ("deal", "ir")
 #: 회차 화면의 단추들 — 위 길이 세운 회차만(`proxy_job`).
 VIEW_AS_JOB_PATHS = {f"/api/jobs/{{job_id}}/{a}"
                      for a in ("start", "schedule", "retry", "resend-canceled", "resume")}
 
 
 def proxy_job(db: Session, job) -> bool:
-    """팀원 화면으로 보는 중에도 다룰 수 있는 회차인가 — 방 확인이거나 딜 소개 탭이
-    카톡으로 세운 회차. 회차에 기업이 실리는 `deal_intro` 는 딜 소개 탭뿐이다
-    (리마인드 · 미팅 요청 같은 후속 문구 · 자동화 회차는 같은 종류지만 기업이 없다)."""
+    """팀원 화면으로 보는 중에도 다룰 수 있는 회차인가 — 방 확인이거나 딜 소개 ·
+    IR 자료 전달 탭이 카톡으로 세운 회차. 회차에 기업이 실리는 `deal_intro` 는 딜 소개
+    탭뿐이다(리마인드 · 미팅 요청 같은 후속 문구 · 자동화 회차는 같은 종류지만 기업이
+    없다). `ir_delivery` 는 자료 전달 탭만 세우는 종류라 종류로 가른다 — Series A
+    기업만 실으면 기업 줄(`DealBatchCompany`)이 없어 위 잣대로는 막힌다."""
     from .models import DealBatchCompany
 
     if job.kind == "verify_room":
         return True
+    if any(i.channel == "email" for i in job.items):
+        return False
+    if job.kind == "ir_delivery":
+        return True
     return (job.kind == "deal_intro" and job.batch_id is not None
-            and all(i.channel != "email" for i in job.items)
             and db.execute(select(DealBatchCompany.company_id)
                            .where(DealBatchCompany.batch_id == job.batch_id)
                            .limit(1)).first() is not None)
@@ -282,7 +291,8 @@ async def _open_while_viewing(request: Request, db: Session) -> bool:
             body = await request.json()
         except ValueError:
             return False
-        return (isinstance(body, dict) and body.get("mode", "deal") == "deal"
+        return (isinstance(body, dict)
+                and body.get("mode", "deal") in VIEW_AS_SEND_MODES
                 and body.get("channel", "kakao") == "kakao")
     if route in VIEW_AS_JOB_PATHS:
         from .models import SendJob
@@ -314,7 +324,8 @@ async def no_send_as_member(request: Request, user: User = Depends(get_current_u
 
 
 def view_as_send_note(db: Session, member: User, online: bool) -> str:
-    """보는 중에 방 찾기 · 딜 소개 발송을 누를 때 확인창 첫 줄 — **어느 PC 카톡인가.**"""
+    """보는 중에 열린 발송(방 찾기 · 딜 소개 · IR 자료 전달)을 누를 때 확인창 첫 줄 —
+    **어느 PC 카톡인가.**"""
     pc = db.get(User, agent_user_id(db, member.id)) or member
     note = f"{pc.name} PC 카톡으로 나갑니다"
     if not online:
