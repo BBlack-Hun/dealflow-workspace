@@ -6,6 +6,8 @@
     ④ [중단] — 남은 건은 **찾기 전 그대로**다(후보 · 확정을 안 지운다). 늦게 온 결과도
        버린다. 발송기에는 멈추라고 답한다. 남의 회차는 못 멈춘다
     ⑤ 보내는 계정은 그 계정 카톡 기준 제목으로 선다 · 팀 현황 판에도 도는 회차가 선다
+    ⑥ 체크해서 찾기 — 찾는 중 · 찾을 대상이 아닌 줄은 체크 칸이 잠겨 오고 그 수가 적힌다.
+       잠긴 줄 번호를 억지로 실어 보내도 서버가 거른다(찾는 중인 줄만은 화면이 막는다)
 
 이름 · 회사 · 방 제목은 모두 지어낸 값이다.
 """
@@ -54,6 +56,13 @@ def test_the_page_shows_every_state_and_counts(client, db, users):
     # 아직 도는 회차 — 진행 셈 · [중단] · 남은 줄은 `찾는 중`.
     assert f'data-job="{job.id}"' in page.text and "js-room-job-stop" in page.text
     assert page.text.count('data-testid="sourcing-room-busy"') == 1
+    # 체크 칸 — 찾을 수 있는 줄(나후보 · 다없음 · 라못봄)만 열려 있다. 잠긴 수가 적힌다:
+    # 확인 완료 1 + 찾는 중 1 + 직접 적음 1.
+    boxes = re.findall(r'<input type="checkbox" class="js-room-pick"[^>]*>', page.text)
+    assert len(boxes) == 6 and sum(" disabled" in b for b in boxes) == 3
+    locked = page.text.split('data-testid="sourcing-room-locked">')[1].split("</p>")[0]
+    assert "<b>3명</b>은 체크할 수 없습니다" in locked
+    assert 'id="room-pick-form"' in page.text and "체크한 분 찾기 (0명)" in page.text
     # 딜 소싱 화면에서 오는 길.
     assert 'href="/sourcing/rooms"' in client.get("/sourcing").text
 
@@ -83,6 +92,30 @@ def test_search_and_confirm_from_the_page_come_back_to_it(client, db, users):
     assert answer.headers["location"].startswith("/sourcing/rooms?msg=")
     db.expire_all()
     assert db.get(SourcingContact, row.id).kakao_room_name == "가대상 방 둘"
+
+
+def test_checked_search_carries_only_rows_the_server_would_find(client, db, users):
+    rows = [SourcingContact(bucket=GROUP, name="가찾음", title="심사역"),
+            SourcingContact(bucket=GROUP, name="나찾음", title="심사역"),
+            SourcingContact(bucket=GROUP, name="다안고름", title="심사역"),
+            SourcingContact(bucket=GROUP, name="라적음", kakao_room_name="라적음 방"),
+            SourcingContact(bucket=GROUP, name="마불참", participation="불참여")]
+    db.add_all(rows)
+    db.commit()
+    _login(client, "01000000001")
+    page = client.get("/sourcing/rooms").text
+    assert "sourcing-room-busy" not in page
+    # 체크한 둘 + 잠긴 줄(직접 적음) · 표에 없는 줄(불참여)을 억지로 실어 보낸다.
+    picked = ",".join(str(rows[i].id) for i in (0, 1, 3, 4))
+    answer = client.post("/sourcing/rooms/search", data={"tab": ROOMS_TAB, "ids": picked},
+                         follow_redirects=False)
+    assert answer.headers["location"].startswith("/sourcing/rooms?msg=")
+    job = db.query(SendJob).one()
+    assert {i.sourcing_contact_id for i in job.items} == {rows[0].id, rows[1].id}
+    assert "2명의 방을 찾습니다" in client.get(answer.headers["location"]).text
+    # 아무도 안 골랐으면 아무것도 안 세운다.
+    client.post("/sourcing/rooms/search", data={"tab": ROOMS_TAB, "ids": ""})
+    assert db.query(SendJob).count() == 1
 
 
 def test_stop_leaves_the_rest_as_it_was(client, db, users):
