@@ -103,7 +103,7 @@
       '<ul class="import-stats">' +
       li("읽은 시트", d.sheet_used || "(첫 시트)") +
       li("머리행", d.header_row === null ? "-" : "엑셀 " + (d.header_row + 1) + "행") +
-      li("읽은 담당자", d.parsed_contacts + "명") +
+      li("읽은 심사역", d.parsed_contacts + "명") +
       li("새로 생김", d.created + "명") +
       li("갱신", d.updated + "명") +
       (d.overlap_total
@@ -141,21 +141,21 @@
         }).join("") + "</table>" +
         "<p class=\"hint\">덮어야 한다면 되돌릴 파일을 먼저 뜨는 " +
         "<code>scripts/import_investor_list.py --overwrite</code> 를 씁니다. " +
-        "<b>줄</b> 칸의 말(<code>418:note:c31</code>)을 그대로 베껴 고른 칸만 덮을 수 있습니다." +
+        "<b>줄</b> 열의 말(<code>418:note:c31</code>)을 그대로 베껴 고른 칸만 덮을 수 있습니다." +
         "</p></details>";
     }
     if (d.activities_stale) {
       html += '<p class="import-notes">시트에서 없어진 활동 줄 ' +
-        d.activities_stale + "건 — <b>지우지 않습니다.</b> 이 표에는 손으로 적은 줄과 " +
+        d.activities_stale + "건 — <b>지우지 않습니다.</b> 이 표에는 직접 기록한 줄과 " +
         "발송이 만든 줄이 함께 삽니다.</p>";
     }
     // 겹친 분을 이름으로 — 원래 팀원에게 물어볼 수 있어야 한다.
     if ((d.overlaps || []).length) {
       html += '<details class="import-skipped" open><summary>다른 팀원과 겹친 분 ' +
         d.overlap_total + "명 — " +
-        (d.keep_other_owner ? "이 담당자 몫으로 <b>따로 만듭니다</b>"
-                            : "이 담당자에게 <b>옮깁니다</b>") +
-        "</summary><table class=\"mini-table\"><tr><th>이름</th><th>회사</th><th>지금 담당</th></tr>" +
+        (d.keep_other_owner ? "시트에 적힌 팀원 몫으로 <b>따로 만듭니다</b>"
+                            : "시트에 적힌 팀원에게 <b>옮깁니다</b>") +
+        "</summary><table class=\"mini-table\"><tr><th>이름</th><th>회사</th><th>지금 담당 팀원</th></tr>" +
         d.overlaps.map(function (o) {
           return "<tr><td>" + esc(o.name) + "</td><td>" + esc(o.firm) + "</td><td>" + esc(o.owner) + "</td></tr>";
         }).join("") + "</table></details>";
@@ -186,8 +186,8 @@
     // 고르개가 없으면(관리자가 아님) 서버가 늘 따로 만든다(`routers/data_io.import_contacts`).
     var how = !keepOther || keepOther.checked
       ? "다른 팀원에게 이미 있는 분은 옮기지 않고 따로 만듭니다."
-      : "다른 팀원에게 이미 있는 분은 시트의 담당자에게 옮깁니다.";
-    if (!confirm("미리보기 결과대로 반영합니다.\n같은 이름+투자사인 담당자는 빈 칸을 채웁니다.\n" + how + " 계속할까요?")) return;
+      : "다른 팀원에게 이미 있는 분은 시트 담당자 열에 적힌 팀원에게 옮깁니다.";
+    if (!confirm("미리보기 결과대로 반영합니다.\n같은 이름+투자사인 심사역은 빈 칸을 채웁니다.\n" + how + " 계속할까요?")) return;
     send(false);
   });
 })();

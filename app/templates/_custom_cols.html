@@ -37,7 +37,7 @@
 {% macro manage() -%}
 {%- if custom_target and user and user.role == 'admin' %}
 <a class="linkbtn" href="/columns?target={{ custom_target }}" data-testid="custom-cols-manage"
-   title="이 표에 칸을 붙이거나, 붙인 칸의 이름 · 자리를 바꿉니다(컬럼 관리). 원래 있던 칸의 이름은 바꿀 수 없습니다">칸 추가 · 이름 바꾸기</a>
+   title="이 표에 열을 붙이거나, 붙인 열의 이름 · 자리를 바꿉니다(컬럼 관리). 원래 있던 열의 이름은 바꿀 수 없습니다">열 추가 · 이름 바꾸기</a>
 {%- endif %}
 {%- endmacro %}
 

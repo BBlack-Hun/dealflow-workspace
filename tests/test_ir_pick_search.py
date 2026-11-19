@@ -120,7 +120,7 @@ def test_안_고르고는_보낼_수_없다(stage):
     from app.models import IrRequest
 
     html = stage["client"].get("/ir").text
-    assert html.count('<option value="" selected>담당자를 고르세요</option>') == 2, (
+    assert html.count('<option value="" selected>심사역을 고르세요</option>') == 2, (
         "빈 보기가 두 폼에 다 서 있지 않습니다 — required 가 아무 일도 안 합니다")
 
     # 화면만 막으면 값을 직접 보내는 길이 남는다 — 서버도 안 받는다.

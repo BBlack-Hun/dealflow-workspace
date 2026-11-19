@@ -197,7 +197,7 @@ def test_전달_완료가_아닌_줄은_그대로다(db, users):
              status="lost", at="10:00")
     data = report_svc.monthly(db, when.year, when.month, users["u1"])
     notes = sorted(r["note"] for b in data["buckets"] if b["key"] == "ir" for r in b["rows"])
-    assert notes == ["IR 자료 요청 받음", "드랍"], notes
+    assert notes == ["IR 자료 요청 받음", "중단"], notes
 
 
 # ── 4) 엑셀 ─────────────────────────────────────────────────────────────────

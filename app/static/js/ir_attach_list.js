@@ -94,7 +94,7 @@
     // 읽거나, 담당자를 바꿔도 번호가 그대로인 줄 안다.
     if (note && items.length) {
       if (sample) {
-        note.textContent = "담당자를 고르면 그 담당자가 받은 번호가 나옵니다.";
+        note.textContent = "심사역을 고르면 그 심사역이 받은 번호가 나옵니다.";
         note.hidden = false;
       } else if (missing) {
         note.textContent = "‘번호 없음’ 은 지난 딜 소개 목록에 없던 기업입니다 — "
@@ -102,7 +102,7 @@
         note.hidden = false;
       } else {
         note.textContent = "번호는 " + ((preview && preview.name) || "")
-          + " 님이 받은 딜 소개 번호입니다 — 담당자를 바꾸면 번호도 바뀝니다.";
+          + " 님이 받은 딜 소개 번호입니다 — 심사역을 바꾸면 번호도 바뀝니다.";
         note.hidden = false;
       }
     }

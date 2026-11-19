@@ -1945,7 +1945,7 @@ def export_consulting(db: Session = Depends(get_db),
     # 관리자가 붙인 추가 칸은 **맨 끝**에 — 이미 내려받아 둔 파일과 칸 차례가 안 밀린다.
     # 관리자가 자리(어느 칸 뒤)를 고른 칸만 화면처럼 그 칸 뒤에 선다.
     extra = custom_columns.view(db, "consulting", "consulting_companies")
-    headers = (CONSULTING_EXPORT_HEADERS + (["담당"] if owned_col else [])
+    headers = (CONSULTING_EXPORT_HEADERS + (["담당 팀원"] if owned_col else [])
                + [c.label for c in cols]
                + [label for label, _ in TAIL_COLUMNS] + CONTRACT_EXPORT_HEADERS
                + STARTUP_EXPORT_HEADERS

@@ -30,7 +30,7 @@
   #}
   <p class="hint">
     ✋ <b>[카톡방 찾기·확인]</b> 이 회사명으로 카톡을 뒤져 방 제목을 가져옵니다. 맞는 방에서
-    <b>[이 방으로 확정]</b> 을 누르면 카톡에서 읽어 온 제목 그대로 <b>확인됨</b> 이 되고
+    <b>[이 방으로 확정]</b> 을 누르면 카톡에서 읽어 온 제목 그대로 <b>확인 완료</b>가 되고
     바로 보낼 수 있습니다. 후보가 없으면 카톡에서 방 제목을 복사해 <b>직접 적기</b> 에
     붙여 넣으세요 — 직접 적은 이름은 <b>[카톡방 찾기·확인]</b> 을 한 번 더 누르면 그
     이름 그대로 확인합니다.
@@ -80,7 +80,7 @@
       <tr>
         <th>기업명</th>
         <th>대표자명</th>
-        <th>카톡에서 찾은 방 제목</th>
+        <th>찾은 카톡방 제목</th>
         <th>직접 적기 — 카톡에 보이는 글자 그대로</th>
         <th>상태</th>
       </tr>
@@ -123,7 +123,7 @@
           </ul>
           {% endif %}
           {% if r.investor_hidden %}
-          <p class="hint">투자사 방 {{ r.investor_hidden }}개는 후보에서 뺐습니다.</p>
+          <p class="hint">투자사 카톡방 {{ r.investor_hidden }}개는 후보에서 뺐습니다.</p>
           {% endif %}
           {% if r.state == 'confirmed' and not r.picks %}
           <p class="hint">카톡에서 확인된 방입니다 — 안내 카톡이 이 방으로 나갑니다.</p>
@@ -142,7 +142,7 @@
         </td>
         <td>
           <input type="text" class="room-input room-direct" data-id="{{ r.id }}"
-                 value="{{ r.room }}" placeholder="카톡 방 제목 그대로"
+                 value="{{ r.room }}" placeholder="카톡방 제목 그대로"
                  aria-label="{{ r.firm }} 카톡방 제목">
           <button type="button" class="linkbtn room-direct-save" data-id="{{ r.id }}">저장</button>
           {% if r.room and r.state != 'confirmed' %}

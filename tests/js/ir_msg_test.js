@@ -173,7 +173,7 @@ const PREVIEW = {
     assert.ok(skipped.children[0].textContent.indexOf("확인 안 됨") >= 0, "빠지는 까닭이 없다");
     assert.ok(s.byId("irm-preview-note").textContent.indexOf("2곳 중 1곳") >= 0);
     const send = s.byId("irm-send-btn");
-    assert.strictEqual(send.textContent, "1곳 대기 목록 만들기");
+    assert.strictEqual(send.textContent, "1곳 대기 회차 만들기");
     assert.strictEqual(send.disabled, false);
 
     click(send);

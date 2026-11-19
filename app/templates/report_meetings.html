@@ -16,7 +16,7 @@
   <p class="muted">
     딜 진행 관리 [미팅 잡기]로 잡은 미팅 목록입니다(취소한 미팅 제외).
     끝난 내 미팅은 <b>미팅결과</b> 칸을 눌러 고르며, 딜 진행 관리 › 미팅 후기의 결과와 같은 값입니다.
-    아래 <b>지난 기록</b>은 명단 월별 '미팅' 칸의 글을 그대로 보여 주며, 여기서는 고칠 수 없습니다.
+    아래 <b>지난 기록</b>은 명단 월별 '미팅' 열의 글을 그대로 보여 주며, 여기서는 고칠 수 없습니다.
   </p>
 </header>
 {% include "_report_tabs.html" %}
@@ -111,14 +111,14 @@
   {# 머릿수는 알약으로 뗀다 — 설명 끝에 `· 0칸` 으로 붙어 단위가 낯설었다(글 하나 = 1건). #}
   <h2 class="panel-title"><span>지난 기록
     <span class="count-pill {% if memos %}on{% endif %}"><b>{{ memos|length }}</b>건</span></span>
-    <span class="hint">명단 {% if yearly_view %}{{ year }}년 월별{% else %}{{ month }}월{% endif %} '미팅' 칸에 적힌 글 그대로</span></h2>
+    <span class="hint">명단 {% if yearly_view %}{{ year }}년 월별{% else %}{{ month }}월{% endif %} '미팅' 열에 적힌 글 그대로</span></h2>
   {% if memos %}
   <div class="table-wrap">
   <table class="grid-table compact">
     {# `명단` · `칸` 이 무엇인지 묻는 일이 있었다(#184) — 머리글에 뜻을 띄운다. #}
     <thead><tr><th style="width:70px">팀원</th>
-      <th style="width:150px" title="이 글이 적힌 투자사 관리 현황의 명단 탭 이름">명단</th>
-      <th style="width:150px" title="그 명단 탭의 월별 칸 이름 — 미팅 날짜가 아니라 글을 적은 칸입니다">칸</th><th style="width:170px">투자사</th><th>적힌 글</th></tr></thead>
+      <th style="width:150px" title="이 글이 적힌 투자사 관리 현황의 탭 이름">탭</th>
+      <th style="width:150px" title="그 탭의 월별 열 이름 — 미팅 날짜가 아니라 글을 적은 열입니다">열</th><th style="width:170px">투자사</th><th>적힌 글</th></tr></thead>
     <tbody>
       {% for r in memos %}
       <tr>
@@ -133,7 +133,7 @@
   </table>
   </div>
   {% else %}
-  <p class="muted bucket-empty">{{ '이 해' if yearly_view else '이 달' }} 명단 '미팅' 칸에 적힌 글이 없습니다.</p>
+  <p class="muted bucket-empty">{{ '이 해' if yearly_view else '이 달' }} 명단 '미팅' 열에 적힌 글이 없습니다.</p>
   {% endif %}
 </section>
 {% endblock %}

@@ -61,7 +61,7 @@ const deals_ = require("./_deals_dom.js");
   // 못 골랐으면 **말한다** — 조용히 비워 두면 화면이 준비된 척을 한다.
   const warn = dom.document.getElementById("send-warnings");
   assert.ok(!warn.hidden, "못 고른 담당자를 두고 아무 말이 없다");
-  assert.ok(/담당자 1명/.test(warn.innerHTML), warn.innerHTML);
+  assert.ok(/심사역 1명/.test(warn.innerHTML), warn.innerHTML);
 }
 
 // ── 4) ★ 여는 것으로는 **아무것도 안 나간다** ─────────────────────────────

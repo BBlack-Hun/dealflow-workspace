@@ -257,7 +257,7 @@
       document.body.appendChild(readonlyPop);
     }
     readonlyPop.textContent = why
-      || "볼 수만 있는 줄입니다 — 고칠 일이 있으면 담당자나 관리자에게 요청하세요.";
+      || "볼 수만 있는 줄입니다 — 고칠 일이 있으면 담당 팀원이나 관리자에게 요청하세요.";
     readonlyPop.hidden = false;
     var box = cell.getBoundingClientRect();
     var room = (window.innerWidth || 0) - 360;

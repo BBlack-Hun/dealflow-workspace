@@ -147,7 +147,7 @@ def test_투자사_화면의_단추는_그대로다(me, db, users):
     _seed_row(db, VC, users["u1"].id, "샘플벤처스1")
     body = me.get(_url(VC)).text
     assert 'id="add-btn"' in body
-    assert "담당자 추가" in body
+    assert "심사역 추가" in body
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -247,7 +247,7 @@ def test_투자사_명단은_이름이_필수다(me, db):
     before = db.query(VcContact).count()
     r = me.post("/api/contacts", json={"firm": "샘플벤처스9", "sheet": VC})
     assert r.status_code == 400, r.text
-    assert "담당자명" in r.json()["detail"]
+    assert "심사역 이름" in r.json()["detail"]
     db.expire_all()
     assert db.query(VcContact).count() == before
 
@@ -453,4 +453,4 @@ def test_배치를_바꾸면_필수_칸도_따라_바뀐다(me, db):
 
     r = me.post("/api/contacts", json={"firm": "배치바꾼기업", "sheet": MINE})
     assert r.status_code == 400, r.text
-    assert "담당자명" in r.json()["detail"]
+    assert "심사역 이름" in r.json()["detail"]

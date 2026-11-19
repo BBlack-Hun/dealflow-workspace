@@ -198,7 +198,7 @@ async function main() {
     const asked = t.state.asked[0] || "";
     assert.ok(asked.indexOf("리마인드") >= 0,
       "리마인드를 함께 거두는지 확인창이 말하지 않는다");
-    assert.ok(asked.indexOf("다른 담당자 줄은 그대로") >= 0,
+    assert.ok(asked.indexOf("다른 심사역 줄은 그대로") >= 0,
       "같은 판의 다른 사람은 그대로라는 말이 없다 — 묶음째 사라질까 겁낸다");
 
     // 이력이 다시 그려져 그 줄이 빠졌다.

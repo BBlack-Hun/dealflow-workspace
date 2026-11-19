@@ -91,7 +91,7 @@ def test_팀원_카톡방으로_하루_한_통_방이_비면_까닭이_선다(db
                             "https://deal.example.org/ir#meetings")
     assert item.job.user_id == users["u2"].id and item.job.kind == "deal_intro"
     assert scheduled_send.label(scheduled_send.scheduled_at(item.job)) == "11/2(월) 10:00"
-    assert ("윤서아 님 결과 문의 1건 — 카톡방 이름이 비어 있습니다(팀 현황 › 자동화)"
+    assert ("윤서아 님 미팅 결과 확인 1건 — 카톡방 이름이 비어 있습니다(팀 현황 › 자동화)"
             in result["skipped"])
     # 다음 날에도 아직 물어볼 것이 남아 있으면 또 간다.
     item.status, item.sent_at = "sent", "2026-11-02T10:00:30+09:00"
@@ -140,7 +140,7 @@ def test_풀기_직전에_결과를_다_적었으면_뺀다(db, users, due):
     db.commit()
     job = _items(db)[0].job
     assert runner.prune(db, job, _at(2026, 11, 2, 10, 0)) == 0
-    assert "물어볼 결과 문의가 남아 있지 않습니다" in _items(db)[0].error
+    assert "확인할 미팅 결과가 남아 있지 않습니다" in _items(db)[0].error
 
 
 # ── 6. 팀 현황 ───────────────────────────────────────────────────────────────
@@ -154,5 +154,5 @@ def test_팀_현황_자동화_목록에_선다(client, db, users):
     db.commit()
     client.post("/login", data={"phone": "01000000009", "password": DEMO_PASSWORD})
     html = client.get("/team").text
-    assert "결과 문의 알림" in html and "오늘 결과를 물어볼 미팅이 있는 팀원의 카톡방에" in html
+    assert "미팅 결과 확인 알림" in html and "오늘 결과를 물어볼 미팅이 있는 팀원의 카톡방에" in html
     assert "결과 문의 문자 알림" not in html

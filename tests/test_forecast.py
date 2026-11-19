@@ -445,20 +445,20 @@ def test_합계는_화면_범위의_줄만_가능성별로_더하고_엑셀도_�
     _cells(portal["u2"], c["id"], likelihood="하")
 
     page = portal["u1"].get("/report/forecast").text
-    assert "<b>예상 수수료 합계 0.8억</b>" in page
+    assert "<b>성공보수(수수료) 합계 0.8억</b>" in page
     # 가능성별 수는 합계 옆 알약으로 따로 선다.
     pill = '<span class="count-pill">가능성 {} <b>{}</b>억</span>'.format
     assert pill("상", "0.3") in page and pill("중", "0.5") in page
     assert pill("하", "0") in page and "가능성 미정" not in page
-    assert "예상 수수료가 없는 1줄은 빠졌습니다" in page
+    assert "성공보수(수수료)가 없는 1줄은 빠졌습니다" in page
     team = portal["admin"].get("/report/forecast?scope=team").text
-    assert "<b>예상 수수료 합계 1.1억</b>" in team and pill("하", "0.3") in team
-    assert "<b>예상 수수료 합계 0.3억</b>" in portal["admin"].get("/report/forecast?member=2").text
+    assert "<b>성공보수(수수료) 합계 1.1억</b>" in team and pill("하", "0.3") in team
+    assert "<b>성공보수(수수료) 합계 0.3억</b>" in portal["admin"].get("/report/forecast?member=2").text
 
     r = portal["u1"].get("/api/export/forecast.xlsx")
     grid = [list(row) for row in openpyxl.load_workbook(io.BytesIO(r.content))
             .active.iter_rows(values_only=True)]
-    fee_at = grid[0].index("예상 수수료(억)")
+    fee_at = grid[0].index("성공보수(수수료, 억)")
     assert [g[fee_at] for g in grid[1:4]] == [0.3, 0.5, None], "수로 읽히면 억 수로(5천만원 → 0.5)"
     totals = {g[0]: g[fee_at] for g in grid[5:]}
     assert totals == {"합계": 0.8, "가능성 상": 0.3, "가능성 중": 0.5, "가능성 하": 0}

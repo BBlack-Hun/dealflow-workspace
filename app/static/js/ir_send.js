@@ -97,7 +97,7 @@
     form.hidden = true;
     var badge = document.createElement("span");
     badge.className = "room-badge ok ir-sent-badge";
-    badge.textContent = "✅ 발송 목록에 올렸습니다";
+    badge.textContent = "✅ 발송 회차를 만들었습니다";
     head.appendChild(badge);
     var link = document.createElement("a");
     link.className = "linkbtn";
@@ -116,7 +116,7 @@
     var warns = (preview.warnings || []).slice();
     if (!preview.room_name) {
       warns.unshift((preview.room_warning || "카톡방 이름 미등록")
-        + " — 투자사 관리 현황에서 방 이름을 넣어야 보낼 수 있습니다.");
+        + " — 투자사 관리 현황에서 카톡방 이름을 넣어야 보낼 수 있습니다.");
     }
     setWarn(warns.join("\n"));
     copyBtn.disabled = false;
@@ -171,7 +171,7 @@
     if (!window.confirm(item.name + " 님에게 "
                         + (item.companyIds.length + item.seriesAIds.length)
                         + "개 기업 IR 자료 전달 문구를 발송합니다.\n"
-                        + "방 이름을 최종 확인하셨나요?")) return;
+                        + "카톡방 이름을 최종 확인하셨나요?")) return;
     goBtn.disabled = true;
     goBtn.textContent = "보내는 중…";
     fetch("/api/deals/send", {
@@ -189,7 +189,7 @@
         if (!res.ok) {
           // 서버가 막은 사유는 그대로 보여 준다(방 미등록·자료 파일명 없음·
           // 검토중단). 조용히 삼키면 왜 안 나갔는지 알 길이 없다.
-          setWarn("발송 목록을 만들지 못했습니다 — "
+          setWarn("발송 회차를 만들지 못했습니다 — "
                   + ((res.d && res.d.detail) || "다시 시도해 주세요"));
           goBtn.disabled = false;
           return;
@@ -206,7 +206,7 @@
 
   function sentState(jobId) {
     setWarn("");
-    setState("✅ 발송 목록을 만들었습니다 — 발송 프로그램이 보냅니다. "
+    setState("✅ 발송 회차를 만들었습니다 — 발송 프로그램이 보냅니다. "
              + "보내고 나면 이 요청은 [보낼 자료] 에서 자동으로 빠집니다.",
              "all-clear");
     goBtn.hidden = true;

@@ -69,7 +69,7 @@
     <div class="toolbar-right">
       <input type="search" id="closed-search"
              placeholder="이름 · 투자사 · 단계 · 상태 · 사유"
-             title="담당자 이름 · 투자사(회사) · 마지막 단계 · 상태 · 사유로 찾습니다. 이 표만 걸립니다 — 예약된 리마인드는 그 표의 검색칸으로, 오늘 보낼 리마인드는 위 목록에서 눈으로 확인해 주세요."
+             title="심사역 이름 · 투자사(회사) · 마지막 단계 · 상태 · 사유로 찾습니다. 이 표만 걸립니다 — 예약된 리마인드는 그 표의 검색칸으로, 오늘 보낼 리마인드는 위 목록에서 눈으로 확인해 주세요."
              autocomplete="off" aria-label="IR 요청 투자사 검색">
       <span class="hint" id="closed-count"></span>
     </div>
@@ -133,9 +133,9 @@
           <span class="sep" aria-hidden="true">·</span>
           {% endif %}
           <form method="post" action="/followups/{{ r.id }}/delete"
-                onsubmit="return confirm('이 줄을 IR 요청 투자사 표에서 지울까요?\n담당자 명단과 발송 기록·활동은 그대로 남습니다 — 이 표의 줄 하나만 사라집니다.\n[지난 발송에서 리마인드 걸기] 를 누르면 그 발송 기록에서 다시 생깁니다.')">
+                onsubmit="return confirm('이 줄을 IR 요청 투자사 표에서 지울까요?\n심사역 명단과 발송 기록·활동은 그대로 남습니다 — 이 표의 줄 하나만 사라집니다.\n[지난 발송에서 리마인드 걸기] 를 누르면 그 발송 기록에서 다시 생깁니다.')">
             <button class="linkbtn danger" type="submit"
-                    title="이 표에서만 없앱니다. 담당자 명단·발송 기록은 남습니다.">지우기</button>
+                    title="이 표에서만 없앱니다. 심사역 명단·발송 기록은 남습니다.">지우기</button>
           </form>
           </div>
         </td>

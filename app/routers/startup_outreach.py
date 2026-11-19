@@ -309,7 +309,7 @@ def search_rooms(body: RoomSearchIn, db: Session = Depends(get_db),
                   "찾고 확인합니다(이미 확인된 곳 · 남의 줄 · 딜소개 불가 · 검토중단 · "
                   "회사명이 빈 줄은 빠집니다)")
         if made["conflicts"]:
-            detail = (f"동명이인인데 방 이름까지 같아 구별되지 않습니다: "
+            detail = (f"동명이인인데 카톡방 이름까지 같아 구별되지 않습니다: "
                       f"{', '.join(made['conflicts'][:5])} — 방 이름을 서로 다르게 "
                       "넣어 주세요")
         raise HTTPException(status_code=400, detail=detail)

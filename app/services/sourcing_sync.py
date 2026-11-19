@@ -771,14 +771,14 @@ def set_mark(db: Session, contact: VcContact, value: Optional[str],
             row = create_row(db, contact, revive, user, assignee=assignee, bucket=bucket)
             action = ACT_CREATED
             message = (f"딜 소싱 › {sourcing_buckets.shown(bucket)} 에 '{row.participation}' 으로 새로 "
-                       "넣었습니다 — 카톡방은 딜 소싱 화면의 [방 후보 찾기]로 보내는 분 "
+                       "넣었습니다 — 카톡방은 딜 소싱 화면의 [카톡방 후보 찾기]로 보내는 분 "
                        "카톡에서 찾아 확정하세요.")
             if not takes_part(row):
                 message += (" 동의하시면 딜 소싱 화면의 `참여` 칸을 '참여' 로 바꿔야 "
                             "딜이 나갑니다.")
             others = other_buckets(db, contact, bucket)
             if others:
-                message += (f" 다른 갈래({', '.join(map(sourcing_buckets.shown, others))})에도 있는 분이라 그 줄은 "
+                message += (f" 다른 탭({', '.join(map(sourcing_buckets.shown, others))})에도 있는 분이라 그 줄은 "
                             "그대로 둡니다.")
             return {"mark": mark_of(row), "message": message, "action": action,
                     "participation": participation_of(row)}
@@ -945,7 +945,7 @@ def add_from_sourcing(db: Session, row: SourcingContact,
         return None, (
             f"투자사 관리 현황에 이름이나 휴대폰이 같은 분이 {len(same)}명 있어 새로 만들지 "
             "않았습니다 — 같은 분이면 이 줄 이름 아래 후보에서 [이 분으로 확정]으로 이어 "
-            "주세요(후보가 없으면 그 줄을 표에서 감췄거나 이미 이 갈래의 다른 줄과 이어진 분입니다).")
+            "주세요(후보가 없으면 그 줄을 표에서 감췄거나 이미 이 탭의 다른 줄과 이어진 분입니다).")
     contact = VcContact(user_id=user.id,
                         **{f: _text(getattr(row, f, None)) or None for f in SHARED_FIELDS})
     db.add(contact)
@@ -1160,7 +1160,7 @@ def badges(db: Session, rows: Iterable[SourcingContact]) -> Dict[int, dict]:
             "diff": [SHARED_LABELS[f] for f in SHARED_FIELDS
                      if not same_value(f, getattr(row, f, None),
                                        getattr(contact, f, None))],
-            "title": f"두 화면이 같이 바뀌는 칸: {shared} (메모는 따로)",
+            "title": f"두 화면이 같이 바뀌는 열: {shared} (메모는 따로)",
         }
     return out
 

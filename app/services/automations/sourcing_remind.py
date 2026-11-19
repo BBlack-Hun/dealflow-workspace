@@ -85,7 +85,7 @@ def _check(values: dict) -> None:
     _weekday(values["weekday"])
     _weeks(values["weeks"])
     if not values["groups"]:
-        raise ValueError("보낼 갈래를 하나 이상 넣으세요")
+        raise ValueError("보낼 탭을 하나 이상 넣으세요")
 
 
 def schedule_label(values: dict) -> str:
@@ -107,8 +107,8 @@ def summary(values: dict) -> str:
 
 
 FIELDS = (
-    runner.Field("groups", "갈래(한 줄에 하나)", "lines", DEFAULT_GROUPS,
-                 hint="딜 소싱 화면의 갈래 탭 이름 그대로"),
+    runner.Field("groups", "탭(한 줄에 하나)", "lines", DEFAULT_GROUPS,
+                 hint="딜 소싱 화면의 탭 이름 그대로"),
     runner.Field("weeks", "주차", "text", "2", hint="1~7일이 1주차 — 쉼표로 여럿"),
     runner.Field("weekday", "요일", "text", "화"),
     runner.Field("time", "보낼 시각", "time", "10:00"),
@@ -195,7 +195,7 @@ def collect(db: Session, row: Automation, sender: User,
     linked = sourcing_link.linked_rooms(db, people)
     mine = sender_rooms.sourcing_rooms_for(db, sender.id, people)
     batch = runner.Batch(note="리마인드 보낼 심사역이 없습니다"
-                              "(모두 딜 받음 · 참여 전 · 불참여이거나 방이 없음)")
+                              "(모두 딜 받음 · 참여 전 · 불참여이거나 카톡방이 없음)")
     for person in people:
         who = f"{person.name}({person.firm or '-'})"
         if not sourcing_sync.takes_part(person):
@@ -207,7 +207,7 @@ def collect(db: Session, row: Automation, sender: User,
             continue
         room = _room(db, sender, person, linked, mine)
         if not room:
-            batch.skipped.append(f"{who} — 방 이름 없음")
+            batch.skipped.append(f"{who} — 카톡방 이름 없음")
             continue
         batch.outs.append(automation.Out(
             room=room, message=message(db, sender, person, day),

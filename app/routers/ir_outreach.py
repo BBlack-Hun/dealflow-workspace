@@ -208,7 +208,7 @@ def check_rooms(body: RoomCheckIn, db: Session = Depends(get_db),
         detail = ("찾을 곳이 없습니다 — 고른 기업이 모두 카톡방이 확인됐거나, 딜소개 불가 · "
                   "폐업이거나, 회사명이 비어 있습니다")
         if made["conflicts"]:
-            detail = (f"같은 방 제목을 가진 기업이 둘 이상이라 대조하지 않았습니다: "
+            detail = (f"같은 카톡방 제목을 가진 기업이 둘 이상이라 대조하지 않았습니다: "
                       f"{', '.join(made['conflicts'][:5])} — 카톡에서 방 이름을 서로 다르게 "
                       "바꾼 뒤 적어 주세요(다음에 누르면 회사명으로 찾습니다)")
         raise HTTPException(status_code=400, detail=detail)

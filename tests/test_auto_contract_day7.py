@@ -203,7 +203,7 @@ def test_담당자_못_맞춤_방_비었음이면_안_보내고_까닭이_선다
     assert result["status"] == "empty" and _items(db) == []
     joined = " / ".join(result["skipped"])
     assert "샘플우편 · 카톡 — 강민준 님의 카톡방 이름이 비어 있습니다" in joined
-    assert "샘플없는 · 카톡 — 담당자 '없는팀원' 을 팀원 계정에서 못 찾았습니다" in joined
+    assert "샘플없는 · 카톡 — 담당 팀원 '없는팀원' 을 계정에서 못 찾았습니다" in joined
     monkeypatch.setattr(clock, "now", lambda: _at(2026, 10, 12, 9, 5))    # 판을 그날 연다
     state = runner.status_of(db, "contract_day7")
     assert "안 보내는 까닭 2" in state["describe"] and "없는팀원" in state["describe"]

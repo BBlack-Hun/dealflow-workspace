@@ -225,7 +225,7 @@ def manual_meeting(db: Session, contact_id: Optional[int], since: date,
         mark_q = mark_q.where(ContactActivity.happened_at > after)
     sent = db.execute(sent_q).scalar()
     if sent:
-        return f"{PREFIX} — {_md(sent)} 에 미팅 요청·후기를 손으로 보냈습니다"
+        return f"{PREFIX} — {_md(sent)} 에 미팅 요청·후기를 직접 보냈습니다"
     marked = db.execute(mark_q).scalar()
     if marked:
         return f"{PREFIX} — {_md(marked)} 에 미팅 요청을 보냈다고 적혀 있습니다"
@@ -276,7 +276,7 @@ def manual_sourcing_remind(db: Session, sourcing_contact_id: Optional[int],
                SendItem.id.notin_(auto_items()))
     ).scalar()
     if sent:
-        return f"{PREFIX} — {_md(sent)} 에 이 달 월간 리마인드를 손으로 보냈습니다"
+        return f"{PREFIX} — {_md(sent)} 에 이 달 월간 리마인드를 직접 보냈습니다"
     return ""
 
 
@@ -304,7 +304,7 @@ def manual_sourcing_invite(db: Session, sourcing_contact_id: Optional[int]) -> s
                SendItem.id.notin_(auto_items()))
     ).scalar()
     if sent:
-        return f"{PREFIX} — {_md(sent)} 에 손으로 보낸 검토 가능 심사역 참여 안내가 있습니다(보내는 중 포함)"
+        return f"{PREFIX} — {_md(sent)} 에 직접 보낸 검토 가능 심사역 참여 안내가 있습니다(보내는 중 포함)"
     return ""
 
 

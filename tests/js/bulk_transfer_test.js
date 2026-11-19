@@ -141,7 +141,7 @@ function checkedIds(t) {
     t.btn.fire("click");
     await tick();
     assert.strictEqual(t.calls.length, 0, "받을 담당자 없이 이관이 나갔다");
-    assert.ok(/받을 담당자/.test(t.alerted[0] || ""), "왜 안 되는지 안 알린다");
+    assert.ok(/받을 팀원/.test(t.alerted[0] || ""), "왜 안 되는지 안 알린다");
   }
 
   // ── 4) [취소]하면 한 건도 안 나간다 ──────────────────────────────────────

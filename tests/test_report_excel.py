@@ -476,7 +476,7 @@ def test_it_is_laid_out_as_a_report(logged, db, users):
     # 고정해 두면 아랫줄이 잘려 무엇을 센 숫자인지 모르는 표가 된다.
     kpi = next(row for row in ws.iter_rows() if row[0].value == "보낸 건수")
     assert ws.row_dimensions[kpi[0].row].height >= 30, "접힌 머리글이 잘린다"
-    assert kpi[4].value == "진행한 미팅" and kpi[4].alignment.wrap_text
+    assert kpi[4].value == "미팅 완료" and kpi[4].alignment.wrap_text
     assert ws.sheet_view.showGridLines is False, "표에 테두리를 직접 그린다"
     # 인쇄 설정 — '리포트로 뽑을 수 있게' 가 요청이었다
     assert ws.page_setup.orientation == "landscape"
@@ -586,7 +586,7 @@ def test_the_year_comes_down_as_one_sheet(logged, db, users):
     flat = [str(c) for row in grid for c in row]
     assert "2026년 업무 보고 · 연간" in flat
     # 무엇을 받은 것인지 파일 스스로 말해야 한다
-    assert any("판마다 항목이 줄, 달이 칸" in c for c in flat)
+    assert any("판마다 항목이 줄, 달이 열" in c for c in flat)
 
     # 열두 달이 **칸으로** 빠짐없이 — 빈 달도 자리를 지켜야 흐름이 보인다
     head = _find(grid, "항목")
@@ -843,14 +843,14 @@ def test_an_item_with_nothing_all_year_is_dropped(logged, db, users):
 
     assert "보낸 건수" in labels and "발송 회차" in labels
     # 미팅도 IR 요청도 없는 해다 — 그 줄들은 서지 않는다
-    assert "잡은 미팅" not in labels
+    assert "미팅 예약" not in labels
     assert "IR 자료 요청 받음" not in labels
     assert "안 나감" not in labels, "중단된 회차가 없는데 줄이 섰다"
 
     # 화면도 같다
     body = logged.get("/report?span=year&year=2026").text
     tables = " ".join(_year_tables(body))
-    assert "보낸 건수" in tables and "잡은 미팅" not in tables
+    assert "보낸 건수" in tables and "미팅 예약" not in tables
 
 
 def test_an_empty_panel_still_stands(logged, db, users):

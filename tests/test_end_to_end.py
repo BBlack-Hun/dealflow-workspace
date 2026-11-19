@@ -157,7 +157,7 @@ def test_one_cycle_flows_end_to_end(stage, db):
     meeting.followup_due = date.today().isoformat()        # 열흘 뒤가 됐다고 치고
     db.commit()
     body = client.get("/todo").text
-    assert "미팅 결과 문의" in body
+    assert "미팅 결과 확인" in body
 
 
 def test_failed_send_schedules_nothing(stage, db):

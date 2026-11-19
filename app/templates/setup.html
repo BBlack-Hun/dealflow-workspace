@@ -128,10 +128,10 @@
 <div class="panel test-tools">
   <h2 class="panel-title">🧪 시험용 — 여기서 눌러 봅니다</h2>
   <p class="hint">
-    <b>여기 단추가 만든 발송만</b> 실제 담당자가 아니라
-    <code>{{ test_room }}</code> 방으로만 나갑니다 — <b>방은 고를 수 없습니다.</b><br>
+    <b>여기 단추가 만든 발송만</b> 실제 받는 사람이 아니라
+    <code>{{ test_room }}</code> 카톡방으로만 나갑니다 — <b>방은 고를 수 없습니다.</b><br>
     딜 제안 관리에서 보내는 딜 소개·IR 전달·리마인드는
-    <b>각 담당자 방으로 그대로 나갑니다.</b>
+    <b>각 심사역 카톡방으로 그대로 나갑니다.</b>
   </p>
   {% if test_msg %}<p class="hint error">{{ test_msg }}</p>{% endif %}
 
@@ -214,7 +214,7 @@
      리마인드가 그것을 어긴 값을 치른 자리다(같은 뜻의 문구가 둘이었다). #}
   <h3>미팅 후기 문구 보내 보기 <span class="to-who to-investor">받는 사람 → 투자사</span></h3>
   <p class="hint">
-    <b>미팅을 마친 투자사 담당자</b> 에게 열흘쯤 뒤 결과를 묻는 문구입니다 —
+    <b>미팅을 마친 투자사 심사역</b> 에게 열흘쯤 뒤 결과를 묻는 문구입니다 —
     <b>스타트업에게 가는 문구가 아닙니다.</b><br>
     고칠 곳 → <a href="/templates#meeting_review">딜 제안 문구 · 문구만 — 미팅 후기</a>
   </p>
@@ -223,7 +223,7 @@
     <select name="meeting_id" class="input wide">
       <option value="">어느 미팅 것으로 만들까요</option>
       {% for m in test_meetings %}
-      <option value="{{ m.id }}">{% if m.due %}[결과 문의 차례] {% endif %}{{ m.who }}{% if m.firm %} · {{ m.firm }}{% endif %}{% if m.when %} — {{ m.when }}{% endif %} {{ m.kind_label }}</option>
+      <option value="{{ m.id }}">{% if m.due %}[결과 확인 차례] {% endif %}{{ m.who }}{% if m.firm %} · {{ m.firm }}{% endif %}{% if m.when %} — {{ m.when }}{% endif %} {{ m.kind_label }}</option>
       {% endfor %}
     </select>
     <button class="btn primary" type="submit">시험방으로 보내보기</button>
@@ -231,8 +231,8 @@
   <p class="hint">
     {# 거르지 않는 까닭은 `_test_meetings` 에 적었다. 짧게: 문구가 미팅을 안
        읽어서 걸러도 글자가 같고, 거르면 발송기를 깔 때 목록이 비어 버린다. #}
-    <b>고른 담당자에게는 아무것도 가지 않습니다</b> — 시험방 한 곳뿐입니다.<br>
-    <b>결과 문의 차례</b> 인 미팅이 맨 위에 옵니다.
+    <b>고른 심사역에게는 아무것도 가지 않습니다</b> — 시험방 한 곳뿐입니다.<br>
+    <b>결과 확인 차례</b> 인 미팅이 맨 위에 옵니다.
   </p>
   {% else %}
   {# 미팅이 하나도 없는 화면. 기업 리마인드와 같은 자리, 같은 답이다 —
@@ -248,17 +248,17 @@
 
   <h3>카톡방 이름 확인해 보기</h3>
   <p class="hint">
-    적은 <b>방 이름</b>이 카카오톡에서 열리는지만 봅니다 —
+    적은 <b>카톡방 이름</b>이 카카오톡에서 열리는지만 봅니다 —
     <b>아무것도 보내지 않습니다.</b>
   </p>
   <form method="post" action="/setup/test/room" class="test-form" data-send>
     <input type="text" name="room_name" class="input wide" placeholder="예) 회사이름 대표님"
            autocomplete="off" spellcheck="false">
-    <button class="btn" type="submit">방 이름만 확인</button>
+    <button class="btn" type="submit">카톡방 이름만 확인</button>
   </form>
 
   <p class="hint">
-    누르면 <b>진행 화면</b>으로 갑니다 — 막힌 까닭이 <b>「사유 / 시각」</b> 칸에 그대로 뜹니다.<br>
+    누르면 <b>진행 화면</b>으로 갑니다 — 막힌 까닭이 <b>「사유 / 시각」</b> 열에 그대로 뜹니다.<br>
     <b>대기 중</b> 에서 멈춰 있으면 발송 프로그램이 꺼져 있거나 낡은 것입니다 —
     위 <b>①</b> 에서 다시 내려받아 켜세요.
   </p>
@@ -284,10 +284,10 @@
     </p>
   </details>
   <details class="tpl-new">
-    <summary>보낼 때 채팅방이 자동으로 안 열려요 (macOS)</summary>
+    <summary>보낼 때 카톡방이 자동으로 안 열려요 (macOS)</summary>
     <p class="hint">
-      일부 오래된 macOS 에서는 채팅방 자동 열기가 동작하지 않습니다.
-      이때도 <b>발송은 정상</b>이며, 카카오톡에서 <b>보낼 채팅방을 미리 열어 두면</b> 됩니다.
+      일부 오래된 macOS 에서는 카톡방 자동 열기가 동작하지 않습니다.
+      이때도 <b>발송은 정상</b>이며, 카카오톡에서 <b>보낼 카톡방을 미리 열어 두면</b> 됩니다.
     </p>
   </details>
 </div>
@@ -296,7 +296,7 @@
   <h2 class="panel-title">연결 정보</h2>
   <table class="kv">
     <tr><th>서버 주소</th><td><code>{{ server_url }}</code></td></tr>
-    <tr><th>사용자</th><td>{{ user.name }}{% if user.phone %} <code>{{ user.phone }}</code>{% endif %}</td></tr>
+    <tr><th>계정</th><td>{{ user.name }}{% if user.phone %} <code>{{ user.phone }}</code>{% endif %}</td></tr>
     {# 연결키는 **가려 둔다** — 화면 공유·캡처 한 번이면 키가 나갔다. 끝 네 자리만 보여
        어느 키인지만 알아보게 하고, 값은 [복사] 단추만 든다(아래 스크립트).
        설치 파일은 이 칸을 읽지 않는다 — 내려받을 때 서버가 키를 다시 읽어 넣는다
@@ -316,8 +316,8 @@
   <h2 class="panel-title">주의</h2>
   <ul class="steps">
     <li><b>발송 중에는 마우스·키보드를 건드리지 마세요.</b> 카톡 창을 자동 조작합니다.</li>
-    <li>테스트는 반드시 <b>나와의 채팅</b> 등 안전한 방으로 하세요.</li>
-    <li>방 제목이 정확히 일치할 때만 전송되며, 다르면 그 건은 실패 처리되고
+    <li>테스트는 반드시 <b>나와의 채팅</b> 등 안전한 카톡방으로 하세요.</li>
+    <li>카톡방 제목이 정확히 일치할 때만 전송되며, 다르면 그 건은 실패 처리되고
         <b>엉뚱한 방으로는 가지 않습니다.</b></li>
     {# 간격은 줄이면, 상한은 늘리면 빨라진다 — 예전 문장은 둘 다 '줄이지 마세요' 라 상한 쪽 방향이 거꾸로였다. #}
     <li>카카오 운영정책상 자동화는 계정 제재 소지가 있습니다. 발송 간격을 줄이거나 상한을 늘리지 마세요.</li>

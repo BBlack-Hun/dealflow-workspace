@@ -75,18 +75,18 @@ _weekday = runner.parse_weekday
 def _check(values: dict) -> None:
     _weekday(values["weekday"])
     if values["gap_max"] < values["gap_min"]:
-        raise ValueError("방 사이 간격 — 최대가 최소보다 작습니다")
+        raise ValueError("카톡방 사이 간격 — 최대가 최소보다 작습니다")
 
 
 FIELDS = (
     runner.Field("rooms", "채널방(한 줄에 하나)", "lines", [],
                  hint="보내는 계정 카톡의 오픈채팅방 제목 그대로"),
     runner.Field("weekday", "요일", "text", "수"),
-    runner.Field("time", "첫 방 시각", "time", "13:30"),
+    runner.Field("time", "첫 카톡방 시각", "time", "13:30"),
     runner.Field("count", "기업 수", "int", 3, low=1, high=10),
     runner.Field("exclude_days", "다시 보내기까지(일)", "int", 90, low=0, high=365),
-    runner.Field("gap_min", "방 사이 최소(분)", "int", 2, low=0, high=30),
-    runner.Field("gap_max", "방 사이 최대(분)", "int", 5, low=0, high=30),
+    runner.Field("gap_min", "카톡방 사이 최소(분)", "int", 2, low=0, high=30),
+    runner.Field("gap_max", "카톡방 사이 최대(분)", "int", 5, low=0, high=30),
 )
 
 
@@ -167,7 +167,7 @@ def collect(db: Session, row: Automation, sender: User,
     values = runner.values(row, automation.CHANNEL_TOP)
     rooms = [r for r in dict.fromkeys(values["rooms"]) if r]
     if not rooms:
-        return runner.Batch(note="채널방 목록이 비어 있습니다 — 자동화 판에서 방 제목을 넣으세요")
+        return runner.Batch(note="채널방 목록이 비어 있습니다 — 자동화 판에서 카톡방 제목을 넣으세요")
     companies, skipped = pick(db, plan_.at.date(), values["count"],
                               values["exclude_days"], automation.is_test(row))
     batch = runner.Batch(skipped=skipped,

@@ -533,7 +533,7 @@ def _export_table(db: Session, rows: List[SourcingContact], extra: dict,
                     for m in months]
         return out
 
-    heads: List[str] = ["갈래"] if with_bucket else []
+    heads: List[str] = ["탭"] if with_bucket else []
     for field, label, _w, _f in COLUMNS:
         heads.append(label)
         if field == "name":
@@ -690,7 +690,7 @@ def add_row(body: SourcingIn, bucket: str = "",
         raise HTTPException(status_code=400, detail="이름을 입력하세요")
     target = (bucket or "").strip()
     if not target:
-        raise HTTPException(status_code=400, detail="갈래를 고르세요")
+        raise HTTPException(status_code=400, detail="탭을 고르세요")
     # 그 갈래가 **쓰고 있는 글자**로 적는다 — 띄어쓰기만 다른 글자로 넣으면 저장된
     # 글자는 그대로인데 줄마다 글자가 갈린다(`sourcing_buckets.label_of`).
     target = sourcing_buckets.label_of(db, target)
@@ -739,7 +739,7 @@ def _linked_msg(db: Session, row: SourcingContact) -> str:
     if not badge:
         return ""
     return (f"투자사 관리 현황의 '{badge['sheet']}' 명단 줄과 이었습니다 — "
-            f"그쪽 `{sourcing_sync.COLUMN_LABEL}` 칸에 이 갈래가 같이 보입니다.")
+            f"그쪽 `{sourcing_sync.COLUMN_LABEL}` 열에 이 갈래가 같이 보입니다.")
 
 
 @router.patch("/api/sourcing/{row_id}")
@@ -889,7 +889,7 @@ def unlink_vc(row_id: int, db: Session = Depends(get_db),
                             detail="투자사 관리 현황과 이어진 줄이 아닙니다 — 새로고침해 보세요.")
     if not badge["can_unlink"]:
         raise HTTPException(status_code=403,
-                            detail="연결은 관리자나 이어진 투자사 관리 현황 줄의 담당만 "
+                            detail="연결은 관리자나 이어진 투자사 관리 현황 줄의 담당 팀원만 "
                                    "풀 수 있습니다.")
     sourcing_sync.unlink(row)
     db.commit()
@@ -1115,10 +1115,10 @@ def search_rooms(request: Request, tab: str = Form(""), ids: str = Form(""),
         if sender:
             return _answer(request, tab, f"찾을 줄이 없습니다 — 고른 분은 {user.name} 님 "
                            "카톡 기준 방 제목이 다 확인돼 있습니다(불참여인 분은 안 찾습니다)", 400)
-        return _answer(request, tab, "찾을 줄이 없습니다 — 고른 분은 방 이름이 다 있습니다", 400)
+        return _answer(request, tab, "찾을 줄이 없습니다 — 고른 분은 카톡방 이름이 다 있습니다", 400)
     db.commit()
     if sender:
-        note = (f"{user.name} 님 PC 의 카톡에서 {job.total}명의 방을 찾습니다(회차 #{job.id}) — "
+        note = (f"{user.name} 님 PC 의 카톡에서 {job.total}명의 카톡방을 찾습니다(회차 #{job.id}) — "
                 "자동화를 보내는 계정이라 찾은 제목은 이 계정 전용(보내는 계정 기준 방 제목)"
                 "으로 담깁니다(딜 소싱 명단의 방 이름은 그대로). 끝나면 새로고침하세요 — "
                 "하나면 바로 확정되고, 둘 이상이면 이 칸에서 고릅니다")
@@ -1159,7 +1159,7 @@ def confirm_room(request: Request, row_id: int, room: str = Form(""), tab: str =
         db.rollback()
         return _answer(request, tab, str(exc), 400)
     db.commit()
-    return _answer(request, tab, f"{row.name} — 방을 확정했습니다: {row.kakao_room_name}",
+    return _answer(request, tab, f"{row.name} — 카톡방을 확정했습니다: {row.kakao_room_name}",
                    room=row.kakao_room_name)
 
 
@@ -1176,8 +1176,8 @@ def clear_room(request: Request, row_id: int, tab: str = Form(""),
     if row is None:
         raise HTTPException(status_code=404, detail="찾을 수 없습니다")
     if not sender_rooms.is_sender(db, user):
-        return _answer(request, tab, "자동화를 보내는 계정 전용 톡방 연결만 끊을 수 있습니다 — "
+        return _answer(request, tab, "자동화를 보내는 계정 전용 카톡방 연결만 끊을 수 있습니다 — "
                        "명단의 방 이름은 `카톡방 이름` 칸에서 고치세요", 400)
     sender_rooms.clear(db, user.id, row_id, sourcing=True)
-    return _answer(request, tab, f"{row.name} — {user.name} 님 계정 전용 톡방 연결을 "
+    return _answer(request, tab, f"{row.name} — {user.name} 님 계정 전용 카톡방 연결을 "
                    "끊었습니다(명단의 방 이름으로 보냅니다)")

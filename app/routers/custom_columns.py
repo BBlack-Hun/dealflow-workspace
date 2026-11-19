@@ -42,7 +42,7 @@ def _back(target: str, msg: str = "") -> RedirectResponse:
 def _column(db: Session, column_id: int) -> CustomColumn:
     col = db.get(CustomColumn, column_id)
     if col is None:
-        raise HTTPException(status_code=404, detail="칸을 찾을 수 없습니다")
+        raise HTTPException(status_code=404, detail="열을 찾을 수 없습니다")
     return col
 
 
@@ -80,7 +80,7 @@ def add_column(target: str = Form(""), name: str = Form(""), kind: str = Form("m
     except svc.ColumnError as exc:
         return _back(target, str(exc))
     db.commit()
-    return _back(target, f"'{col.name}' 칸을 붙였습니다")
+    return _back(target, f"'{col.name}' 열을 붙였습니다")
 
 
 @router.post("/columns/{column_id}/rename", include_in_schema=False)
@@ -119,7 +119,7 @@ def place_column(column_id: int, after: str = Form(""),
         db.rollback()
         return _back(col.target, str(exc))
     db.commit()
-    return _back(col.target, f"'{col.name}' 칸을 "
+    return _back(col.target, f"'{col.name}' 열을 "
                  + (f"'{col.after_key}' 뒤에 둡니다" if col.after_key else "맨 끝에 둡니다"))
 
 
@@ -130,7 +130,7 @@ def hide_column(column_id: int, hidden: int = Form(...),
     col = _column(db, column_id)
     svc.set_hidden(col, bool(hidden))
     db.commit()
-    return _back(col.target, f"'{col.name}' 칸을 " + ("숨겼습니다 — 적힌 값은 그대로 남습니다"
+    return _back(col.target, f"'{col.name}' 열을 " + ("숨겼습니다 — 적힌 값은 그대로 남습니다"
                                                     if hidden else "다시 보이게 했습니다"))
 
 
@@ -143,7 +143,7 @@ def delete_column(column_id: int, db: Session = Depends(get_db),
     target, name = col.target, col.name
     gone = svc.delete(db, col)
     db.commit()
-    return _back(target, f"'{name}' 칸을 지웠습니다 — 값이 든 줄 {gone}개도 함께 지웠습니다")
+    return _back(target, f"'{name}' 열을 지웠습니다 — 값이 든 줄 {gone}개도 함께 지웠습니다")
 
 
 # ── 표에서 값 적기 ────────────────────────────────────────────────────────
@@ -192,7 +192,7 @@ def put_value(row_table: str, row_id: int, body: ValueIn,
     row = _row(db, user, row_table, row_id)
     col = db.get(CustomColumn, body.column_id)
     if col is None:
-        raise HTTPException(status_code=404, detail="칸을 찾을 수 없습니다")
+        raise HTTPException(status_code=404, detail="열을 찾을 수 없습니다")
     try:
         value = svc.write(db, row, col, body.value, doer(user).id)
     except svc.ColumnError as exc:

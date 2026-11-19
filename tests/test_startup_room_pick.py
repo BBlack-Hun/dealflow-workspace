@@ -233,7 +233,7 @@ def test_방_이름_없는_스타트업_줄의_연결_확인은_후보_찾기로
                   json={"contact_ids": [seeded["noroom"].id, seeded["nofirm"].id]})
     assert res.status_code == 400
     assert "[카톡방 찾기·확인]" in res.json()["detail"]
-    assert "[방 매칭]" in res.json()["detail"]
+    assert "[카톡방 매칭]" in res.json()["detail"]
     assert not _jobs(db)
 
 
@@ -340,7 +340,7 @@ def test_찾은_제목은_후보로만_담기고_투자사_방은_빠진다(db, 
     assert row.room_verified == "unverified"
     assert row.kakao_joined is None
     assert item.status == "failed"
-    assert "후보 2개" in item.error and "방 매칭" in item.error
+    assert "후보 2개" in item.error and "카톡방 매칭" in item.error
     assert "고유하게" not in item.error
 
 
@@ -534,7 +534,7 @@ def test_담겨_있는_투자사_방은_화면에도_안_서고_확정도_안_�
     page = me.get("/startup/rooms").text
     assert ROOM_A in page
     assert INVESTOR_ROOM not in page
-    assert "투자사 방 1개는 후보에서 뺐습니다" in page
+    assert "투자사 카톡방 1개는 후보에서 뺐습니다" in page
 
     res = _confirm(me, seeded["noroom"], INVESTOR_ROOM)
     assert res.status_code == 400
@@ -694,7 +694,7 @@ def test_안내_카톡의_방_확인_전_칸에서_찾기로_이어진다(db, se
         assert old not in page, old
     # 줄마다 그 줄로 가는 링크 — 후보가 있으면 수를 적는다.
     assert f'href="/startup/rooms#room-{seeded["noroom"].id}">후보 2개 — 고르기</a>' in page
-    assert f'href="/startup/rooms#room-{seeded["typed"].id}">방 매칭에서 맞추기</a>' in page
+    assert f'href="/startup/rooms#room-{seeded["typed"].id}">카톡방 매칭에서 맞추기</a>' in page
     assert f'id="room-{seeded["noroom"].id}"' in me.get("/startup/rooms").text
 
 

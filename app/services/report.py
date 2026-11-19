@@ -506,8 +506,8 @@ def followup_check(meetings):
 
 
 #: 업무 보고 미팅 카드 넷 — (열쇠, 이름). 화면 카드 · 눌러 여는 목록(#177)이 같이 읽는다.
-MEETING_CARDS = (("total", "잡은 미팅"), ("done", "진행한 미팅"),
-                 ("followup_done", "결과 물어봄"), ("followup_open", "아직 안 물어봄"))
+MEETING_CARDS = (("total", "미팅 예약"), ("done", "미팅 완료"),
+                 ("followup_done", "결과 확인"), ("followup_open", "결과 확인 전"))
 
 
 def meeting_cards(meetings, open_followup=None) -> Dict[str, list]:
@@ -539,7 +539,7 @@ def _job_date(job: SendJob, batch: Optional[DealBatch]) -> str:
 #: 손으로 적은 회차 줄의 상태 글자. 앱 발송의 `SEND_STATUS` 와 **같은 자리에**
 #: 서는 값이라 말이 겹치면 안 된다 — `완료` 라고 적으면 발송기가 돌려준 결과로
 #: 읽힌다. 이 줄은 사람이 "보냈다" 고 적어 준 것이 근거의 전부다.
-MANUAL_STATUS = "손으로 보냄"
+MANUAL_STATUS = "직접 기록"
 
 
 def _manual_rounds(db: Session, start: date, end: date, user: Optional[User],
@@ -976,7 +976,7 @@ def meeting_ask_count_note(missing: int, requests: int) -> tuple:
         return "", ""
     return (
         f"요청 {requests}건",
-        f"미팅 요청 카톡은 담당자당 한 통이라 이 수는 담당자 {missing}명입니다"
+        f"미팅 요청 카톡은 심사역당 한 통이라 이 수는 심사역 {missing}명입니다"
         f" — 그 {missing}명이 받은 자료 요청은 {requests}건이고,"
         f" IR 요청 투자사 표는 요청 줄마다 한 줄이라 수가 더 많습니다.",
     )
@@ -1161,10 +1161,10 @@ YEARLY_ITEMS = (
     ("send", "send_rounds", "발송 회차", ""),
     ("send", "send_sent", "보낸 건수", ""),
     ("send", "send_left", "안 나감", "bad"),
-    ("meeting", "total", "잡은 미팅", ""),
-    ("meeting", "done", "진행한 미팅", ""),
-    ("meeting", "followup_done", "결과 물어봄", ""),
-    ("meeting", "followup_open", "아직 안 물어봄", "warn"),
+    ("meeting", "total", "미팅 예약", ""),
+    ("meeting", "done", "미팅 완료", ""),
+    ("meeting", "followup_done", "결과 확인", ""),
+    ("meeting", "followup_open", "결과 확인 전", "warn"),
     ("meeting", "followup_late", "그중 날짜 지남", "bad"),
     # 이름은 월간 보고의 `IR 자료 요청` 판과 같은 말이다(`pipeline.LABEL_*`).
     ("ir", "ir_requested", LABEL_REQUESTED, ""),

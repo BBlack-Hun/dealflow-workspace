@@ -78,7 +78,7 @@ def test_the_sheet_has_the_columns_the_table_shows(client, db, board):
     i = head.index("이름")
     assert head[i + 2] == "투자사 관리 현황"
     assert head[head.index("참여") + 1].endswith("월 리마인드")
-    assert "갈래" not in head                     # 한 탭 한 장 — 갈래는 탭 이름이다
+    assert "탭" not in head                     # 한 탭 한 장 — 갈래는 탭 이름이다
 
     got = {r[i]: dict(zip(head, r)) for r in rows[1:]}
     assert set(got) == {"홍길동", "김서연", "박도윤"}     # 이 탭 줄만
@@ -115,7 +115,7 @@ def test_the_all_view_adds_a_bucket_column(client, db, board):
     sheet = _book(client.get("/api/sourcing/export.xlsx", params={"tab": "all"}))
     [(title, rows)] = sheet.items()
     assert title == "전체"
-    assert rows[0][0] == "갈래"
+    assert rows[0][0] == "탭"
     # 시리즈 A 갈래는 탭에 보이는 이름으로 적는다(i137 — 저장 글자는 그대로).
     assert {r[0] for r in rows[1:]} == {"Series A 이상 딜 검토 가능 심사역", CEO, other}
     by_bucket = {r[0]: dict(zip(rows[0], r)) for r in rows[1:]}
@@ -130,7 +130,7 @@ def test_every_tab_gets_its_own_sheet(client, board):
     assert len(sheet) == 2
     by_count = {title: len(rows) - 1 for title, rows in sheet.items()}
     assert sorted(by_count.values()) == [1, 3]
-    assert all("갈래" not in rows[0] for rows in sheet.values())
+    assert all("탭" not in rows[0] for rows in sheet.values())
 
 
 def test_admin_columns_come_along(client, db, board):

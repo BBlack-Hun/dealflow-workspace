@@ -239,7 +239,7 @@ def test_누르기_전에_몇_곳_어느_방인지_보인다(db, seeded, client)
     body = _login(client).get("/deals/startup-ir").text
 
     assert ROOM_OK in body, "어느 방으로 가는지가 화면에 없다"
-    assert "1곳 대기 목록 만들기" in body, "몇 곳인지가 단추에 없다"
+    assert "1곳 대기 회차 만들기" in body, "몇 곳인지가 단추에 없다"
 
 
 def test_말까지_칸은_투자사_수와_심사역_수다(db, seeded, client):
@@ -271,7 +271,7 @@ def test_딜_제안_관리_링크에_이번_달_대상_수가_적힌다(db, seed
     assert f'href="/deals/startup-ir?month={month}"' in body
     # 그 표의 단추도 같은 수를 적는다.
     page = client.get(f"/deals/startup-ir?month={month}").text
-    assert f"{want}곳 대기 목록 만들기" in page
+    assert f"{want}곳 대기 회차 만들기" in page
 
 
 def test_방_이름을_채우면_링크의_수도_따라_는다(db, seeded, client):
@@ -304,7 +304,7 @@ def test_표_머리에_대상_내역이_한_줄로_적힌다(db, seeded, client)
 
     assert f"계약 기업 {len(got['rows'])}곳" in text
     assert f"보낼 수 있음 {got['sendable_count']}곳" in text
-    assert f"방 확인 {got['verified_count']}곳" in text
+    assert f"카톡방 확인 완료 {got['verified_count']}곳" in text
     assert f"{startup_send.NO_ROOM} {got['no_room_count']}곳" in text
     assert f"요청 없음 {got['no_lines_count']}곳" in text
 

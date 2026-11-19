@@ -207,7 +207,7 @@ def test_SeriesA_검색칸도_모든_칸이라고_말한다():
     html = (Path(__file__).resolve().parent.parent / "app" / "templates"
             / "companies_series_a.html").read_text(encoding="utf-8")
     box = re.search(r'<input type="search" id="sa-search"(.*?)>', html, re.S).group(1)
-    assert "모든 칸" in re.search(r'placeholder="([^"]*)"', box).group(1)
+    assert "모든 열" in re.search(r'placeholder="([^"]*)"', box).group(1)
     title = re.search(r'title="([^"]*)"', box).group(1)
-    for word in ("대표자명", "연락처", "이메일", "휴대폰", "추가 칸", "뒷자리"):
+    for word in ("대표자명", "연락처", "이메일", "휴대폰", "추가 열", "뒷자리"):
         assert word in title, f"검색되는데 설명에 {word} 가 없다"

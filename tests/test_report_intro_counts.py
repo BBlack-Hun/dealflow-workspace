@@ -141,7 +141,7 @@ def test_IR_화면과_지금_화면_내려받기(stage, client, db, users):
     _login(client, "01000000001")
     page = client.get("/companies").text
     assert re.search(r'<th style="width:100px" data-sort="sent"[^>]*>총 소개 횟수</th>', page)
-    assert re.search(r"<th[^>]*>담당별 소개</th>", page)
+    assert re.search(r"<th[^>]*>팀원별 소개</th>", page)
     row = page[page.index(f'data-s-name="{TWIN}"'):]
     row = row[:row.index("</tr>")]
     assert 'data-s-sent="3"' in row, "정렬도 새 셈의 수로 선다"
@@ -157,8 +157,8 @@ def test_IR_화면과_지금_화면_내려받기(stage, client, db, users):
     wb = openpyxl.load_workbook(io.BytesIO(client.get("/api/export/companies-view.xlsx").content))
     head, *rows = [list(r) for r in wb.active.iter_rows(values_only=True)]
     by = dict(zip(head, next(r for r in rows if r[1] == TWIN)))
-    assert (by["총 소개 횟수"], by["담당별 소개"]) == (3, f"{u1} 2 · {u2} 2")
-    assert head.index("담당별 소개") == head.index("소개 발송(명)") + 1
+    assert (by["총 소개 횟수"], by["팀원별 소개"]) == (3, f"{u1} 2 · {u2} 2")
+    assert head.index("팀원별 소개") == head.index("소개 발송(명)") + 1
 
 
 # ── 2. 업무 보고 표 — 기업명 바로 오른쪽 · 보기를 말하는 이름 ──────────────────

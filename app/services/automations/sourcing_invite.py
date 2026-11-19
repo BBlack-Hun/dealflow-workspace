@@ -54,8 +54,8 @@ from .sourcing_remind import _check, _weeks, schedule_label, week_of_month
 KEY = automation.SOURCING_INVITE
 
 FIELDS = (
-    runner.Field("groups", "갈래(한 줄에 하나)", "lines", [sourcing_sync.SYNC_BUCKET],
-                 hint="딜 소싱 화면의 갈래 탭 이름 그대로"),
+    runner.Field("groups", "탭(한 줄에 하나)", "lines", [sourcing_sync.SYNC_BUCKET],
+                 hint="딜 소싱 화면의 탭 이름 그대로"),
     runner.Field("weeks", "주차", "text", "3", hint="1~7일이 1주차 — 쉼표로 여럿"),
     runner.Field("weekday", "요일", "text", "화"),
     runner.Field("time", "보낼 시각", "time", "10:00"),
@@ -97,7 +97,7 @@ def collect(db: Session, row: Automation, sender: User,
     # 카톡의 제목이다(`services/sender_rooms.py`).
     mine = sender_rooms.sourcing_rooms_for(db, sender.id, people)
     batch = runner.Batch(note="참여 제안을 보낼 분이 없습니다"
-                              "(제안 대기중인 분이 없거나 모두 방이 없음)")
+                              "(제안 대기중인 분이 없거나 모두 카톡방이 없음)")
     for person in people:
         value = sourcing_sync.participation_of(person)
         if value != sourcing_sync.OFFER_PENDING:
@@ -105,11 +105,11 @@ def collect(db: Session, row: Automation, sender: User,
             # 애초에 이 글의 대상이 아니다.
             if value == sourcing_sync.ASKING:
                 batch.skipped.append(f"{person.name}({person.firm or '-'}) — {value}"
-                                     "(이미 제안함 — 다시 보내려면 손으로)")
+                                     "(이미 제안함 — 다시 보내려면 직접)")
             continue
         room = mine.get(person.id) or sourcing_link.room_for(person, linked)
         if not room:
-            batch.skipped.append(f"{person.name}({person.firm or '-'}) — 방 이름 없음")
+            batch.skipped.append(f"{person.name}({person.firm or '-'}) — 카톡방 이름 없음")
             continue
         batch.outs.append(automation.Out(
             room=room, message=message(db, sender, person),

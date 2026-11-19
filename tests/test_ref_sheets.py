@@ -278,12 +278,12 @@ def test_a_table_made_on_screen_can_be_named(seeded, db):
 
     _make(seeded, title="성격 메모", kind="table", cols="2", rows="2")
     row = _sheet(db, "성격 메모")
-    assert json.loads(row.content_json)["columns"] == ["칸 1", "칸 2"]
+    assert json.loads(row.content_json)["columns"] == ["열 1", "열 2"]
 
     assert seeded.patch(f"/api/ref-sheets/{row.id}/column",
                         json={"col": 0, "value": "투자사"}).status_code == 200
     db.refresh(row)
-    assert json.loads(row.content_json)["columns"] == ["투자사", "칸 2"]
+    assert json.loads(row.content_json)["columns"] == ["투자사", "열 2"]
 
 
 def test_an_imported_table_can_be_named_too(seeded, db, table_sheet):

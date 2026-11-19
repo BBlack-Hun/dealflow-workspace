@@ -363,7 +363,7 @@ def today_lines(db: Session, user: User, now: datetime) -> List[dict]:
             "detail": (f"이 달 발송 예정일({gone['slot']})이 지났는데 나간 발송이 없습니다"
                        + (f" — {gone['error']}" if gone["error"] else "")
                        + ". 자동 발송은 그날이 지나면 다시 준비하지 않습니다 — 달이 끝나기 전에 "
-                       "스타트업 월간 발송 화면에서 손으로 보내세요(같은 달 두 번은 막힙니다)"),
+                       "스타트업 월간 발송 화면에서 직접 보내세요(같은 달 두 번은 막힙니다)"),
             "href": "/deals/startup-ir" if user.id == menu else "/team#automations",
             "count": None})
     off = off_reminder(db, row, now)
@@ -375,7 +375,7 @@ def today_lines(db: Session, user: User, now: datetime) -> List[dict]:
         fix = ("팀 현황 › 자동화에서 실제 발송으로 바꾸세요" if off["test"]
                else "팀 현황 › 자동화에서 켜세요")
         detail = (f"이 달 발송 예정일({off['slot']})이 지났습니다 — 이 달은 스타트업 월간 발송 "
-                  f"화면에서 손으로 보내세요. 다음 달부터 자동으로 보내려면 {fix}"
+                  f"화면에서 직접 보내세요. 다음 달부터 자동으로 보내려면 {fix}"
                   if off["passed"] else
                   f"발송 예정일 {off['slot']} — {fix}. 그러면 그 시각에 자동으로 나갑니다")
         out.append({"level": "urgent" if off["passed"] else "soon", "title": title,
