@@ -8,7 +8,8 @@
   자동화를 보내는 계정 카톡의 제목이 다를 수 있다. 여기서 그 계정 기준 제목을
   확인하고 고른다. **아무것도 보내지 않는다.**
 
-  **스크립트가 없다.** 고르는 것도 평범한 폼이다(팀 현황과 같은 판단).
+  고르는 것은 평범한 폼이다(팀 현황과 같은 판단). 스크립트는 아직 도는 확인 회차의
+  진행 셈 · [중단] 하나뿐이다(`_room_jobs.html`).
 #}
 
 {% block content %}
@@ -25,6 +26,8 @@
 </header>
 
 {% if msg %}<p class="flash">{{ msg }}</p>{% endif %}
+
+{% include "_room_jobs.html" %}
 
 <section class="panel">
   {% if senders|length > 1 %}

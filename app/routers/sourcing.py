@@ -1055,10 +1055,32 @@ def _answer(request: Request, tab: str, msg: str, status: int = 200, **extra) ->
     스크립트가 성공으로 읽지 않게.
     """
     if not _wants_json(request):
+        if tab == ROOMS_TAB:     # 방 찾기 전용 화면의 폼 — 그 화면으로 돌아간다
+            return RedirectResponse(f"/sourcing/rooms?msg={quote(msg)}", status_code=303)
         return _back(tab, msg)
     if status >= 400:
         return JSONResponse({"detail": msg}, status_code=status)
     return JSONResponse({"ok": True, "msg": msg, **extra})
+
+
+#: 방 찾기 전용 화면(`/sourcing/rooms`)의 폼이 `tab` 에 싣는 값 — 갈래를 가르지 않고
+#: (전체에서 찾는다) 답이 그 화면으로 돌아간다(`_answer`).
+ROOMS_TAB = "all:rooms"
+
+
+@router.get("/sourcing/rooms", response_class=HTMLResponse, include_in_schema=False)
+def rooms_page(request: Request, db: Session = Depends(get_db),
+               user: User = Depends(get_current_user), msg: str = ""):
+    """**딜 소싱 카톡방 찾기** — 줄마다 방 찾기 상태 · 찾기 걸기 · 도는 회차와 [중단].
+
+    딜 소싱 화면을 볼 수 있는 누구나 연다. 찾기 · 확정 · 끊기는 딜 소싱 화면과 **같은
+    길**이다(`search_rooms` · `confirm_room` · `clear_room`) — 누른 계정 PC 의 카톡에서
+    찾는다. [중단]은 발송 진행 화면과 같은 길(`/api/jobs/{id}/cancel` — 회차 주인만)이다.
+    """
+    ctx = base_ctx(request, db, user, active="sourcing")
+    ctx.update({"board": sourcing_rooms.board(db, user), "msg": msg,
+                "rooms_tab": ROOMS_TAB})
+    return templates.TemplateResponse(request, "sourcing_rooms.html", ctx)
 
 
 def _ids(raw: str) -> Optional[List[int]]:
@@ -1106,7 +1128,7 @@ def search_rooms(request: Request, tab: str = Form(""), ids: str = Form(""),
     picked = _ids(ids)
     if not picked:
         return _answer(request, tab, "찾을 분을 먼저 고르세요 — 표 왼쪽 체크박스로 고릅니다", 400)
-    bucket = "" if tab in ("", "all") else tab
+    bucket = "" if tab in ("", "all", ROOMS_TAB) else tab
     sender = sender_rooms.is_sender(db, user)
     rows = sourcing_rooms.targets(db, bucket, picked, user.id if sender else None)
     job = (sender_rooms.queue_sourcing if sender else sourcing_rooms.queue_search)(

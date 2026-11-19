@@ -1,0 +1,16 @@
+{#
+  **아직 도는 방 찾기 회차** — 진행 상황과 [중단]. `room_jobs`(`sourcing_rooms.active_jobs`)
+  가 비면 아무것도 안 선다. 셈은 `room_jobs.js` 가 2초마다 고치고(발송 진행 화면과 같은
+  자리 — `/api/jobs/{id}`), 끝나면 화면을 새로 연다. [중단]은 진행 화면과 같은 길이다
+  (`/api/jobs/{id}/cancel` — 회차 주인만). `room_jobs_stop` 이 거짓이면 단추를 안 세운다.
+#}
+{% for j in room_jobs %}
+<p class="warn-box js-room-job" data-job="{{ j.id }}" data-testid="room-job">
+  회차 #{{ j.id }} — 카톡방 찾는 중 <b class="js-room-job-done">{{ j.done }}</b>/{{ j.total }}
+  <a class="linkbtn" href="/jobs/{{ j.id }}">진행 화면</a>
+  {% if room_jobs_stop %}
+  <button type="button" class="danger-btn js-room-job-stop">중단</button>
+  {% endif %}
+</p>
+{% endfor %}
+{% if room_jobs %}<script src="{{ asset('js/room_jobs.js') }}"></script>{% endif %}

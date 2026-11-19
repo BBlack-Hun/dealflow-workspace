@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+
+{#
+  **딜 소싱 카톡방 찾기** — 방 찾기만 따로 보는 화면(사용자: "딜 소싱에서 방 찾기
+  할때도 별도 페이지가 있었음 좋겠고, 중단할 수 있는 기능도").
+
+  모양은 `sender_rooms.html`(보내는 계정 기준 방 제목)을 따랐다. 찾기 · 확정 · 끊기는
+  딜 소싱 화면과 같은 주소로 보내는 평범한 폼이고(`routers/sourcing.py`), 상태 · 찾을
+  줄도 그 화면의 카톡방 칸과 같은 함수가 정한다(`sourcing_rooms.board`).
+  **아무것도 보내지 않는다.**
+#}
+
+{% block title %}딜 소싱 카톡방 찾기 · CONTACTVC ASSET{% endblock %}
+{% block content %}
+<header class="page-head">
+  <h1>딜 소싱 카톡방 찾기</h1>
+  <p class="muted">
+    <b>{{ user.name }}</b> 님 PC 의 카톡에서 딜 소싱 명단 분들의 카톡방을 찾습니다 — 그 PC 의 발송
+    프로그램이 켜져 있어야 합니다. 찾은 카톡방이 하나면 바로 확정되고, 둘 이상이면 아래에서 고릅니다.
+    {% if board.sender %}자동화를 보내는 계정이라 찾은 제목은 <b>이 계정 전용</b>으로 담깁니다(딜 소싱 명단의 카톡방 이름은 그대로).{% endif %}
+    <b>한 통도 보내지 않습니다</b> — 카톡방 제목만 읽어 옵니다.
+    <a class="linkbtn" href="/sourcing">딜 소싱으로</a>
+  </p>
+</header>
+
+{% if msg %}<p class="flash">{{ msg }}</p>{% endif %}
+
+{% set room_jobs = board.jobs %}{% set room_jobs_stop = true %}
+{% include "_room_jobs.html" %}
+
+<section class="panel">
+  <p class="muted" data-testid="sourcing-room-summary">
+    대상 <b>{{ board.total }}명</b>
+    · 확인 완료 <b>{{ board.counts.confirmed }}</b>
+    · 골라야 함 <b>{{ board.counts.picks }}</b>
+    · 못 찾음 <b>{{ board.counts.not_found }}</b>
+    {% if board.counts.unchecked %}· 확인 못 함 <b>{{ board.counts.unchecked }}</b>{% endif %}
+    · 아직 안 찾아봄 <b>{{ board.counts.never }}</b>
+    {% if board.counts.typed %}· 카톡방 이름 직접 적음 <b>{{ board.counts.typed }}</b>{% endif %}
+  </p>
+  {% for ids, label in [(board.never_ids, '아직 안 찾아본 분 찾기'), (board.retry_ids, '못 찾은 분 다시 찾기')] %}
+  <form method="post" action="/sourcing/rooms/search" class="inline-form" data-send="proxy">
+    <input type="hidden" name="tab" value="{{ rooms_tab }}">
+    <input type="hidden" name="ids" value="{{ ids }}">
+    <button class="{{ 'primary-btn inline' if loop.first else 'secondary-btn' }}" type="submit"{% if not ids %} disabled{% endif %}>
+      {{ label }} ({{ ids.split(',')|length if ids else 0 }}명)</button>
+  </form>
+  {% endfor %}
+  <p class="hint">
+    불참여인 분은 이 표에 없습니다. 찾는 동안에는 위에 진행 상황이 서고 <b>[중단]</b>으로 멈출 수 있습니다 —
+    멈추면 남은 분은 찾기 전 그대로 남습니다. 카톡방 이름을 직접 적으려면
+    <a href="/sourcing">딜 소싱</a>의 <b>카톡방 이름</b> 칸에 적습니다.
+  </p>
+</section>
+
+<div class="table-wrap">
+  <table class="grid-table" data-testid="sourcing-room-table">
+    <thead>
+      <tr><th>탭</th><th>심사역</th><th>명단의 카톡방 이름</th>
+        <th>{{ user.name }} 님 카톡에서 찾은 제목</th><th>상태</th></tr>
+    </thead>
+    <tbody>
+    {% for r in board.rows %}
+    <tr data-id="{{ r.id }}" data-state="{{ r.state }}">
+      <td>{{ r.bucket }}</td>
+      <td>{{ r.name }}<div class="cell-sub">{{ r.firm }}</div></td>
+      <td>{{ r.own_room }}</td>
+      <td>
+        {% if r.picks and (board.sender or r.state != 'confirmed') %}
+        <ul class="room-cands">
+          {% for p in r.picks %}
+          <li class="room-cand">
+            <span class="room-cand-title">{{ p.room }}</span>
+            {% if p.current %}
+            <span class="room-badge ok">✓ 이 제목으로 보냄</span>
+            {% elif p.same %}
+            <span class="room-badge warn">같은 제목의 카톡방이 여럿 — 확정 불가</span>
+            {% elif r.choose %}{# 둘 이상일 때만 고른다 — 하나면 찾을 때 확정된다 #}
+            <form method="post" action="/sourcing/{{ r.id }}/room-confirm" class="inline-form">
+              <input type="hidden" name="tab" value="{{ rooms_tab }}">
+              <input type="hidden" name="room" value="{{ p.room }}">
+              <button class="linkbtn" type="submit">이 카톡방으로 확정</button>
+            </form>
+            {% endif %}
+          </li>
+          {% endfor %}
+        </ul>
+        {% elif r.state == 'not_found' %}
+        <p class="hint">못 찾았습니다 — {{ user.name }} 님 카톡에 이 분의 카톡방이 있는지 확인해 주세요.</p>
+        {% elif r.state == 'unchecked' %}
+        {# 방이 없다고 확인된 것이 아니다 — 그 PC 카톡에서 무엇을 볼지 적는다(`room_unchecked`). #}
+        <p class="hint" data-testid="sourcing-room-unchecked">{{ r.note }}</p>
+        {% endif %}
+        {% if r.error %}<p class="hint" data-testid="sourcing-room-error">지난 찾기 오류(후보는 그 전 것 그대로): {{ r.error }}</p>{% endif %}
+        {% if r.findable %}
+        <form method="post" action="/sourcing/rooms/search" class="inline-form" data-send="proxy">
+          <input type="hidden" name="tab" value="{{ rooms_tab }}">
+          <input type="hidden" name="ids" value="{{ r.id }}">
+          <button class="linkbtn" type="submit">{{ '카톡방 후보 찾기' if r.state == 'never' else '다시 찾기' }}</button>
+        </form>
+        {% endif %}
+        {% if board.sender and r.state == 'confirmed' %}
+        <form method="post" action="/sourcing/{{ r.id }}/room-clear" class="inline-form">
+          <input type="hidden" name="tab" value="{{ rooms_tab }}">
+          <button class="linkbtn" type="submit">카톡방 연결 끊기</button>
+        </form>
+        {% endif %}
+      </td>
+      <td>{% if r.busy %}<span class="room-badge muted" data-testid="sourcing-room-busy">찾는 중</span> {% endif %}{{ r.state_label }}{% if r.checked_at %}<div class="cell-sub">{{ r.checked_at }}</div>{% endif %}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

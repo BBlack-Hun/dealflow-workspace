@@ -1687,7 +1687,8 @@ def sender_rooms_page(request: Request, db: Session = Depends(get_db),
                       sender: int = 0, msg: str = ""):
     """**보내는 계정 카톡 기준 방 제목** — 확인 걸기 · 후보 고르기(관리자)."""
     admin_only(user)
-    from ..services import sender_rooms
+    from ..models import SENDER_ROOM_TOPIC
+    from ..services import sender_rooms, sourcing_rooms
 
     senders = _room_senders(db)
     if not senders:
@@ -1697,7 +1698,11 @@ def sender_rooms_page(request: Request, db: Session = Depends(get_db),
     chosen = next((s for s in senders if s.id == sender), senders[0])
     ctx = base_ctx(request, db, user, active="admin")
     ctx.update({"board": sender_rooms.board(db, chosen), "senders": senders,
-                "msg": msg})
+                "msg": msg,
+                # 아직 도는 확인 회차 — 진행 상황 · [중단](`_room_jobs.html`). 회차는 그
+                # 계정 것이라 [중단]은 그 계정으로 열었을 때만 선다(`jobs._job_or_404`).
+                "room_jobs": sourcing_rooms.active_jobs(db, chosen.id, (SENDER_ROOM_TOPIC,)),
+                "room_jobs_stop": chosen.id == user.id})
     return templates.TemplateResponse(request, "sender_rooms.html", ctx)
 
 
