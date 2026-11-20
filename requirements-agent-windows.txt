@@ -12,6 +12,11 @@
 # 로 설치가 통째로 멈췄다. 같은 날 `pyyaml==6.0.2` 도 그 판용 설치본이 없어
 # 소스 빌드로 넘어가고 있었다(컴파일러가 없는 PC 면 거기서 또 멈춘다).
 #
+# 2026-11 에 그 일이 실제로 났다: 파이썬 3.15 인 한 윈도우 PC 에서 PyYAML 설치본이 아직
+# 없어 `Microsoft Visual C++ 14.0 or greater is required` 로 멈췄다. 판 바닥으로는 못
+# 막는 일이라 `setup.bat` 이 `PYYAML_FORCE_LIBYAML=0` 을 걸어 순수 파이썬으로 깔게 한다
+# (발송기는 `yaml.safe_load` 만 쓴다. 설치본이 있는 파이썬에서는 아무 영향이 없다).
+#
 # macOS 쪽(`requirements-agent-mac.txt`)은 같은 일을 먼저 겪고 `>=` 로 바꿔
 # 두었다. 두 파일이 다른 규칙을 쓸 까닭이 없다.
 #
