@@ -61,3 +61,14 @@ def test_설치는_py_런처로도_파이썬을_찾는다():
     assert 'set "PY=py -3"' in bat
     assert "%PY% -m venv" in bat
     assert "App execution aliases" in bat
+
+
+def test_설치는_PyYAML_을_컴파일_없이_깐다():
+    """새 파이썬(실기 3.15)에는 PyYAML 설치본이 아직 없어 pip 가 소스 빌드로 넘어가고,
+    컴파일러가 없는 PC 에서 `Microsoft Visual C++ 14.0 or greater is required` 로 멈춘다.
+    `PYYAML_FORCE_LIBYAML=0` 이면 C 확장을 건너뛰고 순수 파이썬으로 깔린다 — 패키지를
+    까는 줄보다 **앞에서** 걸려 있어야 한다."""
+    commands = [ln.strip() for ln in _setup_bat().splitlines()
+                if not ln.strip().lower().startswith("rem")]
+    assert commands.index('set "PYYAML_FORCE_LIBYAML=0"') < next(
+        i for i, c in enumerate(commands) if "pip install -r requirements.txt" in c)

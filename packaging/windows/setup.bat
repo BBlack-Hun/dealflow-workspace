@@ -42,6 +42,10 @@ if not exist ".venv-agent" (
 
 echo [2/2] installing packages... this may take a few minutes
 .venv-agent\Scripts\python -m pip install --upgrade pip >nul 2>nul
+REM A brand-new Python may have no PyYAML wheel yet (seen on 3.15). pip then
+REM builds from source and stops at "Microsoft Visual C++ 14.0 or greater is
+REM required". 0 = skip the C extension, install pure Python (agent uses safe_load only).
+set "PYYAML_FORCE_LIBYAML=0"
 .venv-agent\Scripts\pip install -r requirements.txt
 if errorlevel 1 ( echo [ERROR] install failed & pause & exit /b 1 )
 
