@@ -35,6 +35,15 @@
 세면 보낸 적 없는 사람이 `딜소개` 로 서고, 그건 지금 버그의 반대 방향이라 더
 나쁘다(안 보낸 사람이 명단에서 빠진다).
 
+## 월별 칸 **메모**도 근거다
+
+앱 발송을 안 쓰고 탭의 월별 칸(`N월 1차 딜소개`·`N월 IR 요청`·`N월 미팅`)에 메모로
+진행을 적는 명단이 있다. 그 글은 `VcContact.notes` 의 글일 뿐이라 단계가 `접촉 전`
+이나 `딜소개` 에 멈췄다. **쓰지 않고 읽는다** — `memo_delivered` 와 같은 결이라
+메모를 고치면 다음에 열 때 그대로 따라오고, 표도 이주도 없다(아래 `_from_memo`).
+읽는 함수는 시트 가져오기가 쓰는 그것이다 — 가져온 사람과 앱에서 메모한 사람이
+같은 글로 다른 칸에 서면 안 된다.
+
 ## 되돌아가지 않는다
 
 거절당해도 단계는 내려가지 않는다. 단계는 *지금 상태*가 아니라 *어디까지 갔었나*이고,
@@ -43,13 +52,17 @@
 """
 from __future__ import annotations
 
+from datetime import date
 from typing import Dict, Iterable, List, Optional
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .. import clock
 from ..models import (SEND_KINDS, ContactActivity, IrRequest, Meeting,
-                      SendItem, SendJob)
+                      SendItem, SendJob, VcContact)
+from . import (contact_columns, memo_delivered, memo_intro, monthly_columns,
+               sheet_import, sheet_owner)
 #: 미팅 갈래의 **이름**은 여기서 정하지 않는다(`services/meeting_kind` 한 곳).
 #: 그 갈래가 사다리의 **어느 칸**인지만 아래 `ACTIVITY_STAGE` 가 정한다 —
 #: 사다리를 쥔 것은 이 모듈이다.
@@ -170,11 +183,52 @@ def _from_meeting(meeting: Meeting) -> str:
     return MEET_2 if meeting.kind == "second" else MEET_1
 
 
-def of_many(db: Session, contact_ids: Iterable[int]) -> Dict[int, str]:
+#: 그 갈래의 칸이 올릴 수 있는 **가장 먼 칸**(없는 갈래는 미팅 — `MEET_DONE`).
+#: 이미 거기 선 사람의 칸은 읽지 않는다 — 딜소개 칸이 대부분이라 표가 그만큼 빨라진다.
+_MEMO_TOP: Dict[str, str] = {sheet_import.KIND_DEAL_INTRO: INTRO,
+                             sheet_import.KIND_IR_REQUEST: IR_SENT}
+
+
+def _memo_columns(db: Session, sheet: str) -> List[tuple]:
+    """이 명단에서 단계로 읽을 `(칸, 갈래)` — 숨기지 않았고 이름에 `N월` 이 있으며
+    갈래가 읽히는 칸(`memo_intro.target_columns` · `memo_delivered` 와 같은 고르기)."""
+    out = []
+    for col in contact_columns.month_columns(db, sheet, create=False):
+        if col.is_hidden or monthly_columns.month_of(col.label) is None:
+            continue
+        kind = sheet_import.detect_kind(col.label)
+        if kind:
+            out.append((col, kind))
+    return out
+
+
+def _from_memo(col, kind: str, text: str, today: date) -> str:
+    """월별 칸 한 칸의 글이 올려 주는 칸. 회차·갈래는 시트 가져오기와 같은 함수가 가른다."""
+    key = NONE
+    for entry in sheet_import.parse_activity_cell(text, None, kind, today.year,
+                                                  head=col.label):
+        if kind == sheet_import.KIND_DEAL_INTRO and entry.happened_at:
+            # 미리 적어 둔 앞날 회차는 아직 안 보낸 것이다(`memo_intro.plan` 의 `future`).
+            # 날짜를 못 읽은 메모는 올린다 — 단계는 이력이 아니라 어디까지 갔나라서.
+            day = memo_intro.resolve_day(int(entry.happened_at[5:7]),
+                                         int(entry.happened_at[8:10]), today)
+            if day is not None and day > today:
+                continue
+        key = higher(key, ACTIVITY_STAGE.get(entry.kind, NONE))
+    # `전달` 은 업무 보고가 세는 그 칸·그 판정으로만 읽는다(`미전달`·안내전화 칸 제외).
+    if memo_delivered.is_ir_request_column(col) and memo_delivered.parse(text):
+        key = higher(key, IR_SENT)
+    return key
+
+
+def of_many(db: Session, contact_ids: Iterable[int],
+            today: Optional[date] = None) -> Dict[int, str]:
     """담당자별 진행 단계. **한 번에** 구한다.
 
     행마다 따로 물으면 300명 표에서 질의가 1,200번 나간다. 표를 그릴 때마다
     그러면 화면이 눈에 띄게 느려지므로 종류별로 한 번씩만 훑는다.
+
+    `today` 는 검사에서 날짜를 못 박으려고 받는다(딜소개 메모의 앞날 회차).
     """
     ids = [int(i) for i in contact_ids]
     if not ids:
@@ -220,7 +274,7 @@ def of_many(db: Session, contact_ids: Iterable[int]) -> Dict[int, str]:
     #    애초에 안 걸린다. 종류로도 한 번 더 가른다(`SENT_STAGE`).
     #
     #    질의는 **한 번**이다. 담당자 수와 무관하게 늘 한 번이라 300명 표에서도
-    #    종류별 한 번씩(이제 넷)이다.
+    #    종류별 한 번씩이다.
     for contact_id, kind in db.execute(
         select(SendItem.contact_id, SendJob.kind)
         .join(SendJob, SendJob.id == SendItem.job_id)
@@ -231,6 +285,24 @@ def of_many(db: Session, contact_ids: Iterable[int]) -> Dict[int, str]:
         key = SENT_STAGE.get(kind)
         if key:
             raise_to(contact_id, key)
+
+    # ④ 월별 칸 메모. 질의는 메모가 있는 담당자 **한 번** + 그 명단마다 칸 한 번.
+    today = today or clock.today()
+    columns: Dict[str, List[tuple]] = {}
+    for contact_id, raw, sheets in db.execute(
+        select(VcContact.id, VcContact.notes, VcContact.source_sheet)
+        .where(VcContact.id.in_(ids), VcContact.notes.isnot(None))
+    ).all():
+        notes = contact_columns.load_notes(raw)
+        if not notes:
+            continue
+        for sheet in sheet_owner.labels_of(sheets):
+            if sheet not in columns:
+                columns[sheet] = _memo_columns(db, sheet)
+            for col, kind in columns[sheet]:
+                text = notes.get(contact_columns.note_key(col.id), "")
+                if text and RANK[out[contact_id]] < RANK[_MEMO_TOP.get(kind, MEET_DONE)]:
+                    raise_to(contact_id, _from_memo(col, kind, text, today))
 
     return out
 

@@ -341,3 +341,151 @@ def test_the_funnel_and_the_table_filter_agree_after_an_app_send(client, db, con
     assert 'data-f-dealstage="딜소개"' in body          # 표의 줄
     assert '<b>1</b><span>딜소개</span>' in body        # 깔때기의 수
     assert '<b>0</b><span>접촉 전</span>' in body           # 더는 여기 없다
+
+
+# ── 월별 칸 메모도 근거다 ────────────────────────────────────────────────────
+#
+# 앱 발송 없이 탭의 `N월 1차 딜소개`·`N월 IR 요청`·`N월 미팅` 칸에 메모로 진행을
+# 적는 명단은 단계가 `접촉 전`·`딜소개` 에 멈췄다. 쓰지 않고, 단계를 매길 때 읽는다.
+
+TODAY = date(2026, 11, 20)
+
+
+def _memo(db, contact, label, text, hidden=0, sheet="내 명단"):
+    from app.models import ContactColumn
+    from app.services import contact_columns
+
+    col = ContactColumn(sheet=sheet, label=label, is_hidden=hidden)
+    db.add(col)
+    db.flush()
+    notes = contact_columns.load_notes(contact.notes)
+    notes[contact_columns.note_key(col.id)] = text
+    contact.notes = contact_columns.dump_notes(notes)
+    db.commit()
+    return col
+
+
+def memo_stage(db, contact) -> str:
+    return deal_stage.of_many(db, [contact.id], today=TODAY)[contact.id]
+
+
+@pytest.mark.parametrize("text, want", [
+    ("11/5 샘플가", deal_stage.IR_ASKED),
+    ("11/5 샘플가 전달", deal_stage.IR_SENT),
+    ("[요청] 샘플가 → [전달]", deal_stage.IR_SENT),
+    ("11/5 샘플가 미전달", deal_stage.IR_ASKED),          # 안 보냈다는 말은 요청까지만
+    ("11/5 샘플가 전달 예정", deal_stage.IR_ASKED),
+])
+def test_ir_memo(db, contact, text, want):
+    _memo(db, contact, "11월 IR 요청", text)
+    assert memo_stage(db, contact) == want
+
+
+@pytest.mark.parametrize("label, text, want", [
+    ("11월 미팅", "11/5 샘플가 미팅 요청", deal_stage.INTRO),    # 청했을 뿐 안 만났다
+    ("11월 미팅", "11/5 샘플가 미팅확정", deal_stage.MEET_1),
+    ("11월 미팅", "11/5 샘플가 미팅완료", deal_stage.MEET_DONE),
+    ("11월 미팅 요청", "11/5 샘플가", deal_stage.INTRO),         # 머리글이 가른 칸
+    ("11월 미팅 요청", "11/12 샘플가 미팅완료", deal_stage.MEET_DONE),
+    ("11월 미팅", "11/5 샘플가", deal_stage.MEET_1),             # 못 가른 줄 — 옛 값 그대로
+    ("11월 미팅", "11/5 샘플가 미팅 취소", deal_stage.MEET_1),   # 가져오기도 못 가른 줄로 둔다
+])
+def test_meeting_memo_stands_where_the_import_puts_it(db, contact, users, label, text, want):
+    """같은 글을 시트로 가져온 사람과 앱에서 메모한 사람이 **같은 칸**에 선다."""
+    from app.models import ContactActivity, VcContact
+    from app.services import sheet_import
+
+    _memo(db, contact, label, text)
+    assert memo_stage(db, contact) == want
+
+    imported = VcContact(user_id=users["u1"].id, name="샘플나", firm="가나투자")
+    db.add(imported)
+    db.flush()
+    for entry in sheet_import.parse_activity_cell(
+            text, None, sheet_import.detect_kind(label), TODAY.year, head=label):
+        db.add(ContactActivity(contact_id=imported.id, kind=entry.kind,
+                               content=entry.content))
+    db.commit()
+    assert memo_stage(db, imported) == want
+
+
+@pytest.mark.parametrize("text, want", [
+    ("11/5 샘플가, 샘플나", deal_stage.INTRO),
+    ("샘플가 소개함", deal_stage.INTRO),                   # 날짜를 못 읽어도 보낸 것이다
+    ("11/25 샘플가", deal_stage.NONE),                     # 미리 적어 둔 앞날 회차
+    ("11/5 샘플가\n11/25 샘플나", deal_stage.INTRO),
+    ("12/28 샘플가", deal_stage.INTRO),                    # 한 달 넘게 뒤 = 지난해 그 날
+])
+def test_deal_intro_memo(db, contact, text, want):
+    _memo(db, contact, "11월 1차 딜소개", text)
+    assert memo_stage(db, contact) == want
+
+
+@pytest.mark.parametrize("label, hidden, sheet", [
+    ("11월 IR 요청", 1, "내 명단"),          # 숨긴 칸
+    ("IR 요청", 0, "내 명단"),               # 이름에 `N월` 이 없다
+    ("11월 비고", 0, "내 명단"),             # 갈래를 못 읽는 칸
+    ("11월 IR 요청", 0, "다른 명단"),        # 이 사람이 든 명단의 칸이 아니다
+])
+def test_memo_in_other_columns_is_not_read(db, contact, label, hidden, sheet):
+    _memo(db, contact, label, "11/5 샘플가 전달", hidden=hidden, sheet=sheet)
+    assert memo_stage(db, contact) == deal_stage.NONE
+
+
+def test_delivered_word_counts_only_in_the_ir_request_column(db, contact):
+    """안내전화 칸의 `전달` 은 자료 전달이 아니다 — 업무 보고(`memo_delivered`)가 세는 칸만."""
+    _memo(db, contact, "11월 IR 요청기업 미팅 안내전화", "11/5 샘플가 안내 전달")
+    assert memo_stage(db, contact) == deal_stage.IR_ASKED
+
+
+def test_memo_never_lowers_a_higher_stage(db, contact):
+    from app.models import Meeting
+
+    db.add(Meeting(user_id=contact.user_id, contact_id=contact.id, kind="first",
+                   status="done", scheduled_at="2026-10-01"))
+    _memo(db, contact, "11월 1차 딜소개", "11/5 샘플가")
+    _memo(db, contact, "11월 IR 요청", "11/6 샘플가")
+    assert memo_stage(db, contact) == deal_stage.MEET_DONE
+
+
+def test_memo_reads_do_not_grow_with_people(db, users):
+    """메모가 있어도 질의는 담당자 한 번 + 명단마다 칸 한 번이다."""
+    from sqlalchemy import event
+
+    from app.models import ContactColumn, VcContact
+    from app.services import contact_columns
+
+    col = ContactColumn(sheet="내 명단", label="11월 IR 요청")
+    db.add(col)
+    db.flush()
+    ids = []
+    for i in range(50):
+        row = VcContact(user_id=users["u1"].id, name=f"담당{i}", source_sheet="내 명단",
+                        notes=contact_columns.dump_notes(
+                            {contact_columns.note_key(col.id): "11/5 샘플가 전달"}))
+        db.add(row)
+        db.flush()
+        ids.append(row.id)
+    db.commit()
+
+    seen = []
+    count = lambda *_a, **_k: seen.append(1)      # noqa: E731
+    event.listen(db.bind, "before_cursor_execute", count)
+    try:
+        result = deal_stage.of_many(db, ids, today=TODAY)
+    finally:
+        event.remove(db.bind, "before_cursor_execute", count)
+
+    assert all(v == deal_stage.IR_SENT for v in result.values())
+    assert len(seen) <= 6, f"담당자 50명에 질의 {len(seen)}번 — 행마다 묻고 있다"
+
+
+def test_the_table_follows_the_memo(client, db, contact):
+    """띠와 표가 메모를 따라온다 — 단추도 이주도 없이, 다음에 열 때."""
+    _memo(db, contact, "11월 IR 요청", "11/5 샘플가 전달")
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    body = client.get("/contacts").text
+
+    assert 'data-f-dealstage="IR 자료 전달"' in body
+    assert '<b>1</b><span>IR 자료 전달</span>' in body
