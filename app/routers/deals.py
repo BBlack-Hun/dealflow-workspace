@@ -198,6 +198,9 @@ IR_LATER_FALLBACK = "{기업목록} 자료는 준비되는 대로 추후 보내 
 #: `scripts/bootstrap.TEAM_TEMPLATES` 의 같은 종류와 같아야 한다.
 REMIND_NO_SECTOR_KIND = "closing_remind_no_sector"
 REMIND_NO_SECTOR_FALLBACK = "선호하는 기업분야 말씀주시면\n맞추어\n딜 공유 드리겠습니다."
+#: 딜 소개가 나간 **뒤에 같은 방에 따로 보내는 한 통**(선택). 팀 기본 문구도 폴백도
+#: 없다 — 이 종류의 문구가 없는 계정은 지금까지와 글자 하나 다르지 않다.
+AFTER_DAY1_KIND = "after_day1"
 #: 선호 분야를 물은 분께 **다시 묻지 않는 날 수**(#101) — 사람 단위로 중복 발송을 막는다.
 ASK_AGAIN_DAYS = 30
 #: 이날부터 리마인드 끝에 위 되묻는 말이 붙었다 — 그 전 리마인드는 묻지 않았다.
@@ -493,6 +496,9 @@ def _compose_for_contact(
                       if mode == MODE_IR else None),
         # `file_links` · `link_blocks` 를 넘기지 않는다 — 자료 전달은 이제
         # **한 통**이다. 링크가 빠졌으니 먼저 던질 것도 없다.
+        # 딜 소개에만 붙는다 — 리마인드 · 자료 전달 · 딜 소싱은 그대로 한 통이다.
+        after_body=(_template_body(db, user.id, AFTER_DAY1_KIND, "")
+                    if mode == MODE_DEAL else ""),
     )
     if share:
         # 기업 덩어리는 **치환을 안 지나게** 다 지은 뒤에 끼운다(존칭 다듬기가
@@ -1165,7 +1171,8 @@ def preview(
             "message": result.text,
             # 몇 통으로 나가는지 화면에서 보여야 한다. 자료 전달은 링크 방식을
             # 폐기한 뒤로 한 통이라 여기가 비지만, 나눠 보내는 길 자체는 남는다.
-            "parts": list(result.parts),
+            # 메일은 한 통이다 — 발송 목록 만들기(`parts_json`)와 같은 판단.
+            "parts": [] if req.channel == "email" else list(result.parts),
             "char_count": result.char_count,
             "too_long": result.too_long,
             "warnings": (compose_warns + fit.warnings + thin_warnings

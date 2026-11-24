@@ -370,6 +370,7 @@ def compose_message(
     company_list: Optional[str] = None,
     file_links: Optional[str] = None,
     link_blocks: Optional[List[str]] = None,
+    after_body: str = "",
 ) -> ComposeResult:
     """Assemble the final Kakao message text for one contact.
 
@@ -379,6 +380,9 @@ def compose_message(
     ``include_opening=False`` 는 인사말을 빼고 본문만 보낸다. 이미 대화가 오간
     방에 한 줄만 덧붙일 때는 매번 "안녕하세요, ○○○ 님" 을 다시 붙이는 편이
     오히려 어색하다(선호 분야를 되묻는 문구가 그렇다).
+
+    ``after_body`` 는 본문이 나간 뒤 같은 방에 **따로 한 통**으로 붙는다
+    (`parts` 의 마지막). 비면 지금까지와 같다.
     """
     warnings: List[str] = []
     companies = companies or []
@@ -429,6 +433,11 @@ def compose_message(
             body = body.replace(file_links, "").strip()
         if body:
             bubbles.append(body)
+
+    # 안내문은 기업 목록 '위'에 놓인다 — 끝에 덧붙일 말을 거기 적으면 글 중간에 낀다.
+    after = render_template(after_body, contact, company_count=count).strip()
+    if after:
+        bubbles = [b for b in (bubbles or [body]) if b] + [after]
 
     text = ("\n\n".join(bubbles) if bubbles else body).strip() + "\n"
     char_count = len(text)
