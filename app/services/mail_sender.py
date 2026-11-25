@@ -25,6 +25,13 @@
 회차를 두 실이 함께 돌아도 한 건은 한 번만 나간다. 보내는 도중 서버가 내려가
 `sending` 으로 남은 건은 저절로 다시 보내지 않는다 — 나갔는지 모르는 건을 또
 보내는 것보다 사람이 보고 고르는 쪽이 낫다.
+
+## IR 자료 전달은 **파일이 올라온 뒤에** 나간다
+
+자료 파일이 실린 메일 건(`files_json`)은 발송 PC 가 그 파일을 올릴 때까지 대기로
+둔다(까닭은 `mail_attach.WAIT`). 다 올라오면 예약 실이 이어 보내고(`resume_waiting`),
+위의 시간 · 상한 · 자리 잡기는 그대로 지난다. 건이 끝나면 올라온 파일을 지운다
+(`services/mail_attach.py`).
 """
 from __future__ import annotations
 
@@ -40,7 +47,7 @@ from sqlalchemy.orm import Session
 from .. import clock
 from ..db import SessionLocal
 from ..models import SendItem, SendJob, User
-from . import mailer, send_guard, sourcing_sync
+from . import mail_attach, mailer, pipeline, send_guard, sourcing_sync
 
 log = logging.getLogger(__name__)
 
@@ -120,6 +127,12 @@ def _run(db: Session, job_id: int, gap_sec: float) -> dict:
         db.refresh(item)
         if item.status != "pending":
             continue        # 그 사이 중단됐다
+        if not mail_attach.ready(item):
+            # 붙일 자료 파일이 아직 안 올라왔다 — 이 건만 대기로 두고 다음 건으로.
+            if item.error != mail_attach.WAIT:
+                item.error = mail_attach.WAIT
+                db.commit()
+            continue
         # ★ 보내는 시간 · 하루 상한 — **한 통마다** 본다(19시를 넘기는 회차도
         #   그 자리에서 멈춘다). 밖이면 남은 건을 대기로 두고 나간다.
         why = _held(db, owner) if gated else None
@@ -133,9 +146,11 @@ def _run(db: Session, job_id: int, gap_sec: float) -> dict:
             # 나가기 시작한 회차 — 시간 · 상한에 걸려 이어 나가는 중이지 예약 시각을
             # 놓친 것이 아니다(`scheduled_send.missed` 가 `started_at` 을 본다).
             job.started_at = _now()
+        files = mail_attach.attachments(item)
         try:
             mailer.send_mail(item.room_name, item.subject or "딜 소개",
-                             item.message, settings=settings)
+                             item.message, settings=settings,
+                             **({"attachments": files} if files else {}))
         except Exception as exc:      # noqa: BLE001 - 한 건 실패가 나머지를 막지 않는다
             _fail(item, _reason(exc))
             failed += 1
@@ -147,6 +162,11 @@ def _run(db: Session, job_id: int, gap_sec: float) -> dict:
             sent += 1
             # 카톡과 같다 — 참여 안내가 나간 `제안 대기중` 줄 → `물어보는 중`.
             sourcing_sync.mark_invited(db, item, "mail_sender")
+            if files:
+                # 자료가 메일에 붙어 나갔다 — 카톡으로 나갔을 때처럼 그 요청을
+                # `전달함` 으로 닫는다(`agent_api.item_result`).
+                pipeline.close_requests_for(db, job, item.contact_id)
+                mail_attach.drop(item.id)
         _recount(db, job)
         db.commit()
 
@@ -178,7 +198,8 @@ def _hold(db: Session, job: SendJob, why: str) -> None:
     """남은 메일 건을 **대기 그대로** 두고 까닭을 적는다 — 실패로 닫지 않는다."""
     for item in job.items:
         if item.status == "pending" and item.channel == "email":
-            item.error = why
+            # 파일을 기다리는 건은 그 까닭을 그대로 둔다 — 시간이 돼도 못 나간다.
+            item.error = why if mail_attach.ready(item) else mail_attach.WAIT
     db.commit()
     log.info("메일 회차 %s — %s (대기 %s건)", job.id, why, _pending(job))
 
@@ -216,7 +237,11 @@ def resume_waiting(db: Session, now: Optional[datetime] = None) -> list:
     기다림 표시(`HELD`)가 붙은 대기 메일 건이 있는 `queued` 회차뿐이다 — [중단]
     · 정지로 닫힌 회차, 예약 시각을 놓쳐 `draft` 로 내려간 회차, 까닭 없이 대기로
     남은 옛 건은 건드리지 않는다. 이미 이 프로세스에서 돌고 있는 회차도 건너뛴다.
+
+    자료 파일을 기다리던 건(`mail_attach.WAIT`)은 **파일이 다 올라왔을 때** 같은
+    길로 이어 보낸다. 끝난 건 · 취소된 건의 남은 파일도 여기서 치운다(`sweep`).
     """
+    mail_attach.sweep(db)
     now = now or clock.now()
     if not send_guard.window_open(now):
         return []
@@ -224,10 +249,15 @@ def resume_waiting(db: Session, now: Optional[datetime] = None) -> list:
                                   SendItem.channel == "email",
                                   SendItem.status == "pending",
                                   SendItem.error.in_(HELD)))
-    ids = db.execute(select(SendJob.id).where(SendJob.status == "queued", waiting)
-                     .order_by(SendJob.id)).scalars().all()
+    ids = set(db.execute(select(SendJob.id).where(SendJob.status == "queued", waiting))
+              .scalars())
+    ids |= {i.job_id for i in db.execute(
+        select(SendItem).join(SendJob, SendJob.id == SendItem.job_id)
+        .where(SendJob.status == "queued", SendItem.channel == "email",
+               SendItem.status == "pending", SendItem.error == mail_attach.WAIT)
+    ).scalars() if mail_attach.ready(i)}
     out = []
-    for job_id in ids:
+    for job_id in sorted(ids):
         if _busy(job_id):
             continue
         job = db.get(SendJob, job_id)
@@ -241,6 +271,20 @@ def resume_waiting(db: Session, now: Optional[datetime] = None) -> list:
 def _fail(item: SendItem, reason: str) -> None:
     item.status = "failed"
     item.error = reason
+    mail_attach.drop(item.id)       # 끝난 건의 자료 파일은 들고 있지 않는다
+
+
+def fail_waiting(db: Session, item: SendItem, reason: str) -> None:
+    """자료 파일을 기다리던 메일 건을 **실패로 닫는다** — 올라온 파일이 상한을 넘었다."""
+    _fail(item, reason)
+    settle(db, item.job)
+
+
+def settle(db: Session, job: SendJob) -> None:
+    """메일 건 하나가 이 실 밖에서 끝났다 — 수를 다시 세고 회차를 마무리한다."""
+    _recount(db, job)
+    _finish(db, job)
+    db.commit()
 
 
 def _reason(exc: Exception) -> str:

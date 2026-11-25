@@ -153,6 +153,7 @@ docker exec dealflow-public-web-1 python scripts/import_investor_list.py 파일.
 | `DEALFLOW_INITIAL_PASSWORD` | 저장소 기본값 | 새 계정의 초기 비밀번호(첫 로그인 후 변경 요구). 운영에서는 반드시 바꾼다 |
 | `DEALFLOW_AGENT_TOKEN` | 저장소 기본값 | 데모 시드가 켜졌을 때 등록되는 발송기 토큰. 평소 토큰은 계정마다 따로 발급된다 |
 | `DEALFLOW_SMTP_*` | (없음) | 메일 채널. 비어 있으면 발송 화면에서 메일을 고를 수 없다 |
+| `DEALFLOW_MAIL_ATTACH_MAX_MB` | `18` | 메일 한 통에 붙는 IR 자료 파일 합계의 상한(MB). 넘으면 그 건은 실패로 남는다 |
 | `DEALFLOW_POP3_*` | (없음) | 딜 소싱 메일 확인(머리글만 읽는다). 팀 현황 판에 넣은 값이 먼저다 |
 | `DEALFLOW_SECRET_KEY` | (없음) | 팀 현황 판에 넣는 비밀번호를 잠그는 열쇠의 바탕값 |
 | `DEALFLOW_TEST_SERVER_NO_SEND_WINDOW` | (없음) | **테스트 서버 전용.** `1` 이면 보내는 시간(09:00~19:00) 제한만 끈다. 운영에서는 이 값이 있으면 뜨지 않는다 |

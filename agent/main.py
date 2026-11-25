@@ -190,10 +190,19 @@ class AgentClient:
         self.job_cap = job_cap(cfg)
 
     def heartbeat(self):
+        # `mail_files` — 메일에 붙일 IR 자료 파일을 올릴 줄 안다고 밝힌다(0.11.17).
+        # 밝혀야 서버가 올릴 건을 응답에 실어 준다(`upload_mail_files`).
         return self.session.post(f"{self.base}/api/agent/heartbeat",
                                  json={"hostname": self.hostname, "agent_version": self.version,
-                                       "sender": self.sender_name},
+                                       "sender": self.sender_name, "mail_files": True},
                                  timeout=10)
+
+    def upload_mail_file(self, item_id: int, index: int, path):
+        """메일에 붙일 자료 파일 하나를 올린다 — 본문이 곧 파일이다(흘려 보낸다)."""
+        with open(path, "rb") as fh:
+            return self.session.post(
+                f"{self.base}/api/agent/items/{item_id}/mail-files/{index}", data=fh,
+                headers={"Content-Type": "application/octet-stream"}, timeout=300)
 
     def poll(self):
         # 처리할 수 있는 잡 종류를 함께 알린다. 서버는 모르는 종류를 주지 않는다
@@ -947,6 +956,51 @@ def apply_server_settings(sender, payload) -> bool:
     return True
 
 
+def upload_mail_files(client: "AgentClient", payload) -> int:
+    """메일로 나갈 IR 자료 파일을 **이 PC 의 자료 폴더에서 찾아 서버에 올린다** (0.11.17).
+    다 올린 건 수.
+
+    메일은 서버가 보내는데 자료 파일은 이 PC 에만 있다. 서버가 박동 응답에 올릴 건
+    (`mail_uploads` — 건 번호와 파일 **이름**)을 실어 주면, 카톡으로 붙일 때와 **같은
+    폴더 · 같은 빗장**(`resolve_ir_file`)으로 찾아 올린다. 카톡 화면을 쓰지 않으므로
+    발송 잠금(`UiLock`)도 잡지 않는다 — 어느 발송기(Mac · Windows · mock)든 같다.
+
+    파일이 없거나 규칙에 어긋나거나 합계가 상한(`mail_max_bytes`)을 넘으면 **올리지
+    않고 그 건을 실패로 알린다** — 자료 없이 메일만 나가면 안 된다. 서버가 안 받은
+    건(그 사이 중단됐다 등)은 적어만 두고 다음 건으로 간다.
+    """
+    if not isinstance(payload, dict):
+        return 0
+    from .sender.base import IrPathError, resolve_ir_file
+
+    root = str(payload.get("ir_root") or "")
+    limit = int(payload.get("mail_max_bytes") or 0)
+    done = 0
+    for item in payload.get("mail_uploads") or []:
+        try:
+            paths = [resolve_ir_file(str(name), root) for name in item["files"]]
+            total = sum(p.stat().st_size for p in paths)
+            if limit and total > limit:
+                raise IrPathError(
+                    f"첨부 용량 초과 — 자료 파일 합계 {total / 1048576:.1f}MB 가 "
+                    f"메일 한도 {limit / 1048576:.0f}MB 를 넘습니다")
+        except (IrPathError, OSError) as exc:
+            log.warning("메일 자료 파일을 올리지 못했습니다 item=%s: %s", item["id"], exc)
+            client.report_item(item["id"], "failed",
+                               error=f"자료 파일을 올리지 못해 메일을 보내지 않았습니다 — {exc}")
+            continue
+        for index, path in enumerate(paths):
+            r = client.upload_mail_file(item["id"], index, path)
+            if r.status_code != 200:
+                log.warning("메일 자료 파일을 서버가 받지 않았습니다 item=%s (%s): %s",
+                            item["id"], r.status_code, r.text[:200])
+                break
+        else:
+            done += 1
+            log.info("메일 자료 파일 %d개를 올렸습니다 item=%s", len(paths), item["id"])
+    return done
+
+
 def _json(response):
     """응답 본문을 조용히 읽는다. 못 읽어도 발송에는 지장이 없다."""
     try:
@@ -1152,10 +1206,13 @@ def main(argv=None):
         try:
             now = time.time()
             if now - last_heartbeat >= float(cfg["heartbeat_interval_sec"]):
-                if apply_server_settings(sender, _json(client.heartbeat())):
+                settings = _json(client.heartbeat())
+                if apply_server_settings(sender, settings):
                     log.info("IR 자료 폴더가 바뀌었습니다: %r",
                              getattr(sender, "ir_root_setting", ""))
                 last_heartbeat = now
+                # 메일에 붙일 IR 자료 파일 — 서버가 실어 준 건을 올린다(카톡과 무관).
+                upload_mail_files(client, settings)
 
             outcome = poll_and_process(client, sender, cfg, ui_lock)
             if outcome == "busy":
