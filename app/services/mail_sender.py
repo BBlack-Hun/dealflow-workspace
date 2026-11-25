@@ -110,6 +110,28 @@ def _run(db: Session, job_id: int, gap_sec: float) -> dict:
     if not items:
         return {"sent": 0, "failed": 0, "detail": "보낼 메일이 없습니다"}
 
+    if any(i.files_json for i in items):
+        # ★ 자료 파일을 기다리는 회차는 **며칠을 서 있을 수 있다.** 그사이 실린 기업이
+        #   `딜소개 불가` 가 됐으면 나가면 안 된다 — 카톡이 내주기 직전에 보는 것과
+        #   **같은 판정 · 같은 처리**다(`agent_api.poll`: 대기 건을 그 까닭으로 취소하고,
+        #   남은 대기가 없으면 회차를 닫는다).
+        from ..routers.jobs import _drop_blocked_companies   # 순환 import 를 피해 늦게 부른다
+
+        _drop_blocked_companies(db, job)
+        dropped = [i for i in items if i.status != "pending"]
+        for item in dropped:
+            mail_attach.drop(item.id)
+        if dropped:
+            if not any(i.status == "pending" for i in job.items):
+                job.status = "canceled"
+                job.finished_at = _now()
+            db.commit()
+            log.warning("메일 회차 %s — 나가기 직전 다시 보니 딜소개 불가 기업이 실려 대기 "
+                        "%s건을 취소했습니다", job.id, len(dropped))
+            if job.status == "canceled":
+                return {"sent": 0, "failed": 0,
+                        "detail": "딜소개 불가 기업이 실려 대기 건을 취소했습니다"}
+
     settings = mailer.load_settings()
     if not settings.configured:
         # 설정이 없으면 전부 실패로 남긴다 — 조용히 pending 으로 두면
@@ -132,6 +154,14 @@ def _run(db: Session, job_id: int, gap_sec: float) -> dict:
             if item.error != mail_attach.WAIT:
                 item.error = mail_attach.WAIT
                 db.commit()
+            continue
+        if item.files_json and mail_attach.total(item.id) > mail_attach.max_bytes():
+            # 받을 때 이미 세지만(`mail_attach.save`) 보내기 직전에 한 번 더 본다 —
+            # 상한을 넘는 메일은 어떤 길로 올라왔든 나가지 않는다.
+            _fail(item, mail_attach.too_big_note())
+            failed += 1
+            _recount(db, job)
+            db.commit()
             continue
         # ★ 보내는 시간 · 하루 상한 — **한 통마다** 본다(19시를 넘기는 회차도
         #   그 자리에서 멈춘다). 밖이면 남은 건을 대기로 두고 나간다.

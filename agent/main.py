@@ -956,6 +956,9 @@ def apply_server_settings(sender, payload) -> bool:
     return True
 
 
+MAIL_UPLOAD_FAILED = "자료 파일을 올리지 못해 메일을 보내지 않았습니다"
+
+
 def upload_mail_files(client: "AgentClient", payload) -> int:
     """메일로 나갈 IR 자료 파일을 **이 PC 의 자료 폴더에서 찾아 서버에 올린다** (0.11.17).
     다 올린 건 수.
@@ -965,40 +968,68 @@ def upload_mail_files(client: "AgentClient", payload) -> int:
     폴더 · 같은 빗장**(`resolve_ir_file`)으로 찾아 올린다. 카톡 화면을 쓰지 않으므로
     발송 잠금(`UiLock`)도 잡지 않는다 — 어느 발송기(Mac · Windows · mock)든 같다.
 
-    파일이 없거나 규칙에 어긋나거나 합계가 상한(`mail_max_bytes`)을 넘으면 **올리지
-    않고 그 건을 실패로 알린다** — 자료 없이 메일만 나가면 안 된다. 서버가 안 받은
-    건(그 사이 중단됐다 등)은 적어만 두고 다음 건으로 간다.
+    ## 한 건의 탈이 다른 건을 막지 않는다 · 여기서 밖으로 던지지 않는다
+
+    건마다 따로 감싼다(`_upload_mail_item`). 맨 앞 건이 늘 탈이 나도 뒤의 건은 올라간다.
+      · 이 PC 의 파일 문제(없다 · 규칙 밖 · 합계가 상한을 넘는다 · 못 읽는다) → **올리지
+        않고 그 건을 실패로 알린다** — 자료 없이 메일만 나가면 안 된다.
+      · 통신 문제 · 서버가 안 받음 → 적어만 두고 다음 건으로. 실패로 알리지 않는다 —
+        다음 박동에 다시 올린다.
+    어떤 탈도 발송기의 큰 고리(`main`)로 새지 않는다 — 카톡 발송은 그대로 돈다.
     """
     if not isinstance(payload, dict):
         return 0
+    root = str(payload.get("ir_root") or "")
+    try:
+        limit = int(payload.get("mail_max_bytes") or 0)
+    except (TypeError, ValueError):
+        limit = 0
+    uploads = payload.get("mail_uploads")
+    done = 0
+    for item in uploads if isinstance(uploads, list) else []:
+        try:
+            done += _upload_mail_item(client, item, root, limit)
+        except requests.RequestException as exc:
+            log.warning("메일 자료 파일을 올리다 통신이 끊겼습니다(다음 박동에 다시): %s", exc)
+        except Exception:  # noqa: BLE001 - 한 건의 탈이 다른 건 · 카톡 발송을 막지 않는다
+            log.exception("메일 자료 파일 올리기 실패(다음 건으로 넘어갑니다) item=%r", item)
+    return done
+
+
+def _upload_mail_item(client: "AgentClient", item: dict, root: str, limit: int) -> int:
+    """메일 건 하나의 자료 파일을 올린다. 다 올렸으면 1, 아니면 0 (`upload_mail_files`)."""
     from .sender.base import IrPathError, resolve_ir_file
 
-    root = str(payload.get("ir_root") or "")
-    limit = int(payload.get("mail_max_bytes") or 0)
-    done = 0
-    for item in payload.get("mail_uploads") or []:
+    item_id = item["id"]
+
+    def give_up(why) -> int:
+        log.warning("메일 자료 파일을 올리지 못했습니다 item=%s: %s", item_id, why)
+        client.report_item(item_id, "failed", error=f"{MAIL_UPLOAD_FAILED} — {why}")
+        return 0
+
+    try:
+        paths = [resolve_ir_file(str(name), root) for name in item["files"]]
+        total = sum(p.stat().st_size for p in paths)
+    except (IrPathError, OSError) as exc:
+        return give_up(exc)
+    if limit and total > limit:
+        return give_up(f"첨부 용량 초과 — 자료 파일 합계 {total / 1048576:.1f}MB 가 "
+                       f"메일 한도 {limit / 1048576:.0f}MB 를 넘습니다")
+    for index, path in enumerate(paths):
         try:
-            paths = [resolve_ir_file(str(name), root) for name in item["files"]]
-            total = sum(p.stat().st_size for p in paths)
-            if limit and total > limit:
-                raise IrPathError(
-                    f"첨부 용량 초과 — 자료 파일 합계 {total / 1048576:.1f}MB 가 "
-                    f"메일 한도 {limit / 1048576:.0f}MB 를 넘습니다")
-        except (IrPathError, OSError) as exc:
-            log.warning("메일 자료 파일을 올리지 못했습니다 item=%s: %s", item["id"], exc)
-            client.report_item(item["id"], "failed",
-                               error=f"자료 파일을 올리지 못해 메일을 보내지 않았습니다 — {exc}")
-            continue
-        for index, path in enumerate(paths):
-            r = client.upload_mail_file(item["id"], index, path)
-            if r.status_code != 200:
-                log.warning("메일 자료 파일을 서버가 받지 않았습니다 item=%s (%s): %s",
-                            item["id"], r.status_code, r.text[:200])
-                break
-        else:
-            done += 1
-            log.info("메일 자료 파일 %d개를 올렸습니다 item=%s", len(paths), item["id"])
-    return done
+            r = client.upload_mail_file(item_id, index, path)
+        except requests.RequestException:
+            raise               # 통신 문제 — 실패로 알리지 않는다(`OSError` 의 한 갈래라 먼저 가른다)
+        except OSError as exc:
+            # 파일을 못 열었다 — Windows 에서 다른 프로그램이 잠가 둔 파일이 그렇다.
+            return give_up(f"파일을 읽지 못했습니다({path.name}) — 다른 프로그램에서 "
+                           f"열어 두었으면 닫아 주세요: {exc}")
+        if r.status_code != 200:
+            log.warning("메일 자료 파일을 서버가 받지 않았습니다 item=%s (%s): %s",
+                        item_id, r.status_code, r.text[:200])
+            return 0
+    log.info("메일 자료 파일 %d개를 올렸습니다 item=%s", len(paths), item_id)
+    return 1
 
 
 def _json(response):

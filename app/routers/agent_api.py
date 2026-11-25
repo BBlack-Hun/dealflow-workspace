@@ -479,10 +479,13 @@ def item_result(
     if job.status not in RESULT_JOBS or item.status not in RESULT_ITEMS + ("canceled",):
         db.commit()
         raise HTTPException(status_code=409, detail="item is not waiting for a result")
-    if item.channel == "email" and (body.status != "failed" or item.status != "pending"):
+    if item.channel == "email" and not (
+            body.status == "failed" and item.status == "pending"
+            and item.files_json and not mail_attach.ready(item)):
         # 메일은 서버가 보낸다 — 발송기가 메일 건에 알릴 것은 **붙일 자료 파일을 못
-        # 올렸다**(대기 건의 실패) 하나뿐이다(0.11.17). '보냄' 을 받아 적으면 나가지도
-        # 않은 메일이 보낸 것으로 남는다.
+        # 올렸다** 하나뿐이다(0.11.17): 자료 파일이 실렸고 아직 다 안 올라온 대기 건의
+        # 실패. '보냄' 을 받아 적으면 나가지도 않은 메일이 보낸 것으로 남고, 파일이
+        # 없는 여느 메일 · 다 올라와 나갈 메일을 발송기가 실패로 닫을 일은 없다.
         db.commit()
         raise HTTPException(status_code=409, detail="item is not waiting for a result")
 
@@ -1140,8 +1143,11 @@ async def upload_mail_file(
     try:
         size = await mail_attach.save(item_id, index, request.stream())
     except mail_attach.TooBig as exc:
+        # 받는 동안 [중단]됐을 수 있다 — 세션에 남은 옛 값이 아니라 **지금 줄**을 본다
+        # (`expire_on_commit=False`). 아직 대기일 때만 실패로 닫는다.
+        db.expire_all()
         item = db.get(SendItem, item_id)
-        if item is not None and item.status == "pending":   # 그 사이 [중단]됐으면 그대로 둔다
+        if item is not None and item.status == "pending":
             mail_sender.fail_waiting(db, item, str(exc))
         raise HTTPException(status_code=413, detail=str(exc)) from None
     except ValueError as exc:

@@ -55,6 +55,7 @@ def outbox(monkeypatch):
 
     class Outbox(list):
         smtp = None             # 가짜 SMTP 틀 — 검사가 받는 크기 · 실패를 끼운다
+        timeouts = None         # 붙을 때마다 넘긴 대기 시간(안 넘겼으면 None)
 
     sent = Outbox()
 
@@ -76,7 +77,13 @@ def outbox(monkeypatch):
         def send_message(self, msg):
             sent.append(msg)
 
-    monkeypatch.setattr(mailer, "_connect", lambda s: FakeSMTP())
+    sent.timeouts = []
+
+    def connect(s, timeout=None):
+        sent.timeouts.append(timeout)
+        return FakeSMTP()
+
+    monkeypatch.setattr(mailer, "_connect", connect)
     # 이어 보내기 실을 그 자리에서 돌린다.
     monkeypatch.setattr(mail_sender, "_dispatch", lambda func, *args: func(*args))
     monkeypatch.setattr(mail_sender, "GAP_SEC", 0)
@@ -336,6 +343,67 @@ def test_the_mail_goes_out_with_the_files_once_they_arrive(db, stage, outbox, mo
     assert len(outbox) == 1
 
 
+def test_a_mail_with_files_waits_longer_for_the_server(db, stage, outbox):
+    """수십 MB 를 받고 답하는 데 20초를 넘길 수 있다 — 그때 끊으면 나간 메일이 실패로
+    적혀 재시도에 한 번 더 나간다. 붙은 것이 없는 메일은 지금까지와 똑같이 붙는다."""
+    from app.services import mail_sender, mailer
+
+    _upload(stage, 0, PDF)
+    _upload(stage, 1, PPT)
+    mail_sender._run(db, stage["job_id"], gap_sec=0)
+    assert outbox.timeouts == [mailer.ATTACH_TIMEOUT_SEC]
+    assert mailer.ATTACH_TIMEOUT_SEC >= 120
+
+    mailer.send_mail("hong@example.com", "제목", "본문", settings=mailer.load_settings())
+    assert outbox.timeouts[-1] is None, "붙은 것이 없는 메일의 붙는 길이 바뀌었다"
+
+
+def test_the_plain_smtp_timeout_is_unchanged(mail_on, monkeypatch):
+    import smtplib
+
+    from app.services import mailer
+
+    seen = []
+    monkeypatch.setattr(smtplib, "SMTP_SSL",
+                        lambda host, port, timeout, context: seen.append(timeout))
+    mailer._connect(mailer.load_settings())
+    mailer._connect(mailer.load_settings(), mailer.ATTACH_TIMEOUT_SEC)
+
+    assert seen == [20, 180]
+
+
+def test_a_company_blocked_while_waiting_is_not_mailed(db, stage, outbox):
+    """파일을 기다리는 사이 실린 기업이 `딜소개 불가` 가 됐다 — 카톡이 내주기 직전에
+    보는 것과 같은 판정(`jobs._drop_blocked_companies`)으로 그 건을 취소한다."""
+    from app.models import DealBatch, DealBatchCompany, IrCompany
+    from app.services import mail_sender
+
+    company = IrCompany(name="샘플애그", ir_file_name=FILES[0])
+    batch = DealBatch(user_id=1, title="IR 자료 전달", sent_date="2099-03-12",
+                      cycle_type="adhoc")
+    db.add_all([company, batch])
+    db.flush()
+    db.add(DealBatchCompany(batch_id=batch.id, company_id=company.id, position=1))
+    job = _job(db, stage)
+    job.batch_id = batch.id
+    db.commit()
+    mail_sender._run(db, stage["job_id"], gap_sec=0)
+    assert _item(db, stage).status == "pending", "막히지 않은 기업의 건을 취소했다"
+    _upload(stage, 0, PDF)
+    _upload(stage, 1, PPT)
+
+    company = db.get(IrCompany, company.id)
+    company.name = "샘플애그 [딜소개 불가]"
+    db.commit()
+    assert mail_sender.resume_waiting(db) == [stage["job_id"]]
+
+    assert outbox == [], "딜소개 불가 기업의 자료가 메일로 나갔다"
+    item = _item(db, stage)
+    assert item.status == "canceled" and "딜소개 불가" in item.error
+    assert _job(db, stage).status == "canceled"
+    assert not stage["dir"].exists()
+
+
 def test_a_file_name_typed_in_split_jamo_goes_out_composed(db, stage, outbox):
     """맥에서 복사해 적은 이름(NFD)은 윈도우 메일함에서 자모가 흩어져 보인다."""
     import unicodedata
@@ -407,11 +475,8 @@ def test_a_failed_mail_also_lets_go_of_the_files(db, stage, outbox):
 
 
 def test_leftovers_are_swept(db, stage, data_dir):
-    """[중단]된 건 · 사라진 건 · 묵은 폴더는 예약 실이 치운다. 모르는 이름은 안 건드린다."""
-    import os
-    import time
-
-    from app.services import mail_attach, mail_sender
+    """[중단]된 건 · 사라진 건의 폴더는 예약 실이 치운다. 모르는 이름은 안 건드린다."""
+    from app.services import mail_sender
 
     _upload(stage, 0, PDF)
     base = data_dir / "mail_attachments"
@@ -423,17 +488,42 @@ def test_leftovers_are_swept(db, stage, data_dir):
     assert not (base / "999999").exists()
     assert (base / "keep-me").exists()
 
-    old = time.time() - (mail_attach.STALE_DAYS + 1) * 86400
-    os.utime(stage["dir"], (old, old))
-    mail_attach.sweep(db)
-    assert not stage["dir"].exists(), "묵은 폴더가 남았다"
-
-    _upload(stage, 0, PDF)
     stage["client"].post("/login", data={"phone": "01000000001",
                                          "password": "dealflow123"})
     assert stage["client"].post(f"/api/jobs/{stage['job_id']}/cancel").status_code == 200
     mail_sender.resume_waiting(db)
     assert not stage["dir"].exists(), "[중단]한 건의 파일이 남았다"
+
+
+def test_a_waiting_items_files_are_never_swept_for_being_old(db, stage):
+    """기다리는 건은 며칠이고 설 수 있다 — 묵었다고 지우면 다 올라온 자료가 사라진다.
+    묵어서 지우는 것은 보내다 굳은 건(`sending`)과 받다 만 조각뿐이다."""
+    import os
+    import time
+
+    from app.services import mail_attach
+
+    _upload(stage, 0, PDF)
+    half = stage["dir"] / "1.abc123.part"                 # 받다 끊긴 조각
+    half.write_bytes(b"half")
+    old = time.time() - (mail_attach.STALE_DAYS + 1) * 86400
+    for path in (half, stage["dir"]):
+        os.utime(path, (old, old))
+
+    _item(db, stage)                # 세션에 줄을 올려 둔다 — 치우기는 그래도 새로 읽는다
+    mail_attach.sweep(db)
+    assert (stage["dir"] / "0").read_bytes() == PDF, "기다리는 건의 파일을 지웠다"
+    assert not half.exists(), "받다 만 조각이 남았다"
+
+    item = _item(db, stage)
+    item.status = "sending"
+    db.commit()
+    os.utime(stage["dir"], None)
+    mail_attach.sweep(db)
+    assert stage["dir"].exists(), "지금 보내는 중인 건의 파일을 지웠다"
+    os.utime(stage["dir"], (old, old))
+    mail_attach.sweep(db)
+    assert not stage["dir"].exists(), "보내다 굳은 건의 파일이 끝없이 남는다"
 
 
 # ── 5. 용량 ──────────────────────────────────────────────────────────────────
@@ -473,6 +563,140 @@ def test_an_endless_body_is_cut_at_the_limit(data_dir, monkeypatch):
 
     assert len(taken) == 3, "상한(1048 바이트)을 넘고도 계속 읽었다"
     assert list((data_dir / "mail_attachments" / "5").iterdir()) == []
+
+
+def _interleaved(*bodies, check=None):
+    """조각을 번갈아 내주는 본문들 — 두 올리기가 겹쳐 도는 모양을 만든다."""
+    import asyncio
+
+    def body(data):
+        async def chunks():
+            for at in range(0, len(data), 100):
+                yield data[at:at + 100]
+                if check:
+                    check()
+                await asyncio.sleep(0)          # 다른 올리기에게 차례를 넘긴다
+        return chunks()
+
+    return [body(data) for data in bodies]
+
+
+def test_two_uploads_of_the_same_file_do_not_corrupt_each_other(data_dir):
+    """같은 토큰의 발송기 창 둘이 같은 파일을 함께 올려도 — 조각이 요청마다 따로라
+    제자리에 서는 것은 늘 **온전한 한 벌**이다. 섞인 파일이 "다 올라왔다" 가 되면
+    깨진 자료가 메일로 나간다."""
+    import asyncio
+
+    from app.services import mail_attach
+
+    one, two = b"A" * 950, b"B" * 1400
+    final = data_dir / "mail_attachments" / "5" / "0"
+    seen = []
+
+    def check():
+        if final.exists():
+            seen.append(final.read_bytes())
+
+    async def both():
+        a, b = _interleaved(one, two, check=check)
+        return await asyncio.gather(mail_attach.save(5, 0, a), mail_attach.save(5, 0, b))
+
+    assert asyncio.run(both()) == [len(one), len(two)]
+
+    assert seen, "겹쳐 도는 동안 제자리를 한 번도 못 봤다 — 검사가 겹치지 않았다"
+    assert set(seen) <= {one, two}, "받다 만 · 섞인 파일이 제자리에 섰다"
+    assert final.read_bytes() == two, "나중에 끝난 올리기가 통째로 남아야 한다"
+    assert [p.name for p in final.parent.iterdir()] == ["0"], "조각이 남았다"
+
+
+def test_parallel_uploads_cannot_pass_the_limit_together(data_dir, monkeypatch):
+    """둘 다 시작할 때는 상한 안이다 — 옮기기 직전에 합계를 다시 봐야 함께 못 넘는다."""
+    import asyncio
+
+    from app.services import mail_attach
+
+    monkeypatch.setenv("DEALFLOW_MAIL_ATTACH_MAX_MB", "0.001")        # 1048 바이트
+
+    async def both():
+        a, b = _interleaved(b"a" * 600, b"b" * 600)
+        return await asyncio.gather(mail_attach.save(5, 0, a), mail_attach.save(5, 1, b),
+                                    return_exceptions=True)
+
+    done = asyncio.run(both())
+
+    assert sum(isinstance(r, mail_attach.TooBig) for r in done) == 1, done
+    assert mail_attach.total(5) == 600
+    assert [p.name for p in (data_dir / "mail_attachments" / "5").iterdir()] in (["0"], ["1"])
+
+
+def test_the_second_parallel_upload_over_the_limit_fails_the_item(db, stage, monkeypatch):
+    """서버 길로 — 둘째가 거절되고(413) 그 건은 실패로 닫힌다. 메일은 안 나간다."""
+    monkeypatch.setenv("DEALFLOW_MAIL_ATTACH_MAX_MB", "0.001")
+    from app.services import mail_attach
+
+    real = mail_attach.save
+
+    async def save_with_a_rival(item_id, index, chunks):
+        # 이 올리기가 도는 사이 다른 창이 나머지 파일을 먼저 끝낸다.
+        folder = stage["dir"]
+        folder.mkdir(parents=True, exist_ok=True)
+
+        async def racing():
+            async for chunk in chunks:
+                yield chunk
+            (folder / "0").write_bytes(b"a" * 600)
+
+        return await real(item_id, index, racing())
+
+    monkeypatch.setattr(mail_attach, "save", save_with_a_rival)
+    r = _upload(stage, 1, b"b" * 600)
+
+    assert r.status_code == 413
+    item = _item(db, stage)
+    assert item.status == "failed" and "첨부 용량 초과" in item.error
+    assert not stage["dir"].exists()
+
+
+def test_a_mail_over_the_limit_is_never_sent(db, stage, outbox, monkeypatch):
+    """보내기 직전에도 한 번 더 본다 — 어떤 길로든 상한을 넘은 건은 실패다."""
+    from app.services import mail_sender
+
+    _upload(stage, 0, b"a" * 600)
+    _upload(stage, 1, b"b" * 600)
+    monkeypatch.setenv("DEALFLOW_MAIL_ATTACH_MAX_MB", "0.001")
+    mail_sender._run(db, stage["job_id"], gap_sec=0)
+
+    assert outbox == []
+    item = _item(db, stage)
+    assert item.status == "failed" and "첨부 용량 초과" in item.error
+    assert _job(db, stage).status == "done_with_errors"
+    assert not stage["dir"].exists()
+
+
+def test_cancel_during_an_over_limit_upload_stays_canceled(db, stage, monkeypatch):
+    """올라오는 동안 [중단]된 건을 `실패` 로 덮어쓰지 않는다 — 회차도 `중단` 그대로."""
+    from app.db import SessionLocal
+    from app.models import SendItem, SendJob
+    from app.services import mail_attach
+
+    async def canceled_meanwhile(item_id, index, chunks):
+        other = SessionLocal()                  # 화면의 [중단] — 다른 요청이다
+        try:
+            other.get(SendItem, item_id).status = "canceled"
+            other.get(SendJob, stage["job_id"]).status = "canceled"
+            other.commit()
+        finally:
+            other.close()
+        raise mail_attach.TooBig(mail_attach.too_big_note())
+
+    monkeypatch.setattr(mail_attach, "save", canceled_meanwhile)
+    r = _upload(stage, 0, PDF)
+
+    assert r.status_code == 413
+    item = _item(db, stage)
+    assert (item.status, item.error) == ("canceled", None)
+    job = _job(db, stage)
+    assert (job.status, job.failed) == ("canceled", 0)
 
 
 def test_the_limit_comes_from_the_environment(monkeypatch):
@@ -516,6 +740,27 @@ def test_the_agent_reporting_a_missing_file_fails_the_item(db, stage):
     assert (item.status, item.error) == ("failed", why)
     assert _job(db, stage).status == "done_with_errors", "회차가 큐에 선 채로 남았다"
     assert not stage["dir"].exists()
+
+
+@pytest.mark.parametrize("case", ["no_files", "all_files_in"])
+def test_the_agent_can_only_fail_a_mail_that_still_waits_for_files(db, stage, case):
+    """그 문은 "붙일 파일을 못 올렸다" 를 위한 것이다 — 파일이 없는 여느 메일, 다 올라와
+    곧 나갈 메일을 발송기가 실패로 닫을 수는 없다."""
+    if case == "no_files":
+        _item(db, stage).files_json = None
+        db.commit()
+    else:
+        _upload(stage, 0, PDF)
+        _upload(stage, 1, PPT)
+
+    r = stage["client"].post(f"/api/agent/items/{stage['item_id']}/result",
+                             json={"status": "failed", "error": "그냥"},
+                             headers=auth(DEMO_TOKEN))
+
+    assert r.status_code == 409
+    item = _item(db, stage)
+    assert (item.status, item.error) == ("pending", None)
+    assert _job(db, stage).status == "queued"
 
 
 def test_the_agent_cannot_mark_a_mail_as_sent(db, stage):
@@ -623,6 +868,67 @@ def test_agent_moves_on_when_the_server_refuses(agent_main, ir_folder):
     assert agent_main.upload_mail_files(client, payload) == 0
     assert [(i, n) for i, n, _ in client.uploads] == [(7, 0), (8, 0)]
     assert client.failed == []
+
+
+def _two_items(folder):
+    payload = _payload(folder, [FILES[0]])
+    payload["mail_uploads"].append({"id": 8, "files": [FILES[1]]})
+    return payload
+
+
+def test_agent_network_trouble_on_one_item_does_not_stop_the_next(agent_main, ir_folder):
+    """통신이 끊긴 건은 실패로 알리지 않는다(다음 박동에 다시) — 뒤의 건은 그대로 올린다.
+    맨 앞 건이 늘 탈이 나도 뒤의 건이 굶지 않는다."""
+    import requests
+
+    class Flaky(FakeClient):
+        def upload_mail_file(self, item_id, index, path):
+            if item_id == 7:
+                raise requests.ConnectionError("connection reset")
+            return super().upload_mail_file(item_id, index, path)
+
+    client = Flaky()
+
+    assert agent_main.upload_mail_files(client, _two_items(ir_folder)) == 1
+    assert client.uploads == [(8, 0, PPT)]
+    assert client.failed == [], "통신 문제를 그 건의 실패로 닫았다"
+
+
+def test_agent_reports_a_file_it_cannot_open(agent_main, ir_folder):
+    """Windows 에서 다른 프로그램이 잠가 둔 파일 — 그 건만 까닭과 함께 실패, 다음 건은 간다."""
+    class Locked(FakeClient):
+        def upload_mail_file(self, item_id, index, path):
+            if item_id == 7:
+                raise PermissionError(13, "Permission denied", str(path))
+            return super().upload_mail_file(item_id, index, path)
+
+    client = Locked()
+
+    assert agent_main.upload_mail_files(client, _two_items(ir_folder)) == 1
+    assert client.uploads == [(8, 0, PPT)]
+    (item_id, status, error), = client.failed
+    assert (item_id, status) == (7, "failed")
+    assert "메일을 보내지 않았습니다" in error and "파일을 읽지 못했습니다" in error
+    assert FILES[0] in error
+
+
+def test_agent_upload_trouble_never_reaches_the_main_loop(agent_main, ir_folder):
+    """무슨 탈이 나도 던지지 않는다 — 여기서 새면 카톡 발송 고리가 그 바퀴를 건너뛴다."""
+    import requests
+
+    class Broken(FakeClient):
+        def upload_mail_file(self, item_id, index, path):
+            raise RuntimeError("뜻밖의 탈")
+
+        def report_item(self, item_id, status, error=None, **more):
+            raise requests.Timeout("실패 보고도 못 닿는다")
+
+    payload = _two_items(ir_folder)
+    payload["mail_uploads"] += ["엉뚱한 값", {"id": 9}, {"id": 10, "files": ["없는파일.pdf"]}]
+    payload["mail_max_bytes"] = "많이"
+
+    assert agent_main.upload_mail_files(Broken(), payload) == 0
+    assert agent_main.upload_mail_files(FakeClient(), {"mail_uploads": "목록이 아님"}) == 0
 
 
 def test_agent_ignores_a_reply_without_uploads(agent_main):

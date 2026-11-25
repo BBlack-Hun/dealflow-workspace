@@ -168,7 +168,9 @@ def send_mail(to: str, subject: str, body: str,
         msg.add_attachment(Path(path).read_bytes(), maintype=maintype, subtype=subtype,
                            filename=unicodedata.normalize("NFC", name))
 
-    with _connect(s) as smtp:
+    # 붙은 파일이 있으면 오래 기다린다 — 수십 MB 를 받고 답(250)하는 데 20초를 넘길 수
+    # 있고, 그때 끊으면 **나간 메일이 실패로 적혀** 재시도에 한 번 더 나간다.
+    with (_connect(s, ATTACH_TIMEOUT_SEC) if attachments else _connect(s)) as smtp:
         if attachments:
             # 메일 서버가 받는 크기(EHLO `SIZE`)를 밝혔고 그것을 넘으면 보내 보지 않는다 —
             # 서버의 거절 글 대신 무엇을 고칠지 알 수 있는 사유를 남긴다.
@@ -183,16 +185,20 @@ def send_mail(to: str, subject: str, body: str,
         smtp.send_message(msg)
 
 
-def _connect(s: MailSettings):
+#: 파일이 붙은 메일의 SMTP 대기 시간(초). 붙은 것이 없는 메일은 지금까지와 같은 20초다.
+ATTACH_TIMEOUT_SEC = 180
+
+
+def _connect(s: MailSettings, timeout: int = 20):
     """SSL(465) 과 STARTTLS(587) 는 붙는 방식이 다르다.
 
     두 길 모두 **메일 서버 인증서를 검증한다**(`ssl.create_default_context()`).
     넘기지 않으면 표준 라이브러리는 검증하지 않는 쪽으로 붙는다.
     """
     if s.use_ssl:
-        return smtplib.SMTP_SSL(s.host, s.port, timeout=20,
+        return smtplib.SMTP_SSL(s.host, s.port, timeout=timeout,
                                 context=ssl.create_default_context())
-    smtp = smtplib.SMTP(s.host, s.port, timeout=20)
+    smtp = smtplib.SMTP(s.host, s.port, timeout=timeout)
     if s.use_tls:
         smtp.starttls(context=ssl.create_default_context())
     return smtp

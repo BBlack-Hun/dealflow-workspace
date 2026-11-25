@@ -16,17 +16,20 @@ IR 자료 파일은 각자 PC 의 자료 폴더에만 있고(`agent/sender/base.
 
 ## 언제 지우나
 
-건이 끝나면(보냄 · 실패) 그 자리에서(`drop`), 취소 · 사라진 건 · 묵은 폴더는
-예약 실이 30초마다 치운다(`sweep`). 아무 데서도 다시 내주지 않는다.
+건이 끝나면(보냄 · 실패) 그 자리에서(`drop`), 취소 · 사라진 건의 폴더는 예약 실이
+30초마다 치운다(`sweep`). 기다리는 건의 파일은 두고, 아무 데서도 다시 내주지 않는다.
 """
 from __future__ import annotations
 
 import json
 import os
 import shutil
+import tempfile
 import time
 from pathlib import Path
+from typing import Optional
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import config
@@ -37,9 +40,14 @@ from ..models import SendItem
 MAX_MB_ENV = "DEALFLOW_MAIL_ATTACH_MAX_MB"
 DEFAULT_MAX_MB = 18
 
-#: 올라온 지 이만큼 지난 폴더는 건이 살아 있어도 지운다 — 보내다 서버가 내려가
-#: `sending` 으로 굳은 건의 파일이 끝없이 남지 않게. 대기 건이면 다시 올라온다.
+#: 보내다 서버가 내려가 `sending` 으로 굳은 건의 파일을 이만큼 뒤에 지운다 —
+#: 끝없이 남지 않게. **기다리는 건(`pending`)의 파일은 날이 지나도 지우지 않는다.**
 STALE_DAYS = 3
+
+#: 받는 중인 조각의 이름 끝. 요청마다 다른 이름이고(`save`), "다 올라왔는가" · 합계에는
+#: 세지 않는다. 받다 끊겨 남은 조각은 이만큼 뒤에 치운다(올리기 한 번은 몇 분이다).
+PART = ".part"
+PART_STALE_SEC = 3600
 
 #: 파일을 기다리는 메일 건에 적는 말. 진행 화면의 그 줄에 그대로 보이고, 파일이
 #: 다 올라온 건을 이어 보낼 때 고르는 표시도 된다(`mail_sender.resume_waiting`).
@@ -93,22 +101,38 @@ def ready(item: SendItem) -> bool:
     return all(path.is_file() for _name, path in attachments(item))
 
 
+def _stored(folder: Path, skip: Optional[Path] = None) -> int:
+    """이 건에 **다 올라온** 파일들의 합계. 받는 중인 조각(`*.part`)은 세지 않는다."""
+    try:
+        return sum(p.stat().st_size for p in folder.iterdir()
+                   if p.is_file() and p.name.isdigit() and p != skip)
+    except OSError:
+        return 0
+
+
+def total(item_id: int) -> int:
+    """이 건에 올라와 있는 파일 합계(바이트) — 보내기 직전에 상한을 한 번 더 본다."""
+    return _stored(_dir(item_id))
+
+
 async def save(item_id: int, index: int, chunks) -> int:
     """올라오는 파일 하나를 받아 적는다. 적은 바이트 수.
 
     **흘려 받으며 센다** — 이 건의 다른 파일까지 합쳐 상한을 넘는 순간 멈추고
-    `TooBig`. 다 받은 뒤에야 제자리로 옮기므로(`os.replace`) 받다 만 파일이
-    "다 올라왔다" 로 읽히지 않고, 같은 파일을 다시 올리면 바꿔 놓는다.
+    `TooBig`. 받는 동안은 **요청마다 다른 이름의 조각**에 적는다 — 같은 파일을 두
+    요청이 함께 올려도(같은 토큰의 발송기 창 둘) 서로의 조각을 덮지 않는다. 다 받은
+    뒤에야 제자리로 옮기므로(`os.replace`) 받다 만 파일이 "다 올라왔다" 로 읽히지
+    않고, 같은 파일을 다시 올리면 온전한 한 벌로 바꿔 놓는다.
     """
     folder = _dir(item_id)
     folder.mkdir(parents=True, exist_ok=True)
     final = folder / str(int(index))
-    left = max_bytes() - sum(p.stat().st_size for p in folder.iterdir()
-                             if p.is_file() and p.name.isdigit() and p != final)
-    part = folder / f"{int(index)}.part"
+    left = max_bytes() - _stored(folder, skip=final)
+    fd, name = tempfile.mkstemp(dir=folder, prefix=f"{int(index)}.", suffix=PART)
+    part = Path(name)
     size = 0
     try:
-        with part.open("wb") as fh:
+        with os.fdopen(fd, "wb") as fh:
             async for chunk in chunks:
                 size += len(chunk)
                 if size > left:
@@ -116,6 +140,11 @@ async def save(item_id: int, index: int, chunks) -> int:
                 fh.write(chunk)
         if not size:
             raise ValueError("빈 파일은 받지 않습니다")
+        # ★ 옮기기 직전에 합계를 **다시** 본다 — 함께 올라오던 다른 파일이 그사이 끝났을
+        #   수 있다(위의 `left` 는 시작할 때의 값이다). 여기서 옮기기까지는 기다리는
+        #   자리(`await`)가 없어, 두 요청이 나란히 통과하지 못한다.
+        if size + _stored(folder, skip=final) > max_bytes():
+            raise TooBig(too_big_note())
         os.replace(part, final)
     finally:
         part.unlink(missing_ok=True)
@@ -128,21 +157,31 @@ def drop(item_id: int) -> None:
 
 
 def sweep(db: Session) -> None:
-    """남은 폴더를 치운다 — 끝난 건 · 취소된 건 · 없는 건 · `STALE_DAYS` 묵은 것.
+    """남은 폴더를 치운다 — 끝난 건 · 취소된 건 · 없는 건.
 
-    건 번호가 아닌 이름은 건드리지 않는다(모르는 것은 지우지 않는다).
+    **기다리는 건(`pending`)의 폴더는 며칠이 지나도 두고**, 받다 만 조각만 치운다.
+    보내다 서버가 내려가 `sending` 으로 굳은 건은 `STALE_DAYS` 뒤에 지운다 — 그 전에는
+    메일 쪽이 지금 읽고 있을 수 있다. 건 번호가 아닌 이름은 건드리지 않는다(모르는
+    것은 지우지 않는다).
     """
     base = root()
     if not base.is_dir():
         return
-    edge = time.time() - STALE_DAYS * 86400
+    now = time.time()
     for path in base.iterdir():
         if not path.name.isdigit():
             continue
-        item = db.get(SendItem, int(path.name))
+        # 줄을 새로 읽는다 — 세션에 남은 옛 상태로 기다리는 건의 파일을 지우면 안 된다.
+        status = db.execute(select(SendItem.status)
+                            .where(SendItem.id == int(path.name))).scalar_one_or_none()
         try:
-            stale = path.stat().st_mtime < edge
+            if status == "pending":
+                for part in path.glob(f"*{PART}"):
+                    if part.stat().st_mtime < now - PART_STALE_SEC:
+                        part.unlink(missing_ok=True)
+                continue
+            if status == "sending" and path.stat().st_mtime >= now - STALE_DAYS * 86400:
+                continue
         except OSError:
             continue
-        if item is None or item.status not in ("pending", "sending") or stale:
-            shutil.rmtree(path, ignore_errors=True)
+        shutil.rmtree(path, ignore_errors=True)
