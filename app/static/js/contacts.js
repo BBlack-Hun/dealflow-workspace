@@ -9,6 +9,8 @@
     // 표에는 있는데 이 목록에 없으면 **상세 창에서 적을 수가 없다** —
     // 칸을 그려 놔도 값이 안 채워지고 저장도 안 된다.
     "kakao_joined", "sourcing_note", "tips_note",
+    // `투자사 대표`(`O` · `X`) — 표 칸과 수정창이 같은 값을 쓴다.
+    "is_firm_ceo",
     // `딜 소싱` — 고른 갈래 `Series A, M&A`(숨은 칸 — 갈래마다 체크 상자가 채운다,
     // `branchBoxes`). 이 줄에 저장되지 않고 딜 소싱 줄을 잇거나 만들고, 푼 갈래는
     // `불참여` 로 둔다(`services/sourcing_sync.py`). 고칠 때는 **사람이 이 칸을
@@ -746,6 +748,15 @@
       // 방금 사람이 고친 칸이면 손대지 않는다 — 그 칸은 `inline_edit.js` 가 이미
       // 그렸고, 여기서 또 그리면 고치던 자리와 다투게 된다.
       if (joined && joined !== detail.cell) joined.textContent = data.kakao_joined;
+    }
+    // `투자사 대표` — 저장된 값(`O` · 빈칸)으로 칸 · 필터 값 · 이름 옆 배지를 함께 맞춘다.
+    // 방금 고친 칸이어도 그린다 — `X` 를 고르면 저장값은 빈칸이다.
+    if ("is_firm_ceo" in data) {
+      var ceoCell = row.querySelector('.cell[data-field="is_firm_ceo"]');
+      if (ceoCell) ceoCell.textContent = data.is_firm_ceo;
+      if (row.hasAttribute("data-f-ceo")) row.setAttribute("data-f-ceo", data.is_firm_ceo);
+      var ceoBadge = row.querySelector(".ceo-badge");
+      if (ceoBadge) ceoBadge.hidden = !data.is_firm_ceo;
     }
     // `투자라운드` — 서버가 일곱 단계로 맞춘 값(`시리즈A` → `Series A`, #162)으로 다시 그린다.
     // 방금 고친 칸이어도 그린다 — 친 글자를 두면 칸 · 필터가 저장된 값과 갈린다.
