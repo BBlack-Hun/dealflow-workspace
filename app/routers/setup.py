@@ -224,6 +224,7 @@ AGENT_FILES = [
     ("agent/main.py", "agent/main.py"),
     ("agent/version.py", "agent/version.py"),
     ("agent/diagnose.py", "agent/diagnose.py"),
+    ("agent/keep_awake.py", "agent/keep_awake.py"),
     ("agent/selectors.yaml", "agent/selectors.yaml"),
     ("agent/sender/__init__.py", "agent/sender/__init__.py"),
     ("agent/sender/base.py", "agent/sender/base.py"),

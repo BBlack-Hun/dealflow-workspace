@@ -32,6 +32,7 @@ from typing import List
 import requests
 import yaml
 
+from .keep_awake import KeepAwake
 from .sender.base import SendResult, same_title
 from .version import VERSION
 
@@ -188,6 +189,9 @@ class AgentClient:
         # 떠맡는다.
         self.sender_can_send_files = False
         self.job_cap = job_cap(cfg)
+        # 보낼 일이 있는 동안 화면을 깨워 둔다(`keep_awake.py`). `main()` 이 붙인다 —
+        # 검사에서 만드는 발송기가 진짜 caffeinate 를 띄우지 않게.
+        self.keep_awake = None
 
     def heartbeat(self):
         # `mail_files` — 메일에 붙일 IR 자료 파일을 올릴 줄 안다고 밝힌다(0.11.17).
@@ -233,6 +237,10 @@ class AgentClient:
                                      "files": 1 if self.sender_can_send_files else 0,
                                      "version": self.version},
                              timeout=15)
+        if self.keep_awake is not None and r.status_code in (200, 204):
+            # 잡을 받았으면(200) 보내는 내내, 아니면 서버가 대기 회차가 있다고 할 때.
+            self.keep_awake.set(r.status_code == 200
+                                or r.headers.get("X-Pending-Work") == "1")
         if r.status_code == 204:
             return None
         r.raise_for_status()
@@ -1204,6 +1212,7 @@ def main(argv=None):
     sender = build_sender(cfg)
     client = AgentClient(cfg)
     client.sender_name = getattr(sender, "name", "unknown")
+    client.keep_awake = KeepAwake()
     # 파일을 붙일 줄 아는지는 **발송기가 스스로 안다.** 폴링에서 그대로 밝힌다.
     client.sender_can_send_files = bool(getattr(sender, "can_send_files", False))
 

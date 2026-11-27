@@ -139,6 +139,31 @@ def _agent_items(job: SendJob) -> list:
                   key=lambda i: i.id)
 
 
+#: 폴 응답 머리글 — 이 발송기에 **보낼 일이 남았는가**(0.11.18). 발송기는 이 값이
+#: 참인 동안 PC 화면이 꺼지거나 잠기지 않게 한다(`agent/keep_awake.py`). 잠긴
+#: 화면에서는 카톡을 조작하지 못해 회차가 통째로 `room_not_found` 로 끝났다(11/27).
+PENDING_HEADER = "X-Pending-Work"
+
+
+def _pending_work(db: Session, owners: list, kinds: Optional[str]) -> bool:
+    """이 발송기가 맡은 계정들에게 **대기 · 진행 중인 회차**가 있는가.
+
+    보내는 시간 밖이라 아직 안 내주는 회차도 센다 — 아침 9시 전에 화면이 잠기면
+    9시가 돼도 못 보낸다. 메일 건만 남은 회차는 서버가 보내니 안 센다(`poll` 과 같은
+    기준). 발송기가 처리할 수 없는 종류도 안 센다.
+    """
+    if not owners:
+        return False
+    waiting = and_(SendItem.job_id == SendJob.id,
+                   SendItem.status.in_(RESULT_ITEMS), SendItem.channel != "email")
+    return db.execute(
+        select(SendJob.id).where(SendJob.user_id.in_(owners),
+                                 SendJob.status.in_(("queued", "running")),
+                                 SendJob.kind.in_(_requested_kinds(kinds)),
+                                 exists().where(waiting)).limit(1)
+    ).first() is not None
+
+
 @router.get("/poll")
 def poll(
     response: Response,
@@ -193,9 +218,12 @@ def poll(
         #   선다 — 사람이 누른 회차는 이 판정과 상관없이 그대로 나간다. 판은
         #   **이 발송기**의 판이다(실제로 보낼 쪽).
         held.update(automation_runner.held_jobs(db, owner_id, device.agent_version, now))
+    pending = {PENDING_HEADER: "1" if _pending_work(
+        db, agent_serves(db, device.user_id), kinds) else "0"}
+    response.headers.update(pending)
     if not allowed:
         db.commit()
-        return Response(status_code=204)
+        return Response(status_code=204, headers=pending)
 
     # ★ 자료 파일이 실린 잡은 **파일을 붙일 줄 아는 발송기에만** 내준다.
     #
@@ -229,7 +257,7 @@ def poll(
 
     if candidate is None:
         db.commit()
-        return Response(status_code=204)
+        return Response(status_code=204, headers=pending)
 
     # Atomic claim: only succeeds if still queued.
     result = db.execute(
@@ -240,7 +268,7 @@ def poll(
     if result.rowcount == 0:
         # Someone else claimed it between select and update.
         db.commit()
-        return Response(status_code=204)
+        return Response(status_code=204, headers=pending)
 
     db.commit()
 
@@ -262,7 +290,7 @@ def poll(
         db.commit()
         log.warning("회차 %s — 내주기 직전 다시 보니 딜소개 불가 기업이 실려 대기 %s건을 "
                     "취소하고 닫습니다", job.id, waiting)
-        return Response(status_code=204)
+        return Response(status_code=204, headers=pending)
     if left != waiting:
         # 스타트업 월간 발송은 그 기업의 건만 뺀다(건 하나가 기업 하나) — 남은 건은
         # 나가고, 뺀 건의 취소는 여기서 남긴다(아래는 커밋하지 않고 내준다).
