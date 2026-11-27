@@ -29,6 +29,8 @@ services:
       DEALFLOW_SMTP_FROM: "${DEALFLOW_SMTP_FROM:-}"
       DEALFLOW_SMTP_TLS: "${DEALFLOW_SMTP_TLS:-1}"
       DEALFLOW_SMTP_SSL: "${DEALFLOW_SMTP_SSL:-}"
+      # 메일 한 통에 붙는 IR 자료 파일 합계의 상한(MB). 비우면 18.
+      DEALFLOW_MAIL_ATTACH_MAX_MB: "${DEALFLOW_MAIL_ATTACH_MAX_MB:-}"
       # 딜 소싱 메일 확인(POP3 over SSL, 머리글만 읽는다). 팀 현황 판에서 넣는 것이
       # 먼저고, 판이 비면 이 값. 둘 다 비면 '메일 확인 꺼짐'.
       DEALFLOW_POP3_HOST: "${DEALFLOW_POP3_HOST:-}"

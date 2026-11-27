@@ -23,14 +23,17 @@
 """
 from __future__ import annotations
 
+import mimetypes
 import os
 import re
 import smtplib
 import ssl
+import unicodedata
 from dataclasses import dataclass
 from email.message import EmailMessage
 from email.utils import formataddr
-from typing import List, Optional
+from pathlib import Path
+from typing import List, Optional, Sequence, Tuple
 
 
 class MailerNotConfigured(RuntimeError):
@@ -137,8 +140,13 @@ def status() -> dict:
 
 
 def send_mail(to: str, subject: str, body: str,
-              settings: Optional[MailSettings] = None) -> None:
-    """평문 메일 한 통. 실패하면 그대로 예외를 올린다(조용히 삼키면 안 된다)."""
+              settings: Optional[MailSettings] = None,
+              attachments: Optional[Sequence[Tuple[str, Path]]] = None) -> None:
+    """평문 메일 한 통. 실패하면 그대로 예외를 올린다(조용히 삼키면 안 된다).
+
+    `attachments` — 붙일 파일 `(받는 쪽에 보일 이름, 서버에 둔 자리)` 들
+    (`services/mail_attach.py`). 한글 이름은 `email` 이 RFC 2231 로 싣는다.
+    """
     s = settings or load_settings()
     if not s.configured:
         raise MailerNotConfigured(
@@ -152,23 +160,45 @@ def send_mail(to: str, subject: str, body: str,
     msg["From"] = _format_sender(s.from_address)
     msg["Subject"] = subject
     msg.set_content(body)
+    for name, path in attachments or ():
+        kind, encoding = mimetypes.guess_type(name)
+        maintype, _, subtype = (kind if kind and not encoding
+                                else "application/octet-stream").partition("/")
+        # 맥에서 복사해 적은 이름은 자모가 쪼개져 있다(NFD) — 윈도우에서 깨져 보인다.
+        msg.add_attachment(Path(path).read_bytes(), maintype=maintype, subtype=subtype,
+                           filename=unicodedata.normalize("NFC", name))
 
-    with _connect(s) as smtp:
+    # 붙은 파일이 있으면 오래 기다린다 — 수십 MB 를 받고 답(250)하는 데 20초를 넘길 수
+    # 있고, 그때 끊으면 **나간 메일이 실패로 적혀** 재시도에 한 번 더 나간다.
+    with (_connect(s, ATTACH_TIMEOUT_SEC) if attachments else _connect(s)) as smtp:
+        if attachments:
+            # 메일 서버가 받는 크기(EHLO `SIZE`)를 밝혔고 그것을 넘으면 보내 보지 않는다 —
+            # 서버의 거절 글 대신 무엇을 고칠지 알 수 있는 사유를 남긴다.
+            smtp.ehlo_or_helo_if_needed()
+            limit = (smtp.esmtp_features.get("size") or "").strip()
+            if limit.isdigit() and 0 < int(limit) < len(msg.as_bytes()):
+                raise ValueError(
+                    f"첨부 용량 초과 — 메일 서버가 받는 크기({int(limit) // (1024 * 1024)}MB)"
+                    "를 넘습니다. 자료 파일을 줄여 다시 보내세요")
         if s.user:
             smtp.login(s.user, s.password)
         smtp.send_message(msg)
 
 
-def _connect(s: MailSettings):
+#: 파일이 붙은 메일의 SMTP 대기 시간(초). 붙은 것이 없는 메일은 지금까지와 같은 20초다.
+ATTACH_TIMEOUT_SEC = 180
+
+
+def _connect(s: MailSettings, timeout: int = 20):
     """SSL(465) 과 STARTTLS(587) 는 붙는 방식이 다르다.
 
     두 길 모두 **메일 서버 인증서를 검증한다**(`ssl.create_default_context()`).
     넘기지 않으면 표준 라이브러리는 검증하지 않는 쪽으로 붙는다.
     """
     if s.use_ssl:
-        return smtplib.SMTP_SSL(s.host, s.port, timeout=20,
+        return smtplib.SMTP_SSL(s.host, s.port, timeout=timeout,
                                 context=ssl.create_default_context())
-    smtp = smtplib.SMTP(s.host, s.port, timeout=20)
+    smtp = smtplib.SMTP(s.host, s.port, timeout=timeout)
     if s.use_tls:
         smtp.starttls(context=ssl.create_default_context())
     return smtp
