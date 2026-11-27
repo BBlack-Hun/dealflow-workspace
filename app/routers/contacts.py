@@ -17,7 +17,7 @@ from typing import Dict, List, Optional, Tuple
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Form, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
@@ -309,6 +309,8 @@ def contact_rows(db: Session, user: User, team_wide: bool = False,
             "notes": contact_columns.load_notes(c.notes),
             # 이 줄만 감췄는가. 표에서 빼고, 발송 대상에서도 뺀다.
             "is_hidden": bool(c.is_hidden),
+            # 투자사 대표님 — 이름 옆 [대표] 배지 · `투자사 대표` 칸(0139).
+            "is_firm_ceo": bool(c.is_firm_ceo),
             "last_deal": last_deal,
             "last_deal_label": _date_label(last_deal, last_round),
             "last_deal_note": last_deal_note or "",
@@ -492,6 +494,20 @@ class ContactIn(BaseModel):
     notes: Optional[Dict[str, str]] = None
     # 이 줄만 표에서 감출까(1) 다시 보일까(0).
     is_hidden: Optional[int] = None
+    # 투자사 대표님인가 — 표의 `투자사 대표` 칸은 `O` · `X` 로 고른다(1 · 0 도 받는다).
+    is_firm_ceo: Optional[int] = None
+
+    @field_validator("is_firm_ceo", mode="before")
+    @classmethod
+    def _ox(cls, v):
+        if v is None or isinstance(v, (bool, int)):
+            return v
+        s = str(v).strip().upper()
+        if s in ("O", "1"):
+            return 1
+        if s in ("X", "0", ""):
+            return 0
+        raise ValueError("투자사 대표는 O 또는 X 로 고르세요")
     # `딜 소싱` 칸 — 고른 갈래를 `Series A, M&A` 처럼(빈 글자 = 모두 풂). **이 줄에
     # 저장되지 않는다** — 고른 갈래는 딜 소싱 줄을 잇거나 만들고, 푼 갈래는 그 줄을
     # `불참여` 로 둔다(`services/sourcing_sync.apply_branches`). 안 보내면(None) 그대로.
@@ -1239,6 +1255,8 @@ def get_contact(
             # 저장은 되는데 **다시 열면 비어 있었다** — 여기서 안 돌려주면
             # 창이 채울 값이 없어, 고쳐 놓고도 안 들어간 줄 안다.
             "kakao_joined": contact.kakao_joined or "",
+            # 수정창의 `투자사 대표` — 표 칸과 같은 글자(`O` · 빈칸)로 돌려준다.
+            "is_firm_ceo": contact.is_firm_ceo and "O" or "",
             # 저장된 칸이 아니라 이어진 딜 소싱 줄에서 읽는다(`sourcing_sync`).
             "sourcing_join": sourcing_sync.marks_for(db, [contact.id]).get(contact.id, ""),
             # 수정창의 `딜 소싱` 체크 상자 — 고른 갈래(`sourcing_sync.cells`).
@@ -1513,6 +1531,8 @@ def update_contact(
     out = {"ok": True, "room_verified": contact.room_verified,
            "connect_stage": contact.connect_stage,
            "kakao_joined": contact.kakao_joined or "",
+           # `투자사 대표` 칸 · 이름 옆 배지를 저장된 값으로 다시 그린다(`X` → 빈칸).
+           "is_firm_ceo": "O" if contact.is_firm_ceo else "",
            **_room_cell(contact),
            # **고친 시각을 응답에 싣는다.** 스타트업 표의 `수정한 날짜` 칸이
            # 이것으로 그 자리에서 바뀐다 — 새로고침해야 보이면, 방금 고친 것이
@@ -2161,7 +2181,9 @@ def _assign(contact: VcContact, body: ContactIn) -> str:
                   "address", "card_registered_at", "interest_level",
                   # 스키마(ContactIn)에만 있고 여기 빠져 있어서, 화면에서 고쳐도
                   # 조용히 안 들어갔다 — 요청은 200 으로 끝나는데 값은 그대로다.
-                  "kakao_joined", "sourcing_note", "tips_note"):
+                  "kakao_joined", "sourcing_note", "tips_note",
+                  # 투자사 대표님 — 스키마가 `O`/`X` 를 1/0 으로 바꿔 온다(`ContactIn._ox`).
+                  "is_firm_ceo"):
         value = getattr(body, field)
         if value is not None:
             setattr(contact, field, value.strip() if isinstance(value, str) else value)

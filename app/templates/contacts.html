@@ -784,6 +784,9 @@
         <th style="width:150px" data-filters="firm:회사">회사<div class="th-filters"></div></th>
         <th style="width:130px">부서</th>
         <th style="width:82px">직함</th>
+        {# 투자사 대표님(0139) — `O` 를 고르면 이름 옆에 [대표] 배지가 선다. 필터에서
+           `O` 만 고르면 대표님만 본다. 폭 110px 만큼 `#contacts-table` min-width 도 올렸다. #}
+        <th style="width:110px" data-filters="ceo:투자사 대표">투자사 대표<div class="th-filters"></div></th>
         <th style="width:104px">휴대폰</th>
         <th style="width:170px">이메일</th>
         {# **#87 로 이름이 `담당자` 가 됐다**(사용자 결정 2026-10-29). 우리 팀원을
@@ -1017,6 +1020,7 @@
           data-f-channel="{{ r.channel_label }}"
           data-f-room="{{ r.send_label }}"
           data-f-interest="{{ r.interest_level }}"
+          data-f-ceo="{{ 'O' if r.is_firm_ceo else '' }}"
           data-f-sourcing="{{ r.sourcing_filter }}"
           data-f-sourcing_date="{{ r.sourcing_requested_at }}"
           data-s-sourcing_date="{{ r.sourcing_requested_sort }}"
@@ -1047,10 +1051,15 @@
            NO 를 누르면 그 담당자의 활동 이력이 열린다. #}
         <td class="rowno muted js-detail stick stick-a" title="활동 이력 보기"></td>
         {# 시트 컬럼 — 이름·순서를 그대로 따른다 #}
-        <td class="stick stick-b"><b class="cell" data-field="name">{{ r.name }}</b></td>
+        {# [대표] 배지는 늘 그려 두고 숨김만 바꾼다 — 표에서 `투자사 대표` 칸을 고치면
+           `contacts.js` 가 그 자리에서 켜고 끈다. #}
+        <td class="stick stick-b"><b class="cell" data-field="name">{{ r.name }}</b><span
+            class="tag ceo-badge"{% if not r.is_firm_ceo %} hidden{% endif %}>대표</span></td>
         <td class="cell ellipsis" data-field="firm" title="{{ r.firm }}">{{ r.firm }}</td>
         <td class="cell" data-field="department" data-type="pick">{{ r.department }}</td>
         <td class="cell" data-field="title" data-type="pick">{{ r.title }}</td>
+        <td class="cell" data-field="is_firm_ceo" data-type="pick" data-choices="O,X"
+            data-filter-key="ceo">{{ 'O' if r.is_firm_ceo else '' }}</td>
         <td class="cell" data-field="phone">{{ r.phone }}</td>
         {# `data-type="email"` — 눌러 고칠 때 `@` 뒤 도메인 후보가 뜬다.
            수정창의 메일 칸과 **같은 부품**을 쓴다(`static/js/email_hint.js`) —
@@ -1535,6 +1544,15 @@
       #}
       <label class="field"><span>이름</span><input type="text" id="f-name"></label>
       <label class="field"><span>직함</span><input type="text" id="f-title" placeholder="대표님 / 심사역"></label>
+      {# 투자사 대표님(0139) — `O` 면 표의 이름 옆에 [대표] 배지가 선다. 보기는 표 칸의
+         `data-choices="O,X"` 와 같은 말이다. #}
+      <label class="field"><span>투자사 대표</span>
+        <input type="text" id="f-is_firm_ceo" list="opts-panel-is_firm_ceo"
+               placeholder="O 면 이름 옆에 [대표]">
+        <datalist id="opts-panel-is_firm_ceo">
+          <option value="O"></option>
+          <option value="X"></option>
+        </datalist></label>
       <label class="field"><span>회사</span><input type="text" id="f-firm"></label>
       {# `부서` 는 **회사 바로 옆**이다. 한동안 `연결 담당` 다음에 서 있었는데,
          그 둘은 가리키는 사람이 아예 다르다 — `연결 담당` 은 **우리 팀원**이고

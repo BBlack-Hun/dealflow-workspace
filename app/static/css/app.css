@@ -750,7 +750,13 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
     준 만큼만 내린다. contacts.html 의 그 머리글 주석) */
 /* (3,916 → 3,816 : `카톡방 참여여부` 칸(100px)을 표에서 뺐다 — 뺀 만큼만 내린다.
     contacts.html 의 그 자리 주석) */
-#contacts-table { min-width: 3816px; }
+/* (3,816 → 3,926 : `투자사 대표` 칸(110px)을 직함 뒤에 세웠다 — 0139) */
+#contacts-table { min-width: 3926px; }
+/* 투자사 대표님 [대표] 배지 — 다른 딱지(옅은 바탕)와 달리 **꽉 찬 색**이라 표를 훑을 때
+   먼저 눈에 걸린다. 글자 `대표` 가 있어 색을 못 가려도 읽힌다. 딜 소개 화면의 받는 분
+   카드도 같은 배지를 쓴다. */
+.tag.ceo-badge { background: var(--red); color: #fff; font-weight: 700; }
+.tag.ceo-badge[hidden] { display: none; }
 /* `딜 소싱` 칸의 갈래 딱지 — 참여(초록) · 아직 동의 전(주황 — 딜 소싱 표의
    `part-pending` 과 같은 색) · 불참여(흐리게, 줄을 그어 빠진 것을 보인다).
    칸이 좁아 딱지가 넘치면 다음 줄로 접는다. */

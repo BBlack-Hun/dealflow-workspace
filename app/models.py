@@ -302,6 +302,9 @@ class VcContact(TimestampMixin, Base):
     #
     # 감춘 줄은 발송 대상에서도 빠진다. 안 보이는 사람에게 문구가 나가면 안 된다.
     is_hidden: Mapped[int] = mapped_column(Integer, default=0)
+    # 투자사 대표님인가(1) — 표의 이름 옆 [대표] 배지 · `투자사 대표` 칸(0139). 사람이
+    # 고른다(직함 글자로 가르지 않는다 — `부대표` · 겸직을 바로잡을 길이 없다).
+    is_firm_ceo: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     # **이 줄이 IR 기업 현황의 어느 기업인가** — 좌측 [스타트업] 명단 줄에만
     # 찬다(그 배치는 `firm` 이 기업명이다). 비어 있으면 `아직 안 이었다` 다.
     #

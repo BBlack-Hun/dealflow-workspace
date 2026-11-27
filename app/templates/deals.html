@@ -886,6 +886,7 @@
                data-noreact="{{ 1 if c.id in no_reaction_ids else 0 }}">
         <div class="pick-body">
           <div class="pick-name">{{ c.name }} <span class="muted">{{ c.title or '' }}</span>
+            {% if c.is_firm_ceo %}<span class="tag ceo-badge">대표</span>{% endif %}
             {% if c.id in no_reaction_ids or c.id in no_reaction_cleared %}
             {# `반응 없음` 딱지와 손으로 빼기 · 되돌리기(11/11 — `services/no_reaction` 머리말).
                두 모양을 다 그려 두고 `deals.js` 가 숨김만 바꾼다 — 글자를 두 곳에 적지 않는다.
