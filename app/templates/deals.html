@@ -886,6 +886,7 @@
                data-noreact="{{ 1 if c.id in no_reaction_ids else 0 }}">
         <div class="pick-body">
           <div class="pick-name">{{ c.name }} <span class="muted">{{ c.title or '' }}</span>
+            {% if c.is_firm_ceo %}<span class="tag ceo-badge">대표</span>{% endif %}
             {% if c.id in no_reaction_ids or c.id in no_reaction_cleared %}
             {# `반응 없음` 딱지와 손으로 빼기 · 되돌리기(11/11 — `services/no_reaction` 머리말).
                두 모양을 다 그려 두고 `deals.js` 가 숨김만 바꾼다 — 글자를 두 곳에 적지 않는다.
@@ -1116,10 +1117,14 @@
        칸에 적어 둔다. 화면이 다시 판단하지 않는다. #}
     <div class="ir-attach" id="ir-attach" data-auto="{{ 1 if ir_auto_attach else 0 }}" hidden>
       {% if ir_auto_attach %}
-      <b>보낼 자료 — 발송 프로그램이 아래 차례대로 파일을 보내고, 문구를 뒤에 보냅니다.</b>
+      <b id="ir-attach-kakao">보낼 자료 — 발송 프로그램이 아래 차례대로 파일을 보내고, 문구를 뒤에 보냅니다.</b>
       {% else %}
-      <b>보낼 자료 — 아래 차례대로 PC 카톡에 직접 첨부한 뒤 이 문구를 보내세요.</b>
+      <b id="ir-attach-kakao">보낼 자료 — 아래 차례대로 PC 카톡에 직접 첨부한 뒤 이 문구를 보내세요.</b>
       {% endif %}
+      {# 이메일을 골랐을 때의 머리말(`deals.js` 의 `renderIrLinks` 가 바꿔 세운다).
+         파일은 발송 PC 에만 있어, 발송 프로그램이 올려 준 뒤에 메일이 나간다
+         (`services/mail_attach.py`). 붙일 수 없는 계정이면 서버가 경고로 말하고 막는다. #}
+      <b id="ir-attach-mail" hidden>보낼 자료 — 발송 프로그램이 이 PC 의 IR 자료 폴더에서 아래 파일을 올리면 메일에 첨부해 보냅니다(발송 프로그램이 켜져 있어야 나갑니다).</b>
       {# 번호와 파일 이름을 함께 적는다.
 
          **번호**는 자료가 나가는 차례다. 고른 차례가 아니라 딜 소개에서 붙은
@@ -1167,7 +1172,8 @@
       <p class="hint">보내는 주소: <code>{{ mail.from_address }}</code></p>
       {% endif %}
       <p class="hint">
-        메일은 <b>서버가 바로 보냅니다</b> — 발송 프로그램을 켜 둘 필요가 없습니다.
+        메일은 <b>서버가 바로 보냅니다</b> — 발송 프로그램을 켜 둘 필요가 없습니다
+        (자료 파일이 붙는 <b>IR 자료 전달</b>만은 발송 프로그램이 파일을 올린 뒤에 나갑니다).
         메일 주소가 없는 심사역은 발송 전에 막힙니다.
         제목을 <b>비워 두면 회차명</b>이 그대로 제목이 됩니다.
         제목에 적은 <code>{담당자명}</code>·<code>{직함}</code>·<code>{투자사}</code>·<code>{개수}</code>

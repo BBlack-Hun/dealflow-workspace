@@ -593,6 +593,7 @@ FIELD_LABELS = {
     "channel_kakao": "카톡 발송", "channel_email": "메일 발송",
     "channel_sms": "문자(직접 발송)",
     "is_hidden": "숨김", "is_active": "사용", "is_deal_list": "딜 명단",
+    "is_firm_ceo": "투자사 대표",
     "can_view_consulting": "투자현황", "can_auto_attach_ir": "자료 자동 첨부",
     "can_export_companies": "엑셀 내려받기",
     "daily_send_cap": "하루 발송 상한", "send_via_user_id": "발송기",

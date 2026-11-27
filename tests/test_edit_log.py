@@ -806,6 +806,8 @@ WRITE_ROUTES = {
     ("POST", "/api/agent/heartbeat"): MACHINE,
     ("POST", "/api/agent/diagnostics"): MACHINE,
     ("POST", "/api/agent/items/{item_id}/result"): MACHINE,
+    # 메일에 붙일 IR 자료 파일을 발송기가 올린다(0.11.17 — `services/mail_attach.py`).
+    ("POST", "/api/agent/items/{item_id}/mail-files/{index}"): MACHINE,
     ("POST", "/api/agent/jobs/{job_id}/status"): MACHINE,
     ("POST", "/api/deals/preview"): MACHINE,
     ("POST", "/api/deals/send"): MACHINE,

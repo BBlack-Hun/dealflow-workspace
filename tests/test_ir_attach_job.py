@@ -228,11 +228,9 @@ def test_the_preview_warns_before_the_list_is_made(stage):
                for w in warnings)
 
 
-def test_email_never_carries_files(stage, db, monkeypatch):
-    """파일은 **각자 PC** 에 있고 메일은 서버가 보낸다 — 서버에는 그 파일이 없다."""
+def _mail_stage(stage, db, monkeypatch):
     from app.services import mail_sender
 
-    _turn_on(stage)
     stage["contact"].email = "hong@example.test"
     stage["contact"].channel_email = 1
     db.commit()
@@ -243,9 +241,58 @@ def test_email_never_carries_files(stage, db, monkeypatch):
         monkeypatch.setenv(f"DEALFLOW_SMTP_{key}", value)
     monkeypatch.setattr(mail_sender, "send_job", lambda *a, **k: None)
 
+
+def test_email_carries_the_file_names_too(stage, db, monkeypatch):
+    """(0.11.17) 메일 건에도 파일명이 실린다 — 발송 PC 가 그 파일을 올리면 메일에
+    붙어 나간다(`services/mail_attach.py` · `tests/test_mail_attach.py`)."""
+    _turn_on(stage)
+    _mail_stage(stage, db, monkeypatch)
+
+    r = _send(stage, [stage["agri"].id, stage["medi"].id], channel="email")
+    assert r.status_code == 200, r.text
+    assert _files_of(stage, r.json()["job_id"]) == [AGRI_FILE, MEDI_FILE]
+
+
+def test_a_new_mail_item_never_inherits_old_files(stage, db, monkeypatch, tmp_path):
+    """건 번호는 다시 쓰일 수 있다 — 그 번호에 남은 옛 파일이 새 메일에 붙으면 남의
+    자료가 나간다. 새 건은 빈 자리에서 시작한다."""
+    from app import config
+    from app.models import SendItem
+    from app.services import mail_attach
+
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    _turn_on(stage)
+    _mail_stage(stage, db, monkeypatch)
+    stale = tmp_path / "mail_attachments" / "1"          # 첫 건이 받을 번호
+    stale.mkdir(parents=True)
+    (stale / "0").write_bytes(b"someone else's deck")
+
     r = _send(stage, [stage["agri"].id], channel="email")
     assert r.status_code == 200, r.text
-    assert _files_of(stage, r.json()["job_id"]) == []
+
+    item = db.query(SendItem).filter_by(job_id=r.json()["job_id"]).one()
+    assert item.id == 1
+    assert not stale.exists()
+    assert not mail_attach.ready(item), "옛 파일로 '다 올라왔다' 가 됐다"
+
+
+def test_email_is_refused_when_nothing_can_attach_the_files(stage, db, monkeypatch):
+    """켜지 않은 계정 — 메일에는 손으로 붙일 길이 없다. 자료 없이 "전달드립니다" 만
+    나가느니 목록을 만들지 않는다. 미리보기도 같은 말로 먼저 알린다."""
+    from app.models import SendJob
+    from app.services import mail_attach
+
+    _mail_stage(stage, db, monkeypatch)
+
+    r = _send(stage, [stage["agri"].id], channel="email")
+    assert r.status_code == 400
+    assert r.json()["detail"] == mail_attach.NO_ATTACH
+    assert db.query(SendJob).count() == 0
+
+    preview = stage["client"].post("/api/deals/preview", json={
+        "mode": "ir", "contact_ids": [stage["contact"].id],
+        "company_ids": [stage["agri"].id], "channel": "email"}).json()
+    assert mail_attach.NO_ATTACH in preview["warnings"]
 
 
 # ── 화면이 같은 판단을 읽는가 ───────────────────────────────────────────────

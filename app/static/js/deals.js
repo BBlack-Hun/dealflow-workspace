@@ -1466,6 +1466,8 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   // 값을 읽을 뿐이다 — 여기서 다시 판단하지 않는다.
   function irSummaryNote() {
     var box = document.getElementById("ir-attach");
+    // 메일은 발송 PC 가 올린 파일을 서버가 붙여 보낸다(`services/mail_attach.py`).
+    if (currentChannel() === "email") return "자료 파일은 메일에 첨부해 보냅니다";
     return (box && box.getAttribute("data-auto") === "1")
       ? "자료 파일은 발송 프로그램이 붙여 보냅니다"
       : "자료는 PC 카톡에서 직접 첨부하고, 여기서는 문구만 보냅니다";
@@ -1490,6 +1492,12 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     if (!box) return;
     box.hidden = mode !== "ir";
     if (mode !== "ir") return;
+    // 머리말은 고른 채널을 따른다 — 메일이면 파일이 메일에 붙는다고 말한다.
+    var byMail = currentChannel() === "email";
+    var headKakao = document.getElementById("ir-attach-kakao");
+    var headMail = document.getElementById("ir-attach-mail");
+    if (headKakao) headKakao.hidden = byMail;
+    if (headMail) headMail.hidden = !byMail;
     window.IrAttach.renderList(
       document.getElementById("ir-links"),
       document.getElementById("ir-no-note"),

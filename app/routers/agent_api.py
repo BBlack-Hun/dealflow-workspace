@@ -7,6 +7,8 @@ All endpoints require `Authorization: Bearer <agent_token>`.
     POST /api/agent/items/{id}/result  -> {status: sent|failed, error?, screenshot_b64?}
     POST /api/agent/jobs/{id}/status   -> {status, counters}
     POST /api/agent/heartbeat          -> refresh last_poll_at (connection badge)
+    POST /api/agent/items/{id}/mail-files/{n}
+                                       -> 메일에 붙일 IR 자료 파일 올리기 (본문 = 파일)
 
 Job claim is atomic: UPDATE ... WHERE status='queued' (row-count guarded) so a
 job is never handed to two agents. Web app and agent never share the DB — HTTP only.
@@ -21,16 +23,16 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 from sqlalchemy import and_, exists, or_, select, text
 from sqlalchemy.orm import Session
 
 from .. import clock, config
 from ..db import get_db
-from ..services import (cadence, pipeline, room_joined, room_match, room_name,
-                        room_unchecked, scheduled_send, send_guard, sourcing_sync,
-                        vc_room_search)
+from ..services import (cadence, mail_attach, mail_sender, pipeline, room_joined,
+                        room_match, room_name, room_unchecked, scheduled_send,
+                        send_guard, sourcing_sync, vc_room_search)
 from ..deps import agent_serves, get_agent_device, may_auto_attach, now_iso
 from ..models import (ROOM_SEARCH_TOPIC, SENDER_ROOM_TOPIC, SOURCING_ROOM_TOPIC,
                       AgentDevice, SendItem, SendJob, User)
@@ -505,6 +507,15 @@ def item_result(
     if job.status not in RESULT_JOBS or item.status not in RESULT_ITEMS + ("canceled",):
         db.commit()
         raise HTTPException(status_code=409, detail="item is not waiting for a result")
+    if item.channel == "email" and not (
+            body.status == "failed" and item.status == "pending"
+            and item.files_json and not mail_attach.ready(item)):
+        # 메일은 서버가 보낸다 — 발송기가 메일 건에 알릴 것은 **붙일 자료 파일을 못
+        # 올렸다** 하나뿐이다(0.11.17): 자료 파일이 실렸고 아직 다 안 올라온 대기 건의
+        # 실패. '보냄' 을 받아 적으면 나가지도 않은 메일이 보낸 것으로 남고, 파일이
+        # 없는 여느 메일 · 다 올라와 나갈 메일을 발송기가 실패로 닫을 일은 없다.
+        db.commit()
+        raise HTTPException(status_code=409, detail="item is not waiting for a result")
 
     if is_verify:
         _apply_verify_result(item, body, device)
@@ -537,6 +548,12 @@ def item_result(
     job.sent = sum(1 for i in job.items if i.status == "sent")
     job.failed = sum(1 for i in job.items if i.status == "failed")
     db.commit()
+    if item.channel == "email":
+        # 메일 건의 결과는 위에서 걸렀다 — 발송 PC 가 **붙일 자료 파일을 못 올렸다**
+        # (`agent/main.py: upload_mail_files`). 올라온 파일을 지우고, 회차 마무리는
+        # 메일 쪽 규칙으로 한다(카톡 쪽 `_settle` 은 메일 건을 세지 않는다).
+        mail_attach.drop(item.id)
+        mail_sender.settle(db, job)
     return {"ok": True}
 
 
@@ -1058,6 +1075,32 @@ class Heartbeat(BaseModel):
     hostname: Optional[str] = None
     agent_version: Optional[str] = None
     sender: Optional[str] = None
+    # (0.11.17) 메일에 붙일 IR 자료 파일을 **올릴 줄 아는가.** `poll` 의 `files` ·
+    # `kinds` 와 같은 방식이다 — 판 번호로 짐작하지 않고 밝힌 것만 믿는다. 밝히지
+    # 않는 낡은 발송기에는 올릴 건을 주지 않고, 그 건은 대기로 남는다(`mail_attach.WAIT`).
+    mail_files: Optional[bool] = None
+
+
+def _may_upload(db: Session, device: AgentDevice, item: Optional[SendItem]) -> bool:
+    """이 발송기가 **이 메일 건의 자료 파일을 올려도 되는가.**
+
+    내주는 자리(`heartbeat`)와 받는 자리(`upload_mail_file`)가 이 한 함수를 지난다.
+    파일을 기다리는 대기 메일 건이고(`queued` 회차), 그 회차 주인이 이 발송기로
+    보내는 계정이며(`agent_serves`), 자동 첨부가 켜져 있고 자료 폴더가 정해져 있을
+    때만이다 — 카톡으로 붙일 때와 같은 문이다(`ir_attach.auto_attach_enabled`).
+    다 올라온 건은 더 받지 않는다(메일 쪽이 읽는 중일 수 있다).
+    """
+    job = item.job if item is not None else None
+    if (job is None or job.status != "queued" or item.channel != "email"
+            or item.status != "pending" or not item.files_json):
+        return False
+    owner = db.get(User, job.user_id)
+    host = db.get(User, device.user_id)
+    return (job.user_id in agent_serves(db, device.user_id)
+            and owner is not None and may_auto_attach(owner)
+            and host is not None and may_auto_attach(host)
+            and bool((device.ir_root or "").strip())
+            and not mail_attach.ready(item))
 
 
 @router.post("/heartbeat")
@@ -1083,8 +1126,61 @@ def heartbeat(
     # 쓰지도 않을 폴더를 챙기라고 말한다.
     owner = db.get(User, device.user_id)
     allowed = owner is not None and may_auto_attach(owner)
-    return {"ok": True, "server_time": now_iso(),
-            "ir_root": (device.ir_root or "") if allowed else ""}
+    out = {"ok": True, "server_time": now_iso(),
+           "ir_root": (device.ir_root or "") if allowed else ""}
+    if body.mail_files:
+        # ★ **메일에 붙일 IR 자료 파일을 올려 달라**고 여기에 실어 준다 — 메일은
+        #   서버가 보내는데 파일은 이 PC 에만 있다(`services/mail_attach.py`).
+        #   이름만 준다(경로는 발송기가 제 자료 폴더로 조립한다 — 카톡 첨부와 같다).
+        #   상한도 함께 알려, 넘는 파일은 올려 보기 전에 발송기가 실패로 알린다.
+        waiting = db.execute(
+            select(SendItem).join(SendJob, SendJob.id == SendItem.job_id)
+            .where(SendJob.status == "queued", SendItem.channel == "email",
+                   SendItem.status == "pending", SendItem.files_json.isnot(None))
+            .order_by(SendItem.id)).scalars().all()
+        out["mail_uploads"] = [{"id": i.id, "files": mail_attach.names(i)}
+                               for i in waiting if _may_upload(db, device, i)]
+        out["mail_max_bytes"] = mail_attach.max_bytes()
+    return out
+
+
+@router.post("/items/{item_id}/mail-files/{index}")
+async def upload_mail_file(
+    item_id: int,
+    index: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    device: AgentDevice = Depends(get_agent_device),
+):
+    """메일에 붙일 IR 자료 파일 **하나**를 받는다 — 요청 본문이 곧 파일이다.
+
+    `index` 는 그 건 `files_json` 의 몇 번째 파일인가다. **이름을 받지 않는다** —
+    올라온 글자가 경로가 될 자리가 없고, 그 건에 적힌 파일만 받는다
+    (`services/mail_attach.py`). 여러 파일을 한 요청에 묶지 않는 까닭: 본문을 흘려
+    받으며 크기를 세야 상한을 넘는 순간 끊을 수 있다(묶음 양식은 다 받은 뒤에야 센다).
+
+    남의 건 · 끝난 건 · 다 올라온 건은 없는 건과 같이 답한다(`_may_upload`).
+    상한을 넘으면 그 건을 **실패로 닫는다** — 기다려도 나갈 수 없는 건이다.
+    """
+    _touch_device(db, device)
+    item = db.get(SendItem, item_id)
+    ok = _may_upload(db, device, item) and 0 <= index < len(mail_attach.names(item))
+    db.commit()
+    if not ok:
+        raise HTTPException(status_code=404, detail="item not found")
+    try:
+        size = await mail_attach.save(item_id, index, request.stream())
+    except mail_attach.TooBig as exc:
+        # 받는 동안 [중단]됐을 수 있다 — 세션에 남은 옛 값이 아니라 **지금 줄**을 본다
+        # (`expire_on_commit=False`). 아직 대기일 때만 실패로 닫는다.
+        db.expire_all()
+        item = db.get(SendItem, item_id)
+        if item is not None and item.status == "pending":
+            mail_sender.fail_waiting(db, item, str(exc))
+        raise HTTPException(status_code=413, detail=str(exc)) from None
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    return {"ok": True, "size": size}
 
 
 class Diagnostics(BaseModel):

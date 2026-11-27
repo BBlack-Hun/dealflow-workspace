@@ -30,7 +30,7 @@ from ..models import (
     User,
     VcContact,
 )
-from ..services import mail_sender, mailer, matcher
+from ..services import mail_attach, mail_sender, mailer, matcher
 from ..services import message_composer as mc
 from ..services import (deal_history, deal_numbers, deal_queue, group_name, ir_attach,
                         ir_kakao, ir_monthly, ir_outreach, manual_send, pipeline,
@@ -510,9 +510,14 @@ def _compose_for_contact(
     return result
 
 
+#: IR 자료 전달 메일의 제목 — 적은 제목도 회차명도 없을 때만.
+IR_MAIL_SUBJECT = "IR 자료 전달드립니다"
+
+
 def _mail_subject(req, contact, companies: List[IrCompany],
                   count: Optional[int] = None) -> str:
-    """메일 한 통의 제목 — **적은 제목 → 회차명 → "딜 소개"** 그대로다.
+    """메일 한 통의 제목 — **적은 제목 → 회차명 → "딜 소개"** 그대로다
+    (IR 자료 전달은 맨 끝이 `IR_MAIL_SUBJECT`).
 
     ## 비었을 때의 차례는 손대지 않는다
 
@@ -541,7 +546,7 @@ def _mail_subject(req, contact, companies: List[IrCompany],
     """
     typed = (req.subject or "").strip()
     if not typed:
-        return req.title or "딜 소개"
+        return req.title or (IR_MAIL_SUBJECT if req.mode == MODE_IR else "딜 소개")
     if count is None:
         count = 0 if req.mode in FOLLOW_UP_MODES else len(companies)
     return mc.render_template(typed, _to_contact_view(contact),
@@ -1239,6 +1244,9 @@ def preview(
             if not sample and req.mode != MODE_SOURCING and req.channel != "email"
             else [])
     warnings = [SEPARATE_NOTE.format(n=separate)] if separate else []
+    if req.mode == MODE_IR and req.channel == "email" and not attach_on:
+        # 메일에는 손으로 붙일 길이 없다 — 발송 목록 만들기가 같은 말로 막는다.
+        warnings.append(mail_attach.NO_ATTACH)
     if left:
         warnings.append(f"{sheet_owner.left_room_label()} {len(left)}명 제외 — "
                         f"{sheet_owner.LEFT_ROOM_WHY}: {', '.join(left)}")
@@ -1359,12 +1367,16 @@ def build_send_list(req: SendRequest, background: BackgroundTasks,
     # 적어 두었다). 켜지 않은 계정은 지금까지 그대로 — 문구만 나가고 사람이
     # PC 카톡에서 파일을 붙인다.
     #
-    # 메일에는 붙이지 않는다. 파일은 **각자 PC** 에 있고 메일은 서버가 보낸다 —
-    # 서버에는 그 파일이 없다(`services/mail_sender.py`).
+    # **메일에도 붙인다**(0.11.17). 파일은 각자 PC 에 있고 메일은 서버가 보내므로,
+    # 그 건은 발송 PC 가 파일을 올릴 때까지 대기했다가 나간다
+    # (`services/mail_attach.py`). 메일에는 사람이 손으로 붙일 길이 없다 — 켜지
+    # 않은 계정의 메일 자료 전달은 **목록을 만들지 않는다**(자료 없이 "전달드립니다"
+    # 만 나가는 것이 제일 나쁘다).
     # 실을지 말지만 여기서 가린다. **무엇을 어떤 차례로** 실을지는 담당자마다
     # 다르므로(번호가 담당자마다 다르다) 아래 담당자 고리에서 정한다.
-    attach_on = (req.mode == MODE_IR and not by_email
-                 and ir_attach.auto_attach_enabled(db, user))
+    attach_on = req.mode == MODE_IR and ir_attach.auto_attach_enabled(db, user)
+    if req.mode == MODE_IR and by_email and not attach_on:
+        raise HTTPException(status_code=400, detail=mail_attach.NO_ATTACH)
 
     # ── 자료 전달은 **파일명이 있는 기업만** 보낸다 (#53) ─────────────────────
     #
@@ -1797,6 +1809,12 @@ def build_send_list(req: SendRequest, background: BackgroundTasks,
                                       by_sender=bool(attach_files))
 
     db.commit()
+
+    if by_email and attach_on:
+        # 건 번호는 다시 쓰일 수 있다(지워진 줄의 번호). 그 번호에 옛 파일이 남아
+        # 있으면 **남의 자료가 이 메일에 붙는다** — 새 건은 늘 빈 자리에서 시작한다.
+        for item in job.items:
+            mail_attach.drop(item.id)
 
     if by_email and not standing:
         # 요청 안에서 다 보내면 110명일 때 몇 분이 걸려 요청이 끊긴다.
